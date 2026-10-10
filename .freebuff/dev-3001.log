@@ -1,0 +1,20 @@
+
+> forgevyn-clipping-workspace@0.1.0 dev
+> next dev --port 3001
+
+▲ Next.js 16.4.0 (Turbopack)
+- Local:         http://localhost:3001
+- Network:       http://192.168.0.106:3001
+- Environments: .env.local
+✓ Ready in 2.1s
+✓ Running next.config.ts took 118ms
+⨯ Another next dev server is already running.
+
+- Local:        http://127.0.0.1:3111
+- PID:          4708
+- Dir:          C:\Users\user\Desktop\clippin workspace
+- Log:          .next\dev\logs\next-development.log
+
+You can access the existing server at http://127.0.0.1:3111,
+or run taskkill /PID 4708 /F to stop it and start a new one.
+[?25h
