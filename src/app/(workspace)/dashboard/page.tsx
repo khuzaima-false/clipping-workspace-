@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import type { User } from "@supabase/supabase-js";
 import {
   AlertCircle,
   Clapperboard,
@@ -10,11 +12,13 @@ import {
   Download,
   Film,
   FolderKanban,
+  LogIn,
   Plus,
   RefreshCw,
   Scissors,
   Upload,
 } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
 import { useProjectsStore } from "@/store/projects";
 import { useWorkspaceStore } from "@/store/workspace";
 import { STANDARD_DAILY_CREDITS, dailyCreditLimit } from "@/lib/credits";
@@ -72,6 +76,42 @@ export default function DashboardPage() {
   const channels = useWorkspaceStore((state) => state.channels);
   const loadProfile = useWorkspaceStore((state) => state.loadProfile);
   const loadChannels = useWorkspaceStore((state) => state.loadChannels);
+
+  const router = useRouter();
+  const [user, setUser] = useState<User | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
+
+  // Track the signed-in user so the dashboard can gate on authentication.
+  useEffect(() => {
+    const supabase = createClient();
+    let active = true;
+
+    void supabase.auth.getUser().then(({ data }) => {
+      if (!active) return;
+      setUser(data.user ?? null);
+      setAuthChecked(true);
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!active) return;
+      setUser(session?.user ?? null);
+      setAuthChecked(true);
+    });
+
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  // Unauthenticated visitors are sent to the sign-in page.
+  useEffect(() => {
+    if (authChecked && !user) {
+      router.push("/login");
+    }
+  }, [authChecked, user, router]);
 
   // Data loads through external stores (no setState-in-effect).
   useEffect(() => {
@@ -138,6 +178,32 @@ export default function DashboardPage() {
       accent: "text-emerald-400",
     },
   ];
+
+  // Show a clear sign-in CTA while the redirect to /login is in flight.
+  if (authChecked && !user) {
+    return (
+      <div className="flex min-h-[60vh] flex-col items-center justify-center gap-5 text-center">
+        <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-violet-600/15 text-violet-400 ring-1 ring-inset ring-violet-500/25">
+          <LogIn className="h-5 w-5" aria-hidden />
+        </span>
+        <div>
+          <p className="text-base font-medium text-zinc-100">
+            You&apos;re signed out
+          </p>
+          <p className="mt-1 max-w-sm text-sm text-zinc-500">
+            Sign in to view your dashboard, projects, and export credits.
+          </p>
+        </div>
+        <Link
+          href="/login"
+          className="inline-flex items-center gap-2 rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-violet-500"
+        >
+          <LogIn className="h-4 w-4" aria-hidden />
+          Sign in
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">

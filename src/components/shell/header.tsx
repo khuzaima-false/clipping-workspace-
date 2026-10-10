@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import {
   ChevronDown,
   Coins,
   Gift,
+  LogIn,
   Menu,
   Moon,
   Search,
@@ -12,6 +14,8 @@ import {
   ChevronsUpDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { createClient } from "@/lib/supabase/client";
+import type { User as SupabaseUser } from "@supabase/supabase-js";
 import { SignOutButton } from "@/components/auth/sign-out-button";
 import { ReferralModal } from "@/components/credits/referral-modal";
 import { useWorkspaceStore } from "@/store/workspace";
@@ -33,6 +37,34 @@ export function Header({ onMenuClick }: HeaderProps) {
 
   const profile = useWorkspaceStore((state) => state.profile);
   const loadProfile = useWorkspaceStore((state) => state.loadProfile);
+
+  const [user, setUser] = useState<SupabaseUser | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
+
+  // Track auth so the navbar can offer a sign-in CTA when signed out.
+  useEffect(() => {
+    const supabase = createClient();
+    let active = true;
+
+    void supabase.auth.getUser().then(({ data }) => {
+      if (!active) return;
+      setUser(data.user ?? null);
+      setAuthChecked(true);
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!active) return;
+      setUser(session?.user ?? null);
+      setAuthChecked(true);
+    });
+
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
+  }, []);
 
   const activeChannel = channels.find((c) => c.id === activeChannelId) ?? null;
 
@@ -200,8 +232,17 @@ export function Header({ onMenuClick }: HeaderProps) {
         Dark
       </span>
 
-      {/* User profile menu */}
-      <div className="relative" ref={profileRef}>
+      {/* User profile menu, or a sign-in CTA when signed out */}
+      {authChecked && !user ? (
+        <Link
+          href="/login"
+          className="inline-flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-violet-500"
+        >
+          <LogIn className="h-4 w-4" aria-hidden />
+          Sign in
+        </Link>
+      ) : (
+        <div className="relative" ref={profileRef}>
         <button
           type="button"
           onClick={() => {
@@ -266,7 +307,8 @@ export function Header({ onMenuClick }: HeaderProps) {
             <SignOutButton />
           </div>
         )}
-      </div>
+        </div>
+      )}
 
       <ReferralModal
         open={referralOpen}
