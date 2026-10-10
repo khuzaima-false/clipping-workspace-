@@ -2,8 +2,13 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   /* config options here */
-  cacheComponents: true,
-  partialPrefetching: true,
+  // Emit a fully static HTML site into the `out` folder on `next build`.
+  output: "export",
+  images: {
+    unoptimized: true,
+  },
+  // `cacheComponents`/`partialPrefetching` require a server runtime and are
+  // incompatible with `output: "export"`, so they cannot be enabled here.
   // Transformers.js is browser-only (ONNX Runtime Web + WASM). Keep it out of
   // the server bundle — it is loaded lazily from a client action.
   serverExternalPackages: ["@xenova/transformers"],

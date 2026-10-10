@@ -13,9 +13,12 @@ const PERKS = [
   { icon: ShieldCheck, text: "Refer 10 friends to unlock ad-free exporting" },
 ];
 
-// The route reads dynamic `params`, so it renders per-request instead of
-// being forced into the static prerender.
-export const instant = false;
+// `output: "export"` pre-renders every route at build time, so dynamic segments
+// must be enumerated. Referral links are per-user, so we emit a single
+// placeholder path to satisfy the static export.
+export function generateStaticParams() {
+  return [{ userId: "example" }];
+}
 
 export default async function ReferralLandingPage({
   params,
