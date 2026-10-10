@@ -21,7 +21,7 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { useProjectsStore } from "@/store/projects";
 import { useWorkspaceStore } from "@/store/workspace";
-import { STANDARD_DAILY_CREDITS, dailyCreditLimit } from "@/lib/credits";
+import { BASE_DAILY_CREDITS, dailyCreditLimit } from "@/lib/credits";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { Project } from "@/types/database";
 
@@ -147,8 +147,8 @@ export default function DashboardPage() {
   const recentProjects = useMemo(() => projects.slice(0, 5), [projects]);
 
   const creditLimit = profile
-    ? dailyCreditLimit(profile.is_founding_user)
-    : STANDARD_DAILY_CREDITS;
+    ? dailyCreditLimit(profile.referral_count, profile.is_founding_user)
+    : BASE_DAILY_CREDITS;
   const creditsRemaining = profile?.daily_credits ?? null;
   const creditPercent =
     creditsRemaining === null

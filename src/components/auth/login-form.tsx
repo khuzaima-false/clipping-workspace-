@@ -177,7 +177,10 @@ export function LoginForm() {
       {referrer && (
         <div className="mb-5 flex items-start gap-2.5 rounded-lg border border-violet-500/30 bg-violet-500/10 px-3.5 py-3 text-xs text-violet-200">
           <Gift className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-          <span>You were invited! Create an account to credit your friend.</span>
+          <span>
+            You were invited! Create an account and your friend earns +10 daily
+            credits.
+          </span>
         </div>
       )}
 

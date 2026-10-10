@@ -1,21 +1,48 @@
 import type { Profile } from "@/types/database";
 
-/** Daily credit allowance for a standard account. */
-export const STANDARD_DAILY_CREDITS = 20;
-/** Daily credit allowance for a founding account (first 1,000 users). */
-export const FOUNDING_DAILY_CREDITS = 25;
+/** Base daily credit allowance granted to every account. */
+export const BASE_DAILY_CREDITS = 30;
+/** Extra daily credits granted to founding accounts (first 1,000 users). */
+export const FOUNDING_CREDIT_BONUS = 500;
+/** Extra daily credits granted for each successful referral. */
+export const REFERRAL_CREDIT_BONUS = 10;
+/** Maximum number of referrals that earn the daily credit bonus. */
+export const MAX_REFERRALS = 12;
+/** Highest reachable daily allowance for a standard account (30 + 12 × 10). */
+export const MAX_DAILY_CREDITS =
+  BASE_DAILY_CREDITS + REFERRAL_CREDIT_BONUS * MAX_REFERRALS;
 /** Credits spent per 1080p video export. */
 export const EXPORT_CREDIT_COST = 2;
 /** Credits spent per AI auto-caption transcription. */
 export const CAPTIONS_CREDIT_COST = 3;
-/** Successful referrals needed to unlock ad-free exporting. */
-export const REFERRALS_FOR_AD_FREE = 10;
-/** Length of the ad-free reward in days. */
-export const AD_FREE_DAYS = 90;
 
-/** Daily credit allowance for an account. */
-export function dailyCreditLimit(isFounding: boolean): number {
-  return isFounding ? FOUNDING_DAILY_CREDITS : STANDARD_DAILY_CREDITS;
+/** Referrals that count toward the bonus, clamped to the [0, MAX] range. */
+export function bonusReferralCount(referralCount: number): number {
+  if (!Number.isFinite(referralCount) || referralCount <= 0) return 0;
+  return Math.min(Math.floor(referralCount), MAX_REFERRALS);
+}
+
+/**
+ * Daily credit allowance for an account.
+ *
+ * Every account starts at {@link BASE_DAILY_CREDITS}; founding accounts add
+ * {@link FOUNDING_CREDIT_BONUS}, and each successful referral permanently adds
+ * {@link REFERRAL_CREDIT_BONUS} up to {@link MAX_REFERRALS}.
+ */
+export function dailyCreditLimit(
+  referralCount = 0,
+  isFounding = false
+): number {
+  return (
+    BASE_DAILY_CREDITS +
+    (isFounding ? FOUNDING_CREDIT_BONUS : 0) +
+    REFERRAL_CREDIT_BONUS * bonusReferralCount(referralCount)
+  );
+}
+
+/** Highest daily allowance reachable at the referral cap for an account type. */
+export function maxDailyCredits(isFounding = false): number {
+  return dailyCreditLimit(MAX_REFERRALS, isFounding);
 }
 
 /** UTC calendar day key (`YYYY-MM-DD`) for a timestamp. */
@@ -34,14 +61,22 @@ export function needsDailyReset(
   return utcDayKey(profile.last_credit_reset, now) < utcDayKey(now, now);
 }
 
-/** Applies the daily refill in memory; returns the fields to persist, if any. */
+/**
+ * Applies the daily refill in memory; returns the fields to persist, if any.
+ *
+ * The allowance is reset to the account's current limit (base + referral
+ * bonus) — it never carries unused credits over from a previous day.
+ */
 export function computeDailyReset(
-  profile: Pick<Profile, "is_founding_user" | "last_credit_reset">,
+  profile: Pick<Profile, "referral_count" | "is_founding_user" | "last_credit_reset">,
   now = new Date()
 ): { daily_credits: number; last_credit_reset: string } | null {
   if (!needsDailyReset(profile, now)) return null;
   return {
-    daily_credits: dailyCreditLimit(profile.is_founding_user),
+    daily_credits: dailyCreditLimit(
+      profile.referral_count,
+      profile.is_founding_user
+    ),
     last_credit_reset: now.toISOString(),
   };
 }
@@ -55,16 +90,6 @@ export function isAdFree(
   if (!profile.ad_free_until) return true;
   const expiry = new Date(profile.ad_free_until).getTime();
   return Number.isFinite(expiry) ? expiry > now.getTime() : true;
-}
-
-/** Days remaining on the ad-free reward (0 when not ad-free). */
-export function adFreeDaysRemaining(
-  profile: Pick<Profile, "is_ad_free" | "ad_free_until"> | null
-): number {
-  if (!isAdFree(profile)) return 0;
-  if (!profile?.ad_free_until) return AD_FREE_DAYS;
-  const ms = new Date(profile.ad_free_until).getTime() - Date.now();
-  return Math.max(0, Math.ceil(ms / (1000 * 60 * 60 * 24)));
 }
 
 /** Builds the public shareable referral URL for a user id. */

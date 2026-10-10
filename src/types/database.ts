@@ -14,7 +14,7 @@ export interface Profile {
   id: string;
   email: string;
   display_name: string | null;
-  /** First 1,000 accounts: 15 credits/day instead of 10. */
+  /** First 1,000 accounts; grants +500 daily credits. */
   is_founding_user: boolean;
   theme_preference: string;
   referral_code: string | null;
@@ -22,7 +22,10 @@ export interface Profile {
   referred_by: string | null;
   /** Number of successful referrals this user has made. */
   referral_count: number;
-  /** Export credits remaining for the current UTC day. */
+  /**
+   * Export credits remaining for the current UTC day. The daily allowance is
+   * 30 base (+500 for founding accounts) + 10 per referral (max 12).
+   */
   daily_credits: number;
   /** Timestamp of the last daily refill (UTC). */
   last_credit_reset: string;

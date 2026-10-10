@@ -3,14 +3,17 @@ import {
   ArrowRight,
   Clapperboard,
   Gift,
-  ShieldCheck,
   Sparkles,
+  TrendingUp,
 } from "lucide-react";
 
 const PERKS = [
-  { icon: Clapperboard, text: "10 free 1080p exports every day" },
+  { icon: Clapperboard, text: "30 free daily credits — 15 1080p exports every day" },
   { icon: Sparkles, text: "AI auto-captions, colour grading & speed ramps" },
-  { icon: ShieldCheck, text: "Refer 10 friends to unlock ad-free exporting" },
+  {
+    icon: TrendingUp,
+    text: "Earn +10 daily credits for every friend you refer (max 12 = 150/day)",
+  },
 ];
 
 // `output: "export"` pre-renders every route at build time, so dynamic segments
@@ -52,7 +55,7 @@ export default async function ReferralLandingPage({
           </h1>
           <p className="mt-1.5 text-sm text-zinc-500">
             Create your free account to clip and export 1080p videos in your
-            browser — your friend earns rewards when you join.
+            browser — your friend earns extra daily credits when you join.
           </p>
 
           <ul className="mx-auto mt-5 space-y-2.5 text-left">

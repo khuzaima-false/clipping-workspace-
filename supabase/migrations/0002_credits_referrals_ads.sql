@@ -29,19 +29,19 @@ end $$;
 alter table public.profiles
   add column if not exists is_founding_user boolean not null default false,
   add column if not exists referral_count   integer not null default 0,
-  add column if not exists daily_credits    integer not null default 20,
+  add column if not exists daily_credits    integer not null default 30,
   add column if not exists last_credit_reset timestamptz not null default now(),
   add column if not exists is_ad_free       boolean not null default false,
   add column if not exists ad_free_until    timestamptz;
 
--- Task 6 economy: 20/day standard, 25/day founding.
+-- Economy: 30/day base (+500 founding), +10/day per referral (max 12).
 alter table public.profiles
-  alter column daily_credits set default 20;
+  alter column daily_credits set default 30;
 
 comment on column public.profiles.daily_credits is
-  'Export credits for the current UTC day (20 standard, 25 founding).';
+  'Export credits for the current UTC day (30 base + 500 founding + 10 per referral, max 12).';
 comment on column public.profiles.is_founding_user is
-  'True for the first 1,000 accounts; grants 25 credits/day.';
+  'True for the first 1,000 accounts; grants +500 daily credits.';
 
 create index if not exists profiles_referred_by_idx
   on public.profiles (referred_by);
@@ -89,7 +89,7 @@ declare
   v_referrer uuid;
 begin
   select count(*) < 1000 into v_is_founding from public.profiles;
-  v_daily_credits := case when v_is_founding then 25 else 20 end;
+  v_daily_credits := case when v_is_founding then 530 else 30 end;
 
   v_ref := nullif(new.raw_user_meta_data ->> 'ref', '');
   if v_ref is not null then
@@ -134,12 +134,8 @@ begin
       set referral_count = referral_count + 1
       where id = v_referrer;
 
-    update public.profiles
-      set is_ad_free = true,
-          ad_free_until = greatest(coalesce(ad_free_until, now()), now())
-                          + interval '90 days'
-      where id = v_referrer
-        and referral_count >= 10;
+    -- Referral bonuses are derived from `referral_count` at reset time (see
+    -- deduct_user_credit), so no extra write is needed beyond the counter.
   end if;
 
   return new;
@@ -170,6 +166,7 @@ declare
   v_uid uuid := auth.uid();
   v_target uuid;
   v_founding boolean;
+  v_referrals integer;
   v_reset timestamptz;
   v_credits integer;
   v_limit integer;
@@ -187,8 +184,9 @@ begin
     raise exception 'FORBIDDEN' using errcode = 'P0001';
   end if;
 
-  select p.is_founding_user, p.last_credit_reset, p.daily_credits
-    into v_founding, v_reset, v_credits
+  select p.is_founding_user, p.last_credit_reset, p.daily_credits,
+         p.referral_count
+    into v_founding, v_reset, v_credits, v_referrals
     from public.profiles p
     where p.id = v_target
     for update;
@@ -197,10 +195,14 @@ begin
     raise exception 'PROFILE_NOT_FOUND' using errcode = 'P0001';
   end if;
 
-  -- Automatic UTC daily reset before deducting.
+  -- Automatic UTC daily reset before deducting. Resets to the account's
+  -- allowance (30 base + 500 founding + 10 per referral, max 12) and never
+  -- stacks on top of a previous day's unused credits.
   if v_reset is null
      or (v_reset at time zone 'utc')::date < (now() at time zone 'utc')::date then
-    v_limit := case when v_founding then 25 else 20 end;
+    v_limit := 30
+      + (case when v_founding then 500 else 0 end)
+      + 10 * least(greatest(coalesce(v_referrals, 0), 0), 12);
     v_credits := v_limit;
     v_reset := now();
   end if;

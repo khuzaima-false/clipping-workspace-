@@ -6,17 +6,19 @@ import {
   Coins,
   Copy,
   Gift,
-  ShieldCheck,
-  Sparkles,
+  TrendingUp,
   Users,
   type LucideIcon,
 } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { useWorkspaceStore } from "@/store/workspace";
 import {
-  adFreeDaysRemaining,
+  BASE_DAILY_CREDITS,
+  FOUNDING_CREDIT_BONUS,
+  MAX_REFERRALS,
+  REFERRAL_CREDIT_BONUS,
   dailyCreditLimit,
-  REFERRALS_FOR_AD_FREE,
+  maxDailyCredits,
   referralUrl,
 } from "@/lib/credits";
 
@@ -63,21 +65,18 @@ export function ReferralModal({ open, onClose }: ReferralModalProps) {
     if (open) void loadProfile({ force: true });
   }, [open, loadProfile]);
 
-  // Keep the time-based ad-free reward out of the static prerender.
   if (!open) return null;
 
   const userId = profile?.id ?? "";
   const url = userId ? referralUrl(userId) : "";
   const count = profile?.referral_count ?? 0;
-  const remaining = Math.max(0, REFERRALS_FOR_AD_FREE - count);
-  const progress = Math.min(
-    100,
-    Math.round((count / REFERRALS_FOR_AD_FREE) * 100)
-  );
-  const adFreeDays = adFreeDaysRemaining(profile);
-  const limit = profile
-    ? dailyCreditLimit(profile.is_founding_user)
-    : 10;
+  const isFounding = profile?.is_founding_user ?? false;
+  const bonus = Math.min(count, MAX_REFERRALS);
+  const remaining = Math.max(0, MAX_REFERRALS - count);
+  const progress = Math.min(100, Math.round((count / MAX_REFERRALS) * 100));
+  const limit = dailyCreditLimit(count, isFounding);
+  const personalMax = maxDailyCredits(isFounding);
+  const atMax = count >= MAX_REFERRALS;
 
   async function handleCopy() {
     if (!url) return;
@@ -98,15 +97,14 @@ export function ReferralModal({ open, onClose }: ReferralModalProps) {
       className="max-w-lg"
     >
       <div className="space-y-5">
-        {adFreeDays > 0 && (
-          <div className="flex items-start gap-2.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-3 text-sm text-emerald-300">
-            <Sparkles className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-            <span>
-              You&apos;re ad-free for {adFreeDays} more day
-              {adFreeDays === 1 ? "" : "s"}. Thanks for spreading the word!
-            </span>
-          </div>
-        )}
+        <div className="flex items-start gap-2.5 rounded-lg border border-violet-500/30 bg-violet-500/10 px-3.5 py-3 text-sm text-violet-200">
+          <Gift className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+          <span>
+            Earn <strong className="font-semibold">+{REFERRAL_CREDIT_BONUS} daily credits</strong>{" "}
+            for every friend you refer! Max {MAX_REFERRALS} referrals ={" "}
+            <strong className="font-semibold">{personalMax} daily credits</strong>.
+          </span>
+        </div>
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           <Stat
@@ -118,14 +116,14 @@ export function ReferralModal({ open, onClose }: ReferralModalProps) {
           <Stat
             icon={Users}
             label="Referrals"
-            value={String(count)}
-            hint={`${remaining} to ad-free`}
+            value={`${count} / ${MAX_REFERRALS}`}
+            hint={atMax ? "Max reached" : `${remaining} to max`}
           />
           <Stat
-            icon={ShieldCheck}
-            label="Ad-free"
-            value={adFreeDays > 0 ? `${adFreeDays}d` : "Off"}
-            hint={profile?.is_founding_user ? "Founding user" : "Standard"}
+            icon={TrendingUp}
+            label="Daily limit"
+            value={String(limit)}
+            hint={`${BASE_DAILY_CREDITS} base${isFounding ? ` + ${FOUNDING_CREDIT_BONUS} founding` : ""} + ${bonus * REFERRAL_CREDIT_BONUS} bonus`}
           />
         </div>
 
@@ -167,10 +165,10 @@ export function ReferralModal({ open, onClose }: ReferralModalProps) {
           <div className="flex items-center justify-between text-xs text-zinc-400">
             <span className="inline-flex items-center gap-1.5">
               <Gift className="h-3.5 w-3.5 text-violet-400" aria-hidden />
-              Ad-free reward progress
+              Referral credit bonus progress
             </span>
             <span className="tabular-nums text-zinc-500">
-              {count} / {REFERRALS_FOR_AD_FREE}
+              {count} / {MAX_REFERRALS}
             </span>
           </div>
           <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-zinc-800">
@@ -180,17 +178,27 @@ export function ReferralModal({ open, onClose }: ReferralModalProps) {
             />
           </div>
           <p className="mt-1.5 text-[11px] leading-4 text-zinc-500">
-            {remaining > 0
-              ? `Refer ${remaining} more friend${remaining === 1 ? "" : "s"} to unlock 90 days without ads.`
-              : "Reward unlocked — enjoy your ad-free exporting."}
+            {atMax
+              ? `Maxed out — you're earning ${personalMax} credits every day. Thanks for spreading the word!`
+              : `Refer ${remaining} more friend${remaining === 1 ? "" : "s"} to reach ${personalMax} daily credits.`}
           </p>
         </div>
 
         <ul className="space-y-1.5 border-t border-zinc-800 pt-4 text-[11px] leading-4 text-zinc-500">
-          <li>• Standard accounts get 20 credits every day (UTC).</li>
-          <li>• Founding accounts (first 1,000) get 25 credits per day.</li>
+          <li>• Everyone starts with {BASE_DAILY_CREDITS} daily credits (UTC).</li>
+          <li>
+            • Founding accounts (first 1,000) get +{FOUNDING_CREDIT_BONUS} daily
+            credits.
+          </li>
+          <li>
+            • Each successful referral permanently adds{" "}
+            {REFERRAL_CREDIT_BONUS} daily credits.
+          </li>
+          <li>
+            • Bonus caps at {MAX_REFERRALS} referrals — that&apos;s{" "}
+            {personalMax} credits per day for your account.
+          </li>
           <li>• A 1080p export costs 2 credits · AI captions cost 3 credits.</li>
-          <li>• 10 successful referrals unlock 90 days of ad-free exporting.</li>
         </ul>
       </div>
     </Modal>
