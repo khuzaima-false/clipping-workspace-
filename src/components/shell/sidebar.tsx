@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { NativeAdBanner } from "@/components/ads/native-banner";
+import { SidebarAd } from "@/components/ads/sidebar-ad";
 import { Logo } from "@/components/ui/logo";
 import { NAV_ITEMS } from "./nav-items";
 
@@ -30,7 +30,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
 
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-40 flex w-64 flex-col overflow-y-auto border-r border-zinc-800/80 bg-zinc-950/80 backdrop-blur-xl transition-transform duration-200 lg:static lg:h-full lg:translate-x-0",
+          "fixed inset-y-0 left-0 z-40 flex w-80 flex-col overflow-y-auto border-r border-zinc-800/80 bg-zinc-950/80 backdrop-blur-xl transition-transform duration-200 lg:static lg:h-full lg:translate-x-0",
           open ? "translate-x-0" : "-translate-x-full"
         )}
       >
@@ -94,9 +94,11 @@ export function Sidebar({ open, onClose }: SidebarProps) {
               No renders in progress.
             </p>
           </div>
+        </div>
 
-          {/* Sidebar native ad placement (hidden for ad-free accounts). */}
-          <NativeAdBanner className="mt-3" />
+        {/* 300x250 SPONSORED slot — full width so the unit renders natively. */}
+        <div className="flex justify-center border-t border-zinc-800 py-4">
+          <SidebarAd />
         </div>
       </aside>
     </>

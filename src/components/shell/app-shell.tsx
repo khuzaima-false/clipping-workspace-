@@ -18,7 +18,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         fallback={
           <div
             aria-hidden
-            className="hidden h-full w-64 shrink-0 border-r border-zinc-800 bg-zinc-950 lg:block"
+            className="hidden h-full w-80 shrink-0 border-r border-zinc-800 bg-zinc-950 lg:block"
           />
         }
       >
