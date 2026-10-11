@@ -1,3 +1,6 @@
+# Forgevyn — the public marketing site is fully crawlable.
+# The authenticated app pages aren't linked from search and render a sign-in
+# prompt, so they're intentionally left allowed to avoid blocked-homepage issues.
 User-agent: *
 Allow: /
 

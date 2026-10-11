@@ -174,6 +174,17 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       await get().loadProfile({ force: true });
     }
     const current = get().profile;
+    const baseline = current?.daily_credits ?? 0;
+
+    // Optimistically reflect the spend so every credit counter updates the
+    // instant an action runs, then reconcile with the server's value below.
+    if (current) {
+      set((state) => ({
+        profile: state.profile
+          ? { ...state.profile, daily_credits: Math.max(0, baseline - spend) }
+          : state.profile,
+      }));
+    }
 
     // Server-authoritative, atomic refill + deduction.
     const { data, error } = await supabase.rpc("deduct_user_credit", {
@@ -182,12 +193,15 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     });
 
     if (error) {
+      // Revert the optimistic update — the server rejected the spend.
+      set((state) => ({
+        profile: state.profile
+          ? { ...state.profile, daily_credits: baseline }
+          : state.profile,
+      }));
+
       if (isInsufficientCreditsError(error)) {
-        return {
-          ok: false,
-          remaining: current?.daily_credits ?? 0,
-          reason: "insufficient",
-        };
+        return { ok: false, remaining: baseline, reason: "insufficient" };
       }
       // Fail closed: never fall back to a client-side balance mutation.
       set({
@@ -197,7 +211,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       });
       return {
         ok: false,
-        remaining: current?.daily_credits ?? 0,
+        remaining: baseline,
         reason: "error",
         error: error.message,
       };
@@ -209,7 +223,15 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       reset_at?: string;
     } | null;
 
-    const remaining = row?.remaining ?? 0;
+    const optimistic = Math.max(0, baseline - spend);
+    // Trust the server when it returns a finite balance, but never report a
+    // value higher than the optimistic cut (guards against a stale/old
+    // `deduct_user_credit` that didn't subtract).
+    const remaining =
+      typeof row?.remaining === "number" && Number.isFinite(row.remaining)
+        ? Math.min(row.remaining, optimistic)
+        : optimistic;
+
     set((state) => ({
       profile: state.profile
         ? {

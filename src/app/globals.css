@@ -3,6 +3,8 @@
 :root {
   --background: #09090b;
   --foreground: #f4f4f5;
+  --brand-from: #7c3aed;
+  --brand-to: #3b82f6;
 }
 
 @theme inline {
@@ -16,8 +18,155 @@ html {
   color-scheme: dark;
 }
 
+html,
+body {
+  min-height: 100%;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: rgb(124 58 237 / 0.35);
+  color: #fff;
+}
+
+/* Refined scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(113 113 122 / 0.4) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: rgb(113 113 122 / 0.35);
+  background-clip: padding-box;
+  border: 3px solid transparent;
+  border-radius: 999px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: rgb(161 161 170 / 0.5);
+  background-clip: padding-box;
+}
+
+/* --- Surfaces ------------------------------------------------------------ */
+.glass-card {
+  border: 1px solid rgb(39 39 42 / 0.8);
+  background-image: linear-gradient(
+    180deg,
+    rgb(39 39 42 / 0.32),
+    rgb(24 24 27 / 0.5)
+  );
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.glass-panel {
+  border: 1px solid rgb(39 39 42 / 0.7);
+  background: rgb(9 9 11 / 0.55);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+/* --- Brand --------------------------------------------------------------- */
+.brand-gradient {
+  background-image: linear-gradient(135deg, var(--brand-from) 0%, var(--brand-to) 100%);
+}
+.brand-gradient-hover:hover {
+  filter: brightness(1.1);
+}
+
+.text-gradient {
+  background-image: linear-gradient(120deg, #c4b5fd 0%, #93c5fd 55%, #67e8f9 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.glow-brand {
+  box-shadow:
+    0 0 0 1px rgb(124 58 237 / 0.35),
+    0 24px 60px -24px rgb(124 58 237 / 0.7);
+}
+
+.ambient-grid {
+  background-image:
+    linear-gradient(to right, rgb(63 63 70 / 0.15) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(63 63 70 / 0.15) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 40%, transparent 100%);
+  -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 40%, transparent 100%);
+}
+
+/* --- Micro-animations ---------------------------------------------------- */
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+.animate-fade-up {
+  animation: fade-up 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.animate-fade-in {
+  animation: fade-in 0.6s ease both;
+}
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+
+.anim-delay-100 {
+  animation-delay: 0.1s;
+}
+.anim-delay-200 {
+  animation-delay: 0.2s;
+}
+.anim-delay-300 {
+  animation-delay: 0.3s;
+}
+.anim-delay-400 {
+  animation-delay: 0.4s;
+}
+.anim-delay-500 {
+  animation-delay: 0.5s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-up,
+  .animate-fade-in,
+  .animate-float {
+    animation: none;
+  }
 }

@@ -12,9 +12,11 @@ export const MAX_REFERRALS = 12;
 export const MAX_DAILY_CREDITS =
   BASE_DAILY_CREDITS + REFERRAL_CREDIT_BONUS * MAX_REFERRALS;
 /** Credits spent per 1080p video export. */
-export const EXPORT_CREDIT_COST = 2;
+export const EXPORT_CREDIT_COST = 5;
 /** Credits spent per AI auto-caption transcription. */
-export const CAPTIONS_CREDIT_COST = 3;
+export const CAPTIONS_CREDIT_COST = 10;
+/** Credits spent to create a new project. */
+export const PROJECT_CREATE_CREDIT_COST = 5;
 
 /** Referrals that count toward the bonus, clamped to the [0, MAX] range. */
 export function bonusReferralCount(referralCount: number): number {

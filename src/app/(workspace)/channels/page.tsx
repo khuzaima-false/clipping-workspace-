@@ -199,7 +199,7 @@ export default function ChannelsPage() {
             setFormError(null);
             setCreateOpen(true);
           }}
-          className="inline-flex items-center justify-center gap-2 rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-violet-500"
+          className="inline-flex items-center justify-center gap-2 rounded-lg brand-gradient brand-gradient-hover px-4 py-2.5 text-sm font-medium text-white transition-transform hover:scale-[1.03]"
         >
           <Plus className="h-4 w-4" aria-hidden />
           Add Channel
@@ -228,7 +228,7 @@ export default function ChannelsPage() {
           {Array.from({ length: 3 }).map((_, i) => (
             <div
               key={i}
-              className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-5"
+              className="glass-card rounded-xl p-5"
             >
               <Skeleton className="h-5 w-32" />
               <Skeleton className="mt-3 h-4 w-24" />
@@ -257,7 +257,7 @@ export default function ChannelsPage() {
               setFormError(null);
               setCreateOpen(true);
             }}
-            className="inline-flex items-center gap-2 rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-violet-500"
+            className="inline-flex items-center gap-2 rounded-lg brand-gradient brand-gradient-hover px-4 py-2.5 text-sm font-medium text-white transition-transform hover:scale-[1.03]"
           >
             <Plus className="h-4 w-4" aria-hidden />
             Add Your First Channel
@@ -268,7 +268,7 @@ export default function ChannelsPage() {
           {channels.map((channel) => (
             <article
               key={channel.id}
-              className="flex flex-col rounded-xl border border-zinc-800 bg-zinc-900/60 p-5 transition-colors hover:border-zinc-700"
+              className="flex flex-col glass-card rounded-xl p-5 transition-colors hover:border-zinc-700"
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">

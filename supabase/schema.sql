@@ -307,7 +307,7 @@ create trigger on_auth_user_created
 -- privileges revoked below. Runs inside the caller's transaction; the row
 -- lock (`for update`) makes the UTC refill + deduction atomic.
 --
--- `cost` is the number of credits to spend (export = 2, captions = 3).
+-- `cost` is the number of credits to spend (export = 5, captions = 10, new project = 5).
 -- Refills to the account's allowance when `last_credit_reset` is before the
 -- current UTC date (100 base + 500 founding + 10 per referral, capped at 12
 -- referrals), then spends `cost` credits. Raises `INSUFFICIENT_CREDITS` when

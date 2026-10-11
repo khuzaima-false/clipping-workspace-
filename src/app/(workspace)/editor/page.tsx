@@ -327,7 +327,7 @@ function EditorView() {
           type="button"
           onClick={() => void handleExport()}
           disabled={!hasVideo || exporting}
-          className="inline-flex shrink-0 items-center gap-2 rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex shrink-0 items-center gap-2 rounded-lg brand-gradient brand-gradient-hover px-4 py-2.5 text-sm font-medium text-white transition-transform hover:scale-[1.03] disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Download className="h-4 w-4" aria-hidden />
           Export 1080p Video
@@ -348,7 +348,7 @@ function EditorView() {
           {error}
         </p>
       ) : !project ? (
-        <p className="rounded-xl border border-zinc-800 bg-zinc-900/60 px-4 py-3 text-sm text-zinc-400">
+        <p className="glass-card rounded-xl px-4 py-3 text-sm text-zinc-400">
           Project not found.
         </p>
       ) : (

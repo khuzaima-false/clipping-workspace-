@@ -72,7 +72,7 @@ export default function ReferralLandingPage() {
 
           <Link
             href={signupHref}
-            className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-violet-500"
+            className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-lg brand-gradient brand-gradient-hover px-4 py-2.5 text-sm font-medium text-white transition-transform hover:scale-[1.03]"
           >
             Create free account
             <ArrowRight className="h-4 w-4" aria-hidden />

@@ -196,7 +196,7 @@ export default function DashboardPage() {
         </div>
         <Link
           href="/login"
-          className="inline-flex items-center gap-2 rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-violet-500"
+          className="inline-flex items-center gap-2 rounded-lg brand-gradient brand-gradient-hover px-4 py-2.5 text-sm font-medium text-white transition-transform hover:scale-[1.03]"
         >
           <LogIn className="h-4 w-4" aria-hidden />
           Sign in
@@ -218,7 +218,7 @@ export default function DashboardPage() {
         </div>
         <Link
           href="/projects"
-          className="inline-flex items-center justify-center gap-2 rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-violet-500"
+          className="inline-flex items-center justify-center gap-2 rounded-lg brand-gradient brand-gradient-hover px-4 py-2.5 text-sm font-medium text-white transition-transform hover:scale-[1.03]"
         >
           <Plus className="h-4 w-4" aria-hidden />
           New project
@@ -248,7 +248,7 @@ export default function DashboardPage() {
           return (
             <div
               key={stat.label}
-              className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-5"
+              className="glass-card rounded-xl p-5"
             >
               <div className="flex items-center justify-between">
                 <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
@@ -265,7 +265,7 @@ export default function DashboardPage() {
         })}
 
         {/* Daily credits remaining */}
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-5">
+        <div className="glass-card rounded-xl p-5">
           <div className="flex items-center justify-between">
             <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
               Daily Credits Remaining
@@ -290,7 +290,7 @@ export default function DashboardPage() {
 
       <section className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         {/* Recent clips */}
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 lg:col-span-2">
+        <div className="glass-card rounded-xl lg:col-span-2">
           <div className="flex items-center justify-between border-b border-zinc-800 px-5 py-4">
             <h2 className="text-sm font-semibold text-zinc-200">
               Recent projects
@@ -331,7 +331,7 @@ export default function DashboardPage() {
               </div>
               <Link
                 href="/projects"
-                className="inline-flex items-center gap-2 rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-violet-500"
+                className="inline-flex items-center gap-2 rounded-lg brand-gradient brand-gradient-hover px-4 py-2.5 text-sm font-medium text-white transition-transform hover:scale-[1.03]"
               >
                 <Plus className="h-4 w-4" aria-hidden />
                 Create New Project
@@ -382,7 +382,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Workflow */}
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/60">
+        <div className="glass-card rounded-xl">
           <div className="border-b border-zinc-800 px-5 py-4">
             <h2 className="text-sm font-semibold text-zinc-200">
               Clipping workflow

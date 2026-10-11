@@ -14,6 +14,8 @@ import { Modal } from "@/components/ui/modal";
 import { useWorkspaceStore } from "@/store/workspace";
 import {
   BASE_DAILY_CREDITS,
+  CAPTIONS_CREDIT_COST,
+  EXPORT_CREDIT_COST,
   FOUNDING_CREDIT_BONUS,
   MAX_REFERRALS,
   REFERRAL_CREDIT_BONUS,
@@ -198,7 +200,10 @@ export function ReferralModal({ open, onClose }: ReferralModalProps) {
             • Bonus caps at {MAX_REFERRALS} referrals — that&apos;s{" "}
             {personalMax} credits per day for your account.
           </li>
-          <li>• A 1080p export costs 2 credits · AI captions cost 3 credits.</li>
+          <li>
+            • A 1080p export costs {EXPORT_CREDIT_COST} credits · AI captions
+            cost {CAPTIONS_CREDIT_COST} credits.
+          </li>
         </ul>
       </div>
     </Modal>

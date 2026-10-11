@@ -12,7 +12,7 @@ export default function Loading() {
         {Array.from({ length: 4 }).map((_, i) => (
           <div
             key={i}
-            className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-5"
+            className="glass-card rounded-xl p-5"
           >
             <Skeleton className="h-4 w-24" />
             <Skeleton className="mt-4 h-8 w-16" />
@@ -22,7 +22,7 @@ export default function Loading() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div className="space-y-3 rounded-xl border border-zinc-800 bg-zinc-900/60 p-5 lg:col-span-2">
+        <div className="space-y-3 glass-card rounded-xl p-5 lg:col-span-2">
           <Skeleton className="h-5 w-40" />
           {Array.from({ length: 5 }).map((_, i) => (
             <div key={i} className="flex items-center gap-3">
@@ -36,7 +36,7 @@ export default function Loading() {
           ))}
         </div>
 
-        <div className="space-y-3 rounded-xl border border-zinc-800 bg-zinc-900/60 p-5">
+        <div className="space-y-3 glass-card rounded-xl p-5">
           <Skeleton className="h-5 w-32" />
           {Array.from({ length: 4 }).map((_, i) => (
             <div key={i} className="space-y-2">

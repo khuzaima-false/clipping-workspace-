@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   AlertCircle,
   Clapperboard,
+  Coins,
   Film,
   Pencil,
   Plus,
@@ -13,6 +14,7 @@ import {
   X,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { PROJECT_CREATE_CREDIT_COST } from "@/lib/credits";
 import { useWorkspaceStore } from "@/store/workspace";
 import { useProjectsStore } from "@/store/projects";
 import type { Project } from "@/types/database";
@@ -37,6 +39,7 @@ export default function ProjectsPage() {
     loadChannels,
     activeChannelId,
     setActiveChannel,
+    consumeCredits,
   } = useWorkspaceStore();
 
   const projects = useProjectsStore((state) => state.projects);
@@ -97,6 +100,16 @@ export default function ProjectsPage() {
         data: { user },
       } = await supabase.auth.getUser();
       if (!user) throw new Error("You must be signed in to create a project.");
+
+      // Charge for the new project before it is created.
+      const charge = await consumeCredits(PROJECT_CREATE_CREDIT_COST);
+      if (!charge.ok) {
+        throw new Error(
+          charge.reason === "insufficient"
+            ? `Creating a project costs ${PROJECT_CREATE_CREDIT_COST} credits and you're out of credits for today. Check back after the UTC reset, or invite friends for more.`
+            : charge.error ?? "Could not verify your credits. Please try again."
+        );
+      }
 
       const { data, error } = await supabase
         .from("projects")
@@ -211,7 +224,7 @@ export default function ProjectsPage() {
             setNewChannelId(activeChannelId ?? "");
             setCreateOpen(true);
           }}
-          className="inline-flex items-center justify-center gap-2 rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-violet-500"
+          className="inline-flex items-center justify-center gap-2 rounded-lg brand-gradient brand-gradient-hover px-4 py-2.5 text-sm font-medium text-white transition-transform hover:scale-[1.03]"
         >
           <Plus className="h-4 w-4" aria-hidden />
           Create New Project
@@ -256,7 +269,7 @@ export default function ProjectsPage() {
           {Array.from({ length: 3 }).map((_, i) => (
             <div
               key={i}
-              className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-5"
+              className="glass-card rounded-xl p-5"
             >
               <Skeleton className="h-5 w-40" />
               <Skeleton className="mt-3 h-4 w-24" />
@@ -289,7 +302,7 @@ export default function ProjectsPage() {
               setNewChannelId(activeChannelId ?? "");
               setCreateOpen(true);
             }}
-            className="inline-flex items-center gap-2 rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-violet-500"
+            className="inline-flex items-center gap-2 rounded-lg brand-gradient brand-gradient-hover px-4 py-2.5 text-sm font-medium text-white transition-transform hover:scale-[1.03]"
           >
             <Plus className="h-4 w-4" aria-hidden />
             Create Your First Project
@@ -305,7 +318,7 @@ export default function ProjectsPage() {
             return (
               <article
                 key={project.id}
-                className="flex flex-col rounded-xl border border-zinc-800 bg-zinc-900/60 p-5 transition-colors hover:border-zinc-700"
+                className="flex flex-col glass-card rounded-xl p-5 transition-colors hover:border-zinc-700"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
@@ -443,10 +456,15 @@ export default function ProjectsPage() {
             </p>
           )}
 
+          <p className="flex items-center gap-1.5 text-xs text-zinc-500">
+            <Coins className="h-3.5 w-3.5 text-amber-400" aria-hidden />
+            Creating a project costs {PROJECT_CREATE_CREDIT_COST} credits.
+          </p>
+
           <button
             type="submit"
             disabled={creating}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-violet-500 disabled:opacity-60"
+            className="inline-flex w-full items-center justify-center gap-2 rounded-lg brand-gradient brand-gradient-hover px-4 py-2.5 text-sm font-medium text-white transition-transform hover:scale-[1.03] disabled:opacity-60"
           >
             {creating ? "Creating…" : "Create project"}
           </button>
@@ -499,7 +517,7 @@ export default function ProjectsPage() {
             <button
               type="submit"
               disabled={renameBusy}
-              className="rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-violet-500 disabled:opacity-60"
+              className="rounded-lg brand-gradient brand-gradient-hover px-4 py-2.5 text-sm font-medium text-white transition-transform hover:scale-[1.03] disabled:opacity-60"
             >
               {renameBusy ? "Saving…" : "Save changes"}
             </button>

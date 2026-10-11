@@ -10,10 +10,8 @@ const SITE_URL = (
 /**
  * Public, crawlable URLs for Google Search Console.
  *
- * The workspace routes require authentication and are excluded via
- * `robots.txt`; only the marketing/entry pages are listed here. Note that `/`
- * redirects signed-out visitors to `/login` (and signed-in users to the
- * dashboard), so remove it if Search Console reports it as a redirect.
+ * `/` is now the marketing landing page (no redirect), so it is the primary
+ * entry. The authenticated workspace routes are app-only and aren't listed.
  */
 export default function sitemap(): MetadataRoute.Sitemap {
   const lastModified = new Date();
@@ -22,14 +20,14 @@ export default function sitemap(): MetadataRoute.Sitemap {
     {
       url: `${SITE_URL}/`,
       lastModified,
-      changeFrequency: "weekly",
+      changeFrequency: "daily",
       priority: 1,
     },
     {
       url: `${SITE_URL}/login`,
       lastModified,
       changeFrequency: "monthly",
-      priority: 0.8,
+      priority: 0.9,
     },
   ];
 }

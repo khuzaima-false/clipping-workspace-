@@ -127,7 +127,7 @@ export function LoginForm() {
   const isSignIn = mode === "sign-in";
 
   return (
-    <div className="w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-900/70 p-6 shadow-2xl shadow-black/40 sm:p-8">
+    <div className="glass-card w-full max-w-md rounded-2xl p-6 shadow-2xl shadow-black/40 sm:p-8">
       <div className="mb-6">
         <h1 className="text-xl font-semibold tracking-tight text-zinc-50">
           {isSignIn ? "Welcome back" : "Create your account"}
@@ -249,7 +249,7 @@ export function LoginForm() {
         <button
           type="submit"
           disabled={loading}
-          className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-60"
+          className="brand-gradient brand-gradient-hover inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium text-white transition-transform hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-60"
         >
           {loading ? (
             <>
