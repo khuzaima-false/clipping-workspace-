@@ -1,8 +1,9 @@
-# Cloudflare Pages SPA fallback for client-rendered dynamic routes.
+# Host fallbacks (Cloudflare Pages / Netlify `_redirects` syntax).
 #
-# `output: "export"` pre-renders a single `index` shell per dynamic segment.
-# These rules rewrite (200 = proxy, URL unchanged) every real id to that shell
-# so the client can read the id from the URL on refresh / direct navigation.
+# The editor is now a REAL static route at `/editor` that reads `?id=<uuid>`
+# (e.g. /editor?id=a30a0584-...), so no rewrite is required for it. These rules
+# only exist so legacy `/editor/<uuid>` and per-user `/ref/<uuid>` links keep
+# working on hosts that support `_redirects`.
 
-/editor/*  /editor/index.html  200
-/ref/*     /ref/index.html     200
+/editor/*  /editor.html      200
+/ref/*     /ref/index.html   200

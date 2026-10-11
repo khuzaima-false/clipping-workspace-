@@ -354,7 +354,7 @@ export default function DashboardPage() {
                 return (
                   <li key={project.id}>
                     <Link
-                      href={`/editor/${project.id}`}
+                      href={`/editor?id=${project.id}`}
                       className="flex items-center gap-4 px-5 py-3.5 transition-colors hover:bg-zinc-900"
                     >
                       <div className="flex h-10 w-16 shrink-0 items-center justify-center rounded-md bg-zinc-800 text-zinc-500">

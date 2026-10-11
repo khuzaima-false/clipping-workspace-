@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useParams, usePathname } from "next/navigation";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
 import { ArrowLeft, Coins, Download, Gift } from "lucide-react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
@@ -32,19 +32,22 @@ function fileNameFor(title: string, extension: string): string {
   return `${slug}_1080p.${extension}`;
 }
 
-export default function EditorPage() {
-  const params = useParams<{ projectId: string }>();
+function EditorView() {
+  const searchParams = useSearchParams();
   const pathname = usePathname();
 
-  // Cloudflare Pages rewrites every /editor/<id> request to the pre-rendered
-  // /editor/index shell, so the URL is the source of truth for the project id.
-  // Fall back to the router param for normal client-side navigation.
+  // Static export can't serve arbitrary /editor/<id> paths, so the active
+  // project id travels in the query string (`/editor?id=<uuid>`). A pathname
+  // fallback keeps legacy `/editor/<id>` links working where the host rewrites
+  // them to this page.
   const projectId = useMemo(() => {
-    const fromParams = params?.projectId;
-    if (fromParams && fromParams !== "index") return fromParams;
+    const fromQuery = searchParams.get("id") ?? searchParams.get("projectId");
+    if (fromQuery) return fromQuery;
     const fromPath = pathname?.match(/\/editor\/([^/?#]+)/)?.[1];
-    return fromPath ? decodeURIComponent(fromPath) : (fromParams ?? "");
-  }, [params, pathname]);
+    return fromPath && fromPath !== "index"
+      ? decodeURIComponent(fromPath)
+      : "";
+  }, [searchParams, pathname]);
 
   const [project, setProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
@@ -356,5 +359,21 @@ export default function EditorPage() {
         onClose={() => setReferralOpen(false)}
       />
     </div>
+  );
+}
+
+export default function EditorPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)_300px]">
+          <Skeleton className="h-96 rounded-2xl" />
+          <Skeleton className="h-96 rounded-2xl" />
+          <Skeleton className="h-96 rounded-2xl" />
+        </div>
+      }
+    >
+      <EditorView />
+    </Suspense>
   );
 }

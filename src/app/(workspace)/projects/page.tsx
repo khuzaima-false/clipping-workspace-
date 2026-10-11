@@ -115,7 +115,7 @@ export default function ProjectsPage() {
       setCreateOpen(false);
       setNewTitle("");
       setNewChannelId("");
-      router.push(`/editor/${data.id}`);
+      router.push(`/editor?id=${data.id}`);
     } catch (err) {
       setCreateError(
         err instanceof Error ? err.message : "Failed to create project."
@@ -344,7 +344,7 @@ export default function ProjectsPage() {
                 <div className="mt-4 flex items-center gap-2 border-t border-zinc-800 pt-4">
                   <button
                     type="button"
-                    onClick={() => router.push(`/editor/${project.id}`)}
+                    onClick={() => router.push(`/editor?id=${project.id}`)}
                     className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-violet-600/90 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-violet-500"
                   >
                     Open
