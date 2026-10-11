@@ -1,4 +1,8 @@
+"use client";
+
+import { useMemo } from "react";
 import Link from "next/link";
+import { useParams, usePathname } from "next/navigation";
 import {
   ArrowRight,
   Clapperboard,
@@ -17,19 +21,19 @@ const PERKS = [
   },
 ];
 
-// `output: "export"` pre-renders every route at build time, so dynamic segments
-// must be enumerated. Referral links are per-user, so we emit a single
-// placeholder path to satisfy the static export.
-export function generateStaticParams() {
-  return [{ userId: "example" }];
-}
+export default function ReferralLandingPage() {
+  const params = useParams<{ userId: string }>();
+  const pathname = usePathname();
 
-export default async function ReferralLandingPage({
-  params,
-}: {
-  params: Promise<{ userId: string }>;
-}) {
-  const { userId } = await params;
+  // Cloudflare Pages rewrites every /ref/<id> request to the pre-rendered
+  // /ref/index shell, so the URL is the source of truth for the referrer id.
+  const userId = useMemo(() => {
+    const fromParams = params?.userId;
+    if (fromParams && fromParams !== "index") return fromParams;
+    const fromPath = pathname?.match(/\/ref\/([^/?#]+)/)?.[1];
+    return fromPath ? decodeURIComponent(fromPath) : (fromParams ?? "");
+  }, [params, pathname]);
+
   const signupHref = userId
     ? `/login?ref=${encodeURIComponent(userId)}`
     : "/login";

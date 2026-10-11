@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { useParams } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useParams, usePathname } from "next/navigation";
 import { ArrowLeft, Coins, Download, Gift } from "lucide-react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
@@ -34,7 +34,17 @@ function fileNameFor(title: string, extension: string): string {
 
 export default function EditorPage() {
   const params = useParams<{ projectId: string }>();
-  const projectId = params.projectId;
+  const pathname = usePathname();
+
+  // Cloudflare Pages rewrites every /editor/<id> request to the pre-rendered
+  // /editor/index shell, so the URL is the source of truth for the project id.
+  // Fall back to the router param for normal client-side navigation.
+  const projectId = useMemo(() => {
+    const fromParams = params?.projectId;
+    if (fromParams && fromParams !== "index") return fromParams;
+    const fromPath = pathname?.match(/\/editor\/([^/?#]+)/)?.[1];
+    return fromPath ? decodeURIComponent(fromPath) : (fromParams ?? "");
+  }, [params, pathname]);
 
   const [project, setProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
