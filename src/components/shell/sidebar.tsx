@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { AdSlot } from "@/components/credits/ad-slot";
+import { NativeAdBanner } from "@/components/ads/native-banner";
 import { Logo } from "@/components/ui/logo";
 import { NAV_ITEMS } from "./nav-items";
 
@@ -95,8 +95,8 @@ export function Sidebar({ open, onClose }: SidebarProps) {
             </p>
           </div>
 
-          {/* Sidebar banner ad placement (hidden for ad-free accounts). */}
-          <AdSlot variant="sidebar" className="mt-3" />
+          {/* Sidebar native ad placement (hidden for ad-free accounts). */}
+          <NativeAdBanner className="mt-3" />
         </div>
       </aside>
     </>

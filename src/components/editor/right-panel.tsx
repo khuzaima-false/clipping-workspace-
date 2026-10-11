@@ -25,6 +25,7 @@ import {
   type TextOverlay,
 } from "@/store/editor";
 import { speedAt } from "@/lib/render";
+import { NativeAdBanner } from "@/components/ads/native-banner";
 import { cn } from "@/lib/utils";
 
 const sectionTitle =
@@ -824,6 +825,9 @@ export function RightPanel() {
       <div className="border-t border-zinc-800 pt-3">
         <SpeedRampSection />
       </div>
+
+      {/* Right/bottom ad placement (hidden for ad-free accounts). */}
+      <NativeAdBanner />
     </aside>
   );
 }

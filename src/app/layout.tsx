@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
+import { SocialBar } from "@/components/ads/social-bar";
 import "./globals.css";
 
 const SITE_URL = (
@@ -111,6 +112,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           dangerouslySetInnerHTML={{ __html: JSON.stringify(JSON_LD) }}
         />
         {children}
+        <SocialBar />
       </body>
     </html>
   );
