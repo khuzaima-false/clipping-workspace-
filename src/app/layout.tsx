@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 
 const SITE_URL = (
@@ -10,14 +10,16 @@ const SITE_NAME = "Forgevyn Clipping";
 const DESCRIPTION =
   "1080p video-clipping workspace for projects, channels, and campaigns.";
 
-const geistSans = Geist({
+const geistSans = localFont({
+  src: "./fonts/geist-latin.woff2",
   variable: "--font-geist-sans",
-  subsets: ["latin"],
+  display: "swap",
 });
 
-const geistMono = Geist_Mono({
+const geistMono = localFont({
+  src: "./fonts/geist-mono-latin.woff2",
   variable: "--font-geist-mono",
-  subsets: ["latin"],
+  display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -25,14 +27,8 @@ export const metadata: Metadata = {
   title: "Forgevyn Clipping Workspace",
   description: DESCRIPTION,
   applicationName: SITE_NAME,
-  icons: {
-    icon: [
-      { url: "/favicon.ico", sizes: "any" },
-      { url: "/logo.png", type: "image/png", sizes: "512x512" },
-    ],
-    shortcut: "/favicon.ico",
-    apple: [{ url: "/logo.png", type: "image/png", sizes: "512x512" }],
-  },
+  // Icons come from the file conventions in `src/app`:
+  // favicon.ico, icon.png, and apple-icon.png (see `npm run brand:assets`).
   openGraph: {
     type: "website",
     siteName: SITE_NAME,

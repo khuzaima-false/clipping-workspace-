@@ -136,6 +136,20 @@ async function main() {
   mkdirSync(appDir, { recursive: true });
   writeFileSync(resolve(appDir, "favicon.ico"), ico);
 
+  // 2b. PNG icon + apple touch icon via Next's file conventions, so a fresh
+  //     (non-cached) icon path is emitted alongside /favicon.ico.
+  const appIcon = await sharp(Buffer.from(centeredMarkSvg(512)))
+    .resize(512, 512)
+    .png()
+    .toBuffer();
+  writeFileSync(resolve(appDir, "icon.png"), appIcon);
+
+  const appleIcon = await sharp(Buffer.from(centeredMarkSvg(180)))
+    .resize(180, 180)
+    .png()
+    .toBuffer();
+  writeFileSync(resolve(appDir, "apple-icon.png"), appleIcon);
+
   // 3. Open Graph card — 1200x630.
   const og = await sharp(Buffer.from(ogSvg()))
     .resize(1200, 630)
@@ -147,6 +161,8 @@ async function main() {
   console.log(`  public/logo.png        ${logo.length} bytes (512x512)`);
   console.log(`  public/favicon.ico     ${icoSizes.join("/")} (${ico.length} bytes)`);
   console.log(`  src/app/favicon.ico    ${ico.length} bytes (mirrored)`);
+  console.log(`  src/app/icon.png       ${appIcon.length} bytes (512x512)`);
+  console.log(`  src/app/apple-icon.png ${appleIcon.length} bytes (180x180)`);
   console.log(`  public/og-image.png    ${og.length} bytes (1200x630)`);
 }
 
