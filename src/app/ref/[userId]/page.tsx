@@ -13,11 +13,11 @@ import {
 import { Logo } from "@/components/ui/logo";
 
 const PERKS = [
-  { icon: Clapperboard, text: "30 free daily credits — 15 1080p exports every day" },
+  { icon: Clapperboard, text: "100 free daily credits — 50 1080p exports every day" },
   { icon: Sparkles, text: "AI auto-captions, colour grading & speed ramps" },
   {
     icon: TrendingUp,
-    text: "Earn +10 daily credits for every friend you refer (max 12 = 150/day)",
+    text: "Earn +10 daily credits for every friend you refer (max 12 = 220/day)",
   },
 ];
 

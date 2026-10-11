@@ -24,7 +24,7 @@ export interface Profile {
   referral_count: number;
   /**
    * Export credits remaining for the current UTC day. The daily allowance is
-   * 30 base (+500 for founding accounts) + 10 per referral (max 12).
+   * 100 base (+500 for founding accounts) + 10 per referral (max 12).
    */
   daily_credits: number;
   /** Timestamp of the last daily refill (UTC). */

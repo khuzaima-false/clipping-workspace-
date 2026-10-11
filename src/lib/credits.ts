@@ -1,14 +1,14 @@
 import type { Profile } from "@/types/database";
 
 /** Base daily credit allowance granted to every account. */
-export const BASE_DAILY_CREDITS = 30;
+export const BASE_DAILY_CREDITS = 100;
 /** Extra daily credits granted to founding accounts (first 1,000 users). */
 export const FOUNDING_CREDIT_BONUS = 500;
 /** Extra daily credits granted for each successful referral. */
 export const REFERRAL_CREDIT_BONUS = 10;
 /** Maximum number of referrals that earn the daily credit bonus. */
 export const MAX_REFERRALS = 12;
-/** Highest reachable daily allowance for a standard account (30 + 12 × 10). */
+/** Highest reachable daily allowance for a standard account (100 + 12 × 10). */
 export const MAX_DAILY_CREDITS =
   BASE_DAILY_CREDITS + REFERRAL_CREDIT_BONUS * MAX_REFERRALS;
 /** Credits spent per 1080p video export. */

@@ -29,17 +29,17 @@ end $$;
 alter table public.profiles
   add column if not exists is_founding_user boolean not null default false,
   add column if not exists referral_count   integer not null default 0,
-  add column if not exists daily_credits    integer not null default 30,
+  add column if not exists daily_credits    integer not null default 100,
   add column if not exists last_credit_reset timestamptz not null default now(),
   add column if not exists is_ad_free       boolean not null default false,
   add column if not exists ad_free_until    timestamptz;
 
--- Economy: 30/day base (+500 founding), +10/day per referral (max 12).
+-- Economy: 100/day base (+500 founding), +10/day per referral (max 12).
 alter table public.profiles
-  alter column daily_credits set default 30;
+  alter column daily_credits set default 100;
 
 comment on column public.profiles.daily_credits is
-  'Export credits for the current UTC day (30 base + 500 founding + 10 per referral, max 12).';
+  'Export credits for the current UTC day (100 base + 500 founding + 10 per referral, max 12).';
 comment on column public.profiles.is_founding_user is
   'True for the first 1,000 accounts; grants +500 daily credits.';
 
@@ -89,7 +89,7 @@ declare
   v_referrer uuid;
 begin
   select count(*) < 1000 into v_is_founding from public.profiles;
-  v_daily_credits := case when v_is_founding then 530 else 30 end;
+  v_daily_credits := case when v_is_founding then 600 else 100 end;
 
   v_ref := nullif(new.raw_user_meta_data ->> 'ref', '');
   if v_ref is not null then
@@ -196,11 +196,11 @@ begin
   end if;
 
   -- Automatic UTC daily reset before deducting. Resets to the account's
-  -- allowance (30 base + 500 founding + 10 per referral, max 12) and never
+  -- allowance (100 base + 500 founding + 10 per referral, max 12) and never
   -- stacks on top of a previous day's unused credits.
   if v_reset is null
      or (v_reset at time zone 'utc')::date < (now() at time zone 'utc')::date then
-    v_limit := 30
+    v_limit := 100
       + (case when v_founding then 500 else 0 end)
       + 10 * least(greatest(coalesce(v_referrals, 0), 0), 12);
     v_credits := v_limit;

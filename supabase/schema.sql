@@ -17,8 +17,8 @@ create table if not exists public.profiles (
   referred_by          text,
   -- Denormalised count of successful referrals.
   referral_count       integer not null default 0,
-  -- Export credits, refilled once per UTC day (30 base + 10 per referral).
-  daily_credits        integer not null default 30,
+  -- Export credits, refilled once per UTC day (100 base + 10 per referral).
+  daily_credits        integer not null default 100,
   last_credit_reset    timestamptz not null default now(),
   -- Ad-free entitlement (no longer granted by referrals).
   is_ad_free           boolean not null default false,
@@ -30,7 +30,7 @@ create table if not exists public.profiles (
 comment on table public.profiles is
   'One row per auth user; created automatically by the handle_new_user trigger.';
 comment on column public.profiles.daily_credits is
-  'Export credits for the current UTC day (30 base + 500 founding + 10 per referral, max 12).';
+  'Export credits for the current UTC day (100 base + 500 founding + 10 per referral, max 12).';
 comment on column public.profiles.is_founding_user is
   'True for the first 1,000 accounts; grants +500 daily credits.';
 
@@ -238,9 +238,9 @@ declare
   v_ref text;
   v_referrer uuid;
 begin
-  -- The first 1,000 accounts are founding users: 530/day vs 30/day.
+  -- The first 1,000 accounts are founding users: 600/day vs 100/day.
   select count(*) < 1000 into v_is_founding from public.profiles;
-  v_daily_credits := case when v_is_founding then 530 else 30 end;
+  v_daily_credits := case when v_is_founding then 600 else 100 end;
 
   v_ref := nullif(new.raw_user_meta_data ->> 'ref', '');
   if v_ref is not null then
@@ -309,7 +309,7 @@ create trigger on_auth_user_created
 --
 -- `cost` is the number of credits to spend (export = 2, captions = 3).
 -- Refills to the account's allowance when `last_credit_reset` is before the
--- current UTC date (30 base + 500 founding + 10 per referral, capped at 12
+-- current UTC date (100 base + 500 founding + 10 per referral, capped at 12
 -- referrals), then spends `cost` credits. Raises `INSUFFICIENT_CREDITS` when
 -- the balance is below `cost`.
 create or replace function public.deduct_user_credit(
@@ -362,7 +362,7 @@ begin
   -- allowance (never stacks on top of a previous day's unused credits).
   if v_reset is null
      or (v_reset at time zone 'utc')::date < (now() at time zone 'utc')::date then
-    v_limit := 30
+    v_limit := 100
       + (case when v_founding then 500 else 0 end)
       + 10 * least(greatest(coalesce(v_referrals, 0), 0), 12);
     v_credits := v_limit;
