@@ -7,7 +7,6 @@ import {
   Crop,
   Gauge,
   Globe,
-  Play,
   Scissors,
   Send,
   ShieldCheck,
@@ -19,6 +18,10 @@ import {
 } from "lucide-react";
 import { Logo } from "@/components/ui/logo";
 import { HeroPreview } from "@/components/marketing/hero-preview";
+import {
+  HeroAuthActions,
+  NavAuthActions,
+} from "@/components/marketing/auth-actions";
 import {
   BASE_DAILY_CREDITS,
   CAPTIONS_CREDIT_COST,
@@ -138,20 +141,7 @@ export default function LandingPage() {
               Demo
             </a>
           </nav>
-          <div className="ml-auto flex items-center gap-2">
-            <Link
-              href="/login"
-              className="rounded-lg px-3 py-2 text-sm font-medium text-zinc-300 transition-colors hover:bg-zinc-900 hover:text-white"
-            >
-              Sign in
-            </Link>
-            <Link
-              href="/login"
-              className="brand-gradient brand-gradient-hover inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-semibold text-white shadow-lg shadow-violet-900/30 transition-transform hover:scale-[1.03]"
-            >
-              Start Clipping Free
-            </Link>
-          </div>
+          <NavAuthActions />
         </div>
       </header>
 
@@ -174,22 +164,7 @@ export default function LandingPage() {
             becomes a feed of scroll-stopping clips.
           </p>
 
-          <div className="mt-8 flex flex-wrap items-center gap-3">
-            <Link
-              href="/login"
-              className="brand-gradient brand-gradient-hover inline-flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold text-white shadow-xl shadow-violet-900/30 transition-transform hover:scale-[1.03]"
-            >
-              Start Clipping Free
-              <ArrowRight className="h-4 w-4" aria-hidden />
-            </Link>
-            <a
-              href="#preview"
-              className="inline-flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900/60 px-5 py-3 text-sm font-semibold text-zinc-200 backdrop-blur transition-colors hover:border-zinc-600 hover:text-white"
-            >
-              <Play className="h-4 w-4" aria-hidden />
-              Watch Demo
-            </a>
-          </div>
+          <HeroAuthActions />
 
           <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-zinc-500">
             <span className="inline-flex items-center gap-1.5">

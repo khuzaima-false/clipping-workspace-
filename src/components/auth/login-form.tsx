@@ -78,7 +78,7 @@ export function LoginForm() {
 
         if (data.session) {
           setBanner({ tone: "success", message: "Signed in. Redirecting…" });
-          router.push("/");
+          router.push("/dashboard");
           router.refresh();
         }
       } else {
@@ -101,7 +101,7 @@ export function LoginForm() {
         if (data.session) {
           // Email confirmation disabled: session issued immediately.
           setBanner({ tone: "success", message: "Account created. Redirecting…" });
-          router.push("/");
+          router.push("/dashboard");
           router.refresh();
         } else {
           setBanner({

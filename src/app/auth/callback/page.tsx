@@ -23,7 +23,7 @@ function CallbackHandler() {
 
     async function run() {
       const code = searchParams.get("code");
-      const rawNext = searchParams.get("next") ?? "/";
+      const rawNext = searchParams.get("next") ?? "/dashboard";
 
       // Only allow same-origin relative redirects (blocks open redirects).
       const next =

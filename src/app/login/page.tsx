@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { LoginForm } from "@/components/auth/login-form";
+import { RedirectIfAuthed } from "@/components/auth/redirect-if-authed";
 import { Logo } from "@/components/ui/logo";
 
 export const metadata: Metadata = {
@@ -19,6 +20,7 @@ export default function LoginPage() {
       </header>
 
       <main className="relative flex flex-1 items-center justify-center px-4 pb-16">
+        <RedirectIfAuthed />
         <LoginForm />
       </main>
 
