@@ -17,6 +17,7 @@ import sharp from "sharp";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const publicDir = resolve(root, "public");
+const appDir = resolve(root, "src/app");
 const mark = JSON.parse(
   readFileSync(resolve(root, "src/lib/brand-mark.json"), "utf8")
 );
@@ -117,7 +118,9 @@ async function main() {
     .toBuffer();
   writeFileSync(resolve(publicDir, "logo.png"), logo);
 
-  // 2. Favicon — PNG frames wrapped into a multi-size .ico.
+  // 2. Favicon — PNG frames wrapped into a multi-size .ico. Written to
+  //    `public/` and mirrored into `src/app/` so Next's file convention serves
+  //    the same brand icon at /favicon.ico.
   const icoSizes = [16, 32, 48, 64];
   const icoEntries = await Promise.all(
     icoSizes.map(async (size) => ({
@@ -128,7 +131,10 @@ async function main() {
         .toBuffer(),
     }))
   );
-  writeFileSync(resolve(publicDir, "favicon.ico"), buildIco(icoEntries));
+  const ico = buildIco(icoEntries);
+  writeFileSync(resolve(publicDir, "favicon.ico"), ico);
+  mkdirSync(appDir, { recursive: true });
+  writeFileSync(resolve(appDir, "favicon.ico"), ico);
 
   // 3. Open Graph card — 1200x630.
   const og = await sharp(Buffer.from(ogSvg()))
@@ -137,10 +143,11 @@ async function main() {
     .toBuffer();
   writeFileSync(resolve(publicDir, "og-image.png"), og);
 
-  console.log("Brand assets written to public/:");
-  console.log(`  logo.png      ${logo.length} bytes (512x512)`);
-  console.log(`  favicon.ico   ${icoSizes.join("/")} (${icoEntries.reduce((n, e) => n + e.png.length, 0)} bytes)`);
-  console.log(`  og-image.png  ${og.length} bytes (1200x630)`);
+  console.log("Brand assets written:");
+  console.log(`  public/logo.png        ${logo.length} bytes (512x512)`);
+  console.log(`  public/favicon.ico     ${icoSizes.join("/")} (${ico.length} bytes)`);
+  console.log(`  src/app/favicon.ico    ${ico.length} bytes (mirrored)`);
+  console.log(`  public/og-image.png    ${og.length} bytes (1200x630)`);
 }
 
 main().catch((err) => {
