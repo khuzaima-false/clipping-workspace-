@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { loadVideoSource, saveVideoSource } from "@/lib/video-storage";
 
 export type AspectRatio = "9:16" | "16:9" | "1:1";
 export type VideoFit = "contain" | "cover";
@@ -292,6 +293,13 @@ type EditorState = {
   videoName: string | null;
   videoError: string | null;
 
+  /** Active project id — keys the locally persisted source video. */
+  projectId: string | null;
+  /** True when a project is open but its source video isn't stored locally. */
+  videoMissing: boolean;
+  /** True while restoring a persisted source video from IndexedDB. */
+  videoRestoring: boolean;
+
   duration: number;
   currentTime: number;
   trimStart: number;
@@ -335,6 +343,10 @@ type EditorState = {
   activeEffects: VideoEffect[];
 
   loadVideo: (file: File) => void;
+  /** Applies raw video bytes (e.g. restored from IndexedDB) to the editor. */
+  loadVideoBlob: (blob: Blob, name: string) => void;
+  /** Restores the source video persisted for `projectId`, if available. */
+  restoreVideo: (projectId: string) => Promise<void>;
   resetEditor: () => void;
   seek: (time: number) => void;
   /** Moves the playhead by `delta` frames (negative steps backwards). */
@@ -400,6 +412,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   videoName: null,
   videoError: null,
 
+  projectId: null,
+  videoMissing: false,
+  videoRestoring: false,
+
   duration: 0,
   currentTime: 0,
   trimStart: 0,
@@ -438,6 +454,18 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       return;
     }
 
+    // Persist the raw bytes so the source survives reloads and tab closes.
+    const projectId = get().projectId;
+    if (projectId) {
+      void saveVideoSource(projectId, file, file.name).catch(() => {
+        // IndexedDB can fail (quota, private mode); playback still works now.
+      });
+    }
+
+    get().loadVideoBlob(file, file.name);
+  },
+
+  loadVideoBlob: (blob, name) => {
     // Release the previous source before swapping in the new one.
     const previous = get();
     releaseVideo(previous.videoEl, previous.videoUrl);
@@ -448,6 +476,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       videoFile: null,
       videoName: null,
       videoError: null,
+      videoMissing: false,
       duration: 0,
       currentTime: 0,
       trimStart: 0,
@@ -464,7 +493,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       activeEffects: [],
     });
 
-    const url = URL.createObjectURL(file);
+    const url = URL.createObjectURL(blob);
     const el = document.createElement("video");
     el.preload = "auto";
     el.playsInline = true;
@@ -530,7 +559,44 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       });
     });
 
-    set({ videoEl: el, videoUrl: url, videoFile: file, videoName: file.name });
+    const file =
+      blob instanceof File
+        ? blob
+        : new File([blob], name, { type: blob.type || "video/mp4" });
+
+    set({
+      videoEl: el,
+      videoUrl: url,
+      videoFile: file,
+      videoName: name,
+      videoMissing: false,
+    });
+  },
+
+  restoreVideo: async (projectId) => {
+    if (!projectId) return;
+
+    const current = get();
+    if (current.projectId === projectId && current.videoEl) return;
+    // Switching projects: drop the previous project's in-memory source.
+    if (current.projectId !== projectId) {
+      get().resetEditor();
+    }
+
+    set({ projectId, videoRestoring: true, videoMissing: false });
+
+    try {
+      const stored = await loadVideoSource(projectId);
+      if (get().projectId !== projectId) return; // navigated away mid-load
+      if (stored) {
+        get().loadVideoBlob(stored.blob, stored.name);
+        set({ videoRestoring: false });
+      } else {
+        set({ videoRestoring: false, videoMissing: true });
+      }
+    } catch {
+      set({ videoRestoring: false, videoMissing: true });
+    }
   },
 
   resetEditor: () => {
@@ -544,6 +610,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       videoFile: null,
       videoName: null,
       videoError: null,
+      projectId: null,
+      videoMissing: false,
+      videoRestoring: false,
       duration: 0,
       currentTime: 0,
       trimStart: 0,

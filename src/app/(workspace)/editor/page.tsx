@@ -106,6 +106,12 @@ function EditorView() {
     };
   }, [projectId]);
 
+  // Restore the source video persisted in IndexedDB for this project (if any).
+  useEffect(() => {
+    if (!projectId) return;
+    void useEditorStore.getState().restoreVideo(projectId);
+  }, [projectId]);
+
   // Release the blob URL, video element, and preview state when leaving.
   useEffect(() => {
     return () => {

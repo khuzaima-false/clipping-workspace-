@@ -4,9 +4,11 @@ import { useEffect, useRef } from "react";
 import {
   ChevronLeft,
   ChevronRight,
+  LoaderCircle,
   Pause,
   Play,
   RotateCcw,
+  UploadCloud,
   Volume2,
 } from "lucide-react";
 import { useEditorStore } from "@/store/editor";
@@ -26,6 +28,7 @@ const chipClass =
 
 export function PreviewPanel() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const playing = useEditorStore((state) => state.playing);
   const currentTime = useEditorStore((state) => state.currentTime);
@@ -35,6 +38,9 @@ export function PreviewPanel() {
   const volume = useEditorStore((state) => state.volume);
   const fps = useEditorStore((state) => state.fps);
   const hasVideo = useEditorStore((state) => state.videoEl !== null);
+  const videoMissing = useEditorStore((state) => state.videoMissing);
+  const videoRestoring = useEditorStore((state) => state.videoRestoring);
+  const loadVideo = useEditorStore((state) => state.loadVideo);
 
   const seek = useEditorStore((state) => state.seek);
   const setPlaying = useEditorStore((state) => state.setPlaying);
@@ -166,12 +172,61 @@ export function PreviewPanel() {
 
   return (
     <div className="flex min-w-0 flex-col gap-3">
-      <div className="flex items-center justify-center rounded-2xl border border-zinc-800 bg-zinc-950/60 p-4">
+      <div className="relative flex items-center justify-center rounded-2xl border border-zinc-800 bg-zinc-950/60 p-4">
         <canvas
           ref={canvasRef}
           aria-label="Video preview canvas"
           className="max-h-[54vh] max-w-full rounded-lg shadow-lg shadow-black/40 ring-1 ring-zinc-800"
         />
+
+        {!hasVideo && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 rounded-2xl bg-zinc-950/85 p-6 text-center">
+            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-violet-600/15 text-violet-400 ring-1 ring-inset ring-violet-500/25">
+              {videoRestoring ? (
+                <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden />
+              ) : (
+                <UploadCloud className="h-5 w-5" aria-hidden />
+              )}
+            </span>
+            <div>
+              <p className="text-sm font-medium text-zinc-200">
+                {videoRestoring
+                  ? "Restoring source video…"
+                  : videoMissing
+                    ? "Source video not found"
+                    : "No source video yet"}
+              </p>
+              <p className="mt-1 max-w-xs text-xs leading-5 text-zinc-500">
+                {videoRestoring
+                  ? "Loading the saved clip from this device."
+                  : videoMissing
+                    ? "This project's original video isn't stored on this device. Re-upload it to keep editing."
+                    : "Upload an MP4 or WebM to start editing."}
+              </p>
+            </div>
+            {!videoRestoring && (
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="inline-flex items-center gap-2 rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-violet-500"
+              >
+                <UploadCloud className="h-4 w-4" aria-hidden />
+                {videoMissing ? "Re-upload Source Video" : "Upload Source Video"}
+              </button>
+            )}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="video/mp4,video/webm,video/*"
+              className="hidden"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) loadVideo(file);
+                event.target.value = "";
+              }}
+            />
+          </div>
+        )}
       </div>
 
       <div className="space-y-3 rounded-2xl border border-zinc-800 bg-zinc-900/50 p-3">
