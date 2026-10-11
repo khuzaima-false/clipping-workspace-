@@ -22,10 +22,30 @@ export type ExportProgress = {
   percent: number;
 };
 
+/** One clip in a multi-clip export sequence. */
+export type ExportSegment = {
+  /** Video element for this clip (its `src` must already be set). */
+  video: HTMLVideoElement;
+  /** Seconds trimmed from the start of the source. */
+  trimStart: number;
+  /** Seconds trimmed to the end of the source. */
+  trimEnd: number;
+  /** Source file for this clip's own audio, if any. */
+  file: File | null;
+};
+
 export type ExportVideoOptions = {
   video: HTMLVideoElement;
-  /** Draws the current video frame + overlays onto the export canvas for the given timeline time (seconds). */
-  renderFrame: (ctx: CanvasRenderingContext2D, time: number) => void;
+  /**
+   * Draws the frame for the given timeline time (seconds). `video` is the
+   * element whose frame the exporter has just seeked — for a sequence that is
+   * the current segment's element.
+   */
+  renderFrame: (
+    ctx: CanvasRenderingContext2D,
+    time: number,
+    video: HTMLVideoElement
+  ) => void;
   width: number;
   height: number;
   trimStart: number;
@@ -33,6 +53,11 @@ export type ExportVideoOptions = {
   fps?: number;
   /** Source file, used to decode the video's own audio track for the MP4. */
   file: File | null;
+  /**
+   * Multi-clip sequence. When more than one segment is provided the exporter
+   * concatenates them into a single output clip (WebCodecs path only).
+   */
+  segments?: ExportSegment[];
   /** External audio tracks / SFX mixed into the exported audio. */
   audioTracks?: AudioMixTrack[];
   /** Velocity curve; when ramped, output frames step variable source deltas. */
@@ -173,6 +198,63 @@ async function decodeAudio(file: File): Promise<DecodedAudio | null> {
   }
 }
 
+/** Concatenates the trimmed ranges of every segment's audio into one buffer. */
+async function buildSequenceAudio(
+  segments: ExportSegment[],
+  sampleRate: number
+): Promise<AudioBuffer | null> {
+  if (typeof AudioContext === "undefined") return null;
+
+  const parts: { buffer: AudioBuffer; start: number; end: number }[] = [];
+  for (const segment of segments) {
+    if (!segment.file) continue;
+    const decoded = await decodeAudio(segment.file);
+    if (decoded?.buffer) {
+      const duration = decoded.buffer.duration;
+      const end =
+        segment.trimEnd > segment.trimStart
+          ? segment.trimEnd
+          : Number.isFinite(duration) && duration > 0
+            ? duration
+            : 0;
+      if (end <= segment.trimStart) continue;
+      parts.push({ buffer: decoded.buffer, start: segment.trimStart, end });
+    }
+  }
+  if (parts.length === 0) return null;
+
+  const chunkFrames = parts.map((part) =>
+    Math.max(0, Math.round((part.end - part.start) * sampleRate))
+  );
+  const totalFrames = chunkFrames.reduce((sum, frames) => sum + frames, 0);
+  if (totalFrames <= 0) return null;
+
+  const context = new AudioContext();
+  try {
+    const out = context.createBuffer(2, totalFrames, sampleRate);
+    let offset = 0;
+    parts.forEach((part, index) => {
+      const frames = chunkFrames[index];
+      const startSample = Math.round(part.start * sampleRate);
+      for (let channel = 0; channel < 2; channel++) {
+        const src = part.buffer.getChannelData(
+          Math.min(channel, part.buffer.numberOfChannels - 1)
+        );
+        const dst = out.getChannelData(channel);
+        for (let i = 0; i < frames; i++) {
+          const sample = startSample + i;
+          dst[offset + i] =
+            sample >= 0 && sample < src.length ? src[sample] : 0;
+        }
+      }
+      offset += frames;
+    });
+    return out;
+  } finally {
+    void context.close();
+  }
+}
+
 async function pickVideoConfig(
   width: number,
   height: number,
@@ -226,21 +308,70 @@ async function exportWithWebCodecs(
   const fps = opts.fps ?? EXPORT_FPS;
   const speedPoints = opts.speedPoints ?? [];
   const ramped = isSpeedRamped(speedPoints);
-  // Variable source-time positions produce the speed ramp in the output.
-  const sourceTimes = computeSourceFrameTimes(speedPoints, trimStart, trimEnd, fps);
-  const totalFrames = Math.max(1, sourceTimes.length);
+
+  const segments: ExportSegment[] =
+    opts.segments && opts.segments.length > 0
+      ? opts.segments
+      : [{ video, trimStart, trimEnd, file: opts.file ?? null }];
+  const multi = segments.length > 1;
+
+  // Ensure every segment's duration is known (clips that were added but never
+  // opened in the editor still have a trim end of 0).
+  for (const segment of segments) {
+    if (segment.video.readyState < 1) {
+      await waitForEvent(segment.video, "loadedmetadata");
+    }
+  }
+  const segmentEnd = (segment: ExportSegment): number => {
+    if (segment.trimEnd > segment.trimStart) return segment.trimEnd;
+    const duration = segment.video.duration;
+    return Number.isFinite(duration) && duration > 0
+      ? duration
+      : segment.trimStart + 1;
+  };
+
+  // Build the per-output-frame plan (which segment, and the source time).
+  const plan: { segment: ExportSegment; sourceTime: number }[] = [];
+  if (!multi) {
+    const sourceTimes = computeSourceFrameTimes(speedPoints, trimStart, trimEnd, fps);
+    for (const sourceTime of sourceTimes) {
+      plan.push({ segment: segments[0], sourceTime });
+    }
+  } else {
+    for (const segment of segments) {
+      const end = segmentEnd(segment);
+      const span = Math.max(1 / fps, end - segment.trimStart);
+      const count = Math.max(1, Math.round(span * fps));
+      for (let i = 0; i < count; i++) {
+        plan.push({
+          segment,
+          sourceTime: Math.min(segment.trimStart + i / fps, end),
+        });
+      }
+    }
+  }
+  const totalFrames = Math.max(1, plan.length);
 
   const videoConfig = await pickVideoConfig(width, height, fps);
   if (!videoConfig) throw new EncoderSetupError();
 
-  // Decode the video's own audio (if any) and offline-mix every external
-  // track into one stereo buffer representing the trimmed timeline.
-  const baseAudio = opts.file ? await decodeAudio(opts.file) : null;
+  // Decode the source audio (single clip: its own track; sequence: every
+  // clip's trimmed range concatenated) and offline-mix external tracks.
+  let baseBuffer: AudioBuffer | null = null;
+  let audioTrimStart = trimStart;
+  let audioTrimEnd = trimEnd;
+  if (multi) {
+    baseBuffer = await buildSequenceAudio(segments, MIX_SAMPLE_RATE);
+    audioTrimStart = 0;
+    audioTrimEnd = baseBuffer ? baseBuffer.duration : 0;
+  } else {
+    baseBuffer = opts.file ? (await decodeAudio(opts.file))?.buffer ?? null : null;
+  }
   const mixedAudio = await mixTimelineAudio({
-    baseBuffer: baseAudio?.buffer ?? null,
+    baseBuffer,
     tracks: opts.audioTracks ?? [],
-    trimStart,
-    trimEnd,
+    trimStart: audioTrimStart,
+    trimEnd: audioTrimEnd,
     sampleRate: MIX_SAMPLE_RATE,
   });
   const audioConfig = mixedAudio
@@ -291,14 +422,14 @@ async function exportWithWebCodecs(
   let finalized = false;
   try {
     throwIfAborted(signal);
-    if (video.readyState < 1) await waitForEvent(video, "loadedmetadata");
 
     for (let i = 0; i < totalFrames; i++) {
       throwIfAborted(signal);
-      const sourceTime = sourceTimes[i] ?? trimEnd;
-      await seekTo(video, sourceTime);
+      const { segment, sourceTime } = plan[i];
+      const sourceVideo = segment.video;
+      await seekTo(sourceVideo, sourceTime);
       throwIfAborted(signal);
-      renderFrame(ctx, sourceTime);
+      renderFrame(ctx, sourceTime, sourceVideo);
 
       const frame = new VideoFrame(ctx.canvas, {
         timestamp: Math.round((i / fps) * 1e6),
@@ -308,11 +439,12 @@ async function exportWithWebCodecs(
       frame.close();
 
       if (audioEncoder && mixedAudio) {
-        if (ramped) {
+        if (ramped && !multi) {
           // Resample the mixed source audio across the variable step so the
           // audio follows the velocity curve (pitch shifts like real speed-up).
           const t0 = Math.max(0, sourceTime - trimStart);
-          const nextSource = i + 1 < totalFrames ? sourceTimes[i + 1] : trimEnd;
+          const nextSource =
+            i + 1 < totalFrames ? plan[i + 1].sourceTime : trimEnd;
           const t1 = Math.max(t0, nextSource - trimStart);
           const data = new Float32Array(samplesPerFrame * 2);
           for (let channel = 0; channel < 2; channel++) {
@@ -466,6 +598,12 @@ async function exportWithMediaRecorder(
   const { video, renderFrame, width, height, trimStart, trimEnd, onProgress, signal } =
     opts;
   const fps = opts.fps ?? EXPORT_FPS;
+
+  if (opts.segments && opts.segments.length > 1) {
+    throw new Error(
+      "Merging multiple clips needs WebCodecs. Try Chrome or Edge, or export clips one at a time."
+    );
+  }
   const speedPoints = opts.speedPoints ?? [];
   const totalFrames = Math.max(
     1,
@@ -564,7 +702,7 @@ async function exportWithMediaRecorder(
         const rate = speedAt(speedPoints, video.currentTime);
         if (Math.abs(video.playbackRate - rate) > 0.001) video.playbackRate = rate;
       }
-      renderFrame(ctx, video.currentTime);
+      renderFrame(ctx, video.currentTime, video);
       const progress = clamp01((video.currentTime - trimStart) / (trimEnd - trimStart));
       const percent = Math.round(progress * 100);
       const frame = Math.min(

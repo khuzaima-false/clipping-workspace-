@@ -2,9 +2,20 @@
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
-import { ArrowLeft, Coins, Download, Gift } from "lucide-react";
+import {
+  ArrowLeft,
+  Captions,
+  Coins,
+  Crop,
+  Download,
+  Film,
+  Gift,
+  Scissors,
+  Type,
+} from "lucide-react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { cn } from "@/lib/utils";
 import type { Project } from "@/types/database";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useEditorStore } from "@/store/editor";
@@ -14,14 +25,26 @@ import {
   InsufficientCreditsError,
   downloadFile,
   exportVideo,
+  type ExportSegment,
 } from "@/lib/exporter";
 import { useWorkspaceStore } from "@/store/workspace";
 import { EXPORT_CREDIT_COST } from "@/lib/credits";
 import { LeftPanel } from "@/components/editor/left-panel";
 import { PreviewPanel } from "@/components/editor/preview-panel";
 import { RightPanel } from "@/components/editor/right-panel";
+import { MediaLibrary } from "@/components/editor/media-library";
 import { ExportDialog, type ExportRun } from "@/components/editor/export-dialog";
 import { ReferralModal } from "@/components/credits/referral-modal";
+
+/** CapCut-style mobile action bar tabs. */
+const MOBILE_TABS = [
+  { id: "media", label: "Media", icon: Film, panel: "left" as const },
+  { id: "cut", label: "Cut", icon: Scissors, panel: "left" as const },
+  { id: "captions", label: "Captions", icon: Captions, panel: "left" as const },
+  { id: "text", label: "Text", icon: Type, panel: "right" as const },
+  { id: "ratio", label: "Ratio", icon: Crop, panel: "left" as const },
+  { id: "export", label: "Export", icon: Download, panel: null },
+] as const;
 
 function fileNameFor(title: string, extension: string): string {
   const slug =
@@ -57,6 +80,7 @@ function EditorView() {
   const hasVideo = useEditorStore((state) => state.videoEl !== null);
   const [exportRun, setExportRun] = useState<ExportRun | null>(null);
   const [referralOpen, setReferralOpen] = useState(false);
+  const [mobilePanel, setMobilePanel] = useState<"left" | "right" | null>(null);
 
   const profile = useWorkspaceStore((state) => state.profile);
   const loadProfile = useWorkspaceStore((state) => state.loadProfile);
@@ -106,10 +130,10 @@ function EditorView() {
     };
   }, [projectId]);
 
-  // Restore the source video persisted in IndexedDB for this project (if any).
+  // Load the project's media library + clip sequence from IndexedDB.
   useEffect(() => {
     if (!projectId) return;
-    void useEditorStore.getState().restoreVideo(projectId);
+    void useEditorStore.getState().loadProjectMedia(projectId);
   }, [projectId]);
 
   // Release the blob URL, video element, and preview state when leaving.
@@ -190,6 +214,39 @@ function EditorView() {
       activeEffects: state.activeEffects,
     };
 
+    // Multi-clip: build a decoder per sequence clip so the exporter can merge
+    // them into one output. A single clip uses the live preview element.
+    const createdUrls: string[] = [];
+    let segments: ExportSegment[] | undefined;
+    if (state.sequence.length > 1) {
+      segments = [];
+      for (const clip of state.sequence) {
+        const asset = state.assets.find((item) => item.id === clip.assetId);
+        if (!asset) continue;
+        const url = URL.createObjectURL(asset.blob);
+        createdUrls.push(url);
+        const el = document.createElement("video");
+        el.preload = "auto";
+        el.playsInline = true;
+        el.src = url;
+        const file =
+          asset.blob instanceof File
+            ? asset.blob
+            : new File([asset.blob], asset.name, {
+                type: asset.blob.type || "video/mp4",
+              });
+        segments.push({
+          video: el,
+          trimStart: clip.trimStart,
+          trimEnd: clip.trimEnd,
+          file,
+        });
+      }
+    }
+    const releaseSegments = () => {
+      for (const url of createdUrls) URL.revokeObjectURL(url);
+    };
+
     setExportRun({
       status: "running",
       label: "Preparing export…",
@@ -200,16 +257,17 @@ function EditorView() {
     try {
       const result = await exportVideo({
         video,
-        renderFrame: (ctx, time) =>
-          drawScene(ctx, video, { ...scene, sceneTime: time }),
+        renderFrame: (ctx, time, frameVideo) =>
+          drawScene(ctx, frameVideo, { ...scene, sceneTime: time }),
         width,
         height,
         trimStart,
         trimEnd,
         fps: EXPORT_FPS,
         file: state.videoFile,
+        segments: segments && segments.length > 1 ? segments : undefined,
         audioTracks: state.audioTracks,
-        speedPoints: state.speedPoints,
+        speedPoints: segments ? [] : state.speedPoints,
         // Server-side credit gate: spends the export cost before rendering.
         authorize: async () => {
           const result = await useWorkspaceStore
@@ -240,7 +298,9 @@ function EditorView() {
         usedFallback: result.usedFallback,
         controller,
       });
+      releaseSegments();
     } catch (err) {
+      releaseSegments();
       if (err instanceof DOMException && err.name === "AbortError") {
         setExportRun(null);
         return;
@@ -276,7 +336,7 @@ function EditorView() {
   const exporting = exportRun?.status === "running";
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4 pb-24 lg:pb-0">
       {/* Top bar */}
       <div className="flex flex-wrap items-center gap-3">
         <Link
@@ -352,11 +412,71 @@ function EditorView() {
           Project not found.
         </p>
       ) : (
-        <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)_300px] xl:grid-cols-[300px_minmax(0,1fr)_320px]">
-          <LeftPanel onRequireCredits={() => setReferralOpen(true)} />
-          <PreviewPanel />
-          <RightPanel />
-        </div>
+        <>
+          <div className="grid gap-4 lg:grid-cols-[300px_minmax(0,1fr)_320px]">
+            {/* Left column — media library + editing controls */}
+            <div
+              className={cn(
+                "space-y-4",
+                mobilePanel === "left" ? "block" : "hidden lg:block"
+              )}
+            >
+              <MediaLibrary />
+              <LeftPanel onRequireCredits={() => setReferralOpen(true)} />
+            </div>
+
+            {/* Centered preview — first on mobile */}
+            <div className="order-first min-w-0 lg:order-none">
+              <PreviewPanel />
+            </div>
+
+            {/* Right column — text / colour / speed styling */}
+            <div
+              className={cn(
+                mobilePanel === "right" ? "block" : "hidden lg:block"
+              )}
+            >
+              <RightPanel />
+            </div>
+          </div>
+
+          {/* Mobile CapCut-style bottom action bar */}
+          <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-zinc-800/80 bg-zinc-950/90 backdrop-blur-xl lg:hidden">
+            <div className="mx-auto flex max-w-2xl items-stretch justify-between gap-1 px-2 py-1.5">
+              {MOBILE_TABS.map((tabItem) => {
+                const TabIcon = tabItem.icon;
+                const active =
+                  tabItem.panel !== null && mobilePanel === tabItem.panel;
+                return (
+                  <button
+                    key={tabItem.id}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => {
+                      if (tabItem.id === "export") {
+                        void handleExport();
+                        return;
+                      }
+                      const panel = tabItem.panel;
+                      setMobilePanel((current) =>
+                        current === panel ? null : panel
+                      );
+                    }}
+                    className={cn(
+                      "flex flex-1 flex-col items-center gap-1 rounded-xl px-1 py-2 text-[10px] font-medium transition-colors",
+                      active
+                        ? "bg-violet-600/15 text-violet-200"
+                        : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100"
+                    )}
+                  >
+                    <TabIcon className="h-5 w-5" aria-hidden />
+                    {tabItem.label}
+                  </button>
+                );
+              })}
+            </div>
+          </nav>
+        </>
       )}
 
       <ExportDialog run={exportRun} onClose={() => setExportRun(null)} />

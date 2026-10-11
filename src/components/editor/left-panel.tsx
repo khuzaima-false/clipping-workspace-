@@ -25,6 +25,7 @@ import {
 } from "@/store/editor";
 import { useWorkspaceStore } from "@/store/workspace";
 import { CAPTIONS_CREDIT_COST } from "@/lib/credits";
+import { CAPTION_LANGUAGES, type CaptionLanguageId } from "@/lib/transcribe";
 import { ASPECT_RESOLUTIONS } from "@/lib/render";
 import { cn } from "@/lib/utils";
 
@@ -116,7 +117,11 @@ export function LeftPanel({ onRequireCredits }: LeftPanelProps = {}) {
 
   const videoName = useEditorStore((state) => state.videoName);
   const videoError = useEditorStore((state) => state.videoError);
-  const loadVideo = useEditorStore((state) => state.loadVideo);
+  const addVideoAssets = useEditorStore((state) => state.addVideoAssets);
+  const captionLanguage = useEditorStore((state) => state.captionLanguage);
+  const setCaptionLanguage = useEditorStore(
+    (state) => state.setCaptionLanguage
+  );
 
   const aspect = useEditorStore((state) => state.aspect);
   const setAspect = useEditorStore((state) => state.setAspect);
@@ -160,8 +165,7 @@ export function LeftPanel({ onRequireCredits }: LeftPanelProps = {}) {
   const clearEffects = useEditorStore((state) => state.clearEffects);
 
   function handleFileList(files: FileList | null) {
-    const file = files?.[0];
-    if (file) loadVideo(file);
+    if (files && files.length > 0) void addVideoAssets(files);
   }
 
   function handleAudioList(files: FileList | null) {
@@ -255,13 +259,14 @@ export function LeftPanel({ onRequireCredits }: LeftPanelProps = {}) {
             Drag &amp; drop your video
           </span>
           <span className="text-[11px] text-zinc-500">
-            MP4 or WebM · click to browse
+            MP4 or WebM · multiple clips allowed
           </span>
         </div>
         <input
           ref={inputRef}
           type="file"
           accept="video/mp4,video/webm,video/*"
+          multiple
           className="hidden"
           onChange={(event) => {
             handleFileList(event.target.files);
@@ -370,6 +375,28 @@ export function LeftPanel({ onRequireCredits }: LeftPanelProps = {}) {
       {/* Text overlays */}
       <section className="space-y-2">
         <h2 className={sectionTitle}>Text &amp; Captions</h2>
+
+        <label className="block">
+          <span className="mb-1 block text-[11px] font-medium text-zinc-400">
+            Spoken language
+          </span>
+          <select
+            value={captionLanguage}
+            onChange={(event) =>
+              setCaptionLanguage(event.target.value as CaptionLanguageId)
+            }
+            className="w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs text-zinc-100 focus:border-violet-500 focus:outline-none"
+          >
+            {CAPTION_LANGUAGES.map((language) => (
+              <option key={language.id} value={language.id}>
+                {language.label}
+              </option>
+            ))}
+          </select>
+          <span className="mt-1 block text-[10px] leading-4 text-zinc-500">
+            Auto-detect works for most languages; pick one for the best accuracy.
+          </span>
+        </label>
 
         {/* AI auto captions */}
         <button

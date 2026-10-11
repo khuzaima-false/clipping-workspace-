@@ -1,5 +1,13 @@
 import { create } from "zustand";
-import { loadVideoSource, saveVideoSource } from "@/lib/video-storage";
+import {
+  loadProjectMedia,
+  loadVideoSource,
+  saveProjectMedia,
+  saveVideoSource,
+  type TimelineClip,
+  type VideoAsset,
+} from "@/lib/video-storage";
+import type { CaptionLanguageId } from "@/lib/transcribe";
 
 export type AspectRatio = "9:16" | "16:9" | "1:1";
 export type VideoFit = "contain" | "cover";
@@ -300,6 +308,19 @@ type EditorState = {
   /** True while restoring a persisted source video from IndexedDB. */
   videoRestoring: boolean;
 
+  /** Uploaded media library (multiple clips per project, persisted in IndexedDB). */
+  assets: VideoAsset[];
+  /** Ordered clip sequence used to merge clips into one export. */
+  sequence: TimelineClip[];
+  /** Sequence clip currently loaded in the preview/editor. */
+  activeClipId: string | null;
+  /** True while the project's media library is loading. */
+  assetsLoading: boolean;
+  /** Trim applied once a selected clip's metadata loads. */
+  pendingTrim: { trimStart: number; trimEnd: number } | null;
+  /** Spoken language used for AI caption transcription. */
+  captionLanguage: CaptionLanguageId;
+
   duration: number;
   currentTime: number;
   trimStart: number;
@@ -347,6 +368,25 @@ type EditorState = {
   loadVideoBlob: (blob: Blob, name: string) => void;
   /** Restores the source video persisted for `projectId`, if available. */
   restoreVideo: (projectId: string) => Promise<void>;
+  /** Sets the language used for AI caption transcription. */
+  setCaptionLanguage: (language: CaptionLanguageId) => void;
+  /** Loads the project's media library + sequence and the first clip. */
+  loadProjectMedia: (projectId: string) => Promise<void>;
+  /** Adds one or more videos to the library and the timeline sequence. */
+  addVideoAssets: (files: FileList | File[]) => Promise<void>;
+  /** Removes a library asset and any sequence clips that used it. */
+  removeAsset: (assetId: string) => void;
+  /** Loads a sequence clip into the preview/editor. */
+  selectClip: (clipId: string) => void;
+  /** Removes a clip from the sequence. */
+  removeClip: (clipId: string) => void;
+  /** Reorders a clip up (-1) or down (+1). */
+  moveClip: (clipId: string, direction: -1 | 1) => void;
+  /** Updates a clip's trim range. */
+  setClipTrim: (
+    clipId: string,
+    patch: { trimStart?: number; trimEnd?: number }
+  ) => void;
   resetEditor: () => void;
   seek: (time: number) => void;
   /** Moves the playhead by `delta` frames (negative steps backwards). */
@@ -405,6 +445,25 @@ function releaseVideo(el: HTMLVideoElement | null, url: string | null): void {
   if (url) URL.revokeObjectURL(url);
 }
 
+/** True when the file looks like an importable video. */
+function isVideoFile(file: File): boolean {
+  return (
+    file.type.startsWith("video/") || /\.(mp4|webm|mov|m4v)$/i.test(file.name)
+  );
+}
+
+/** Persists a project's media library + sequence (best-effort). */
+function persistProjectMedia(
+  projectId: string | null,
+  assets: VideoAsset[],
+  sequence: TimelineClip[]
+): void {
+  if (!projectId) return;
+  void saveProjectMedia(projectId, { assets, sequence }).catch(() => {
+    // IndexedDB can fail (quota / private mode); the session still works.
+  });
+}
+
 export const useEditorStore = create<EditorState>((set, get) => ({
   videoEl: null,
   videoUrl: null,
@@ -415,6 +474,13 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   projectId: null,
   videoMissing: false,
   videoRestoring: false,
+
+  assets: [],
+  sequence: [],
+  activeClipId: null,
+  assetsLoading: false,
+  pendingTrim: null,
+  captionLanguage: "auto",
 
   duration: 0,
   currentTime: 0,
@@ -512,14 +578,26 @@ export const useEditorStore = create<EditorState>((set, get) => ({
                 time: Math.min(point.time, value),
               }))
             : buildSpeedPreset(preset, value);
+      // Restore a clip's saved trims when re-selecting it; otherwise default
+      // to the full range.
+      const pending = get().pendingTrim;
+      const trimStart = pending
+        ? Math.min(Math.max(pending.trimStart, 0), value)
+        : 0;
+      const trimEnd = pending
+        ? Math.min(Math.max(pending.trimEnd, trimStart + 0.1), value)
+        : value;
       set({
         duration: value,
-        trimStart: 0,
-        trimEnd: value,
+        trimStart,
+        trimEnd,
         currentTime: 0,
+        pendingTrim: null,
         overlays: clampOverlaysToDuration(get().overlays, value),
         speedPoints,
       });
+      const activeId = get().activeClipId;
+      if (activeId) get().setClipTrim(activeId, { trimStart, trimEnd });
     };
 
     el.addEventListener("loadedmetadata", () => {
@@ -599,6 +677,170 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     }
   },
 
+  setCaptionLanguage: (language) => set({ captionLanguage: language }),
+
+  loadProjectMedia: async (projectId) => {
+    set({ projectId, assetsLoading: true });
+    try {
+      const media = await loadProjectMedia(projectId);
+      if (get().projectId !== projectId) return;
+      set({
+        assets: media.assets,
+        sequence: media.sequence,
+        assetsLoading: false,
+      });
+
+      const firstClip = media.sequence[0];
+      const asset = firstClip
+        ? media.assets.find((item) => item.id === firstClip.assetId)
+        : undefined;
+      if (firstClip && asset) {
+        set({
+          activeClipId: firstClip.id,
+          pendingTrim: {
+            trimStart: firstClip.trimStart,
+            trimEnd: firstClip.trimEnd,
+          },
+        });
+        get().loadVideoBlob(asset.blob, asset.name);
+        return;
+      }
+      if (media.assets.length === 0) set({ videoMissing: true });
+    } catch {
+      set({ assetsLoading: false, videoMissing: true });
+    }
+  },
+
+  addVideoAssets: async (files) => {
+    const list = Array.from(files).filter(isVideoFile);
+    if (list.length === 0) {
+      set({ videoError: "Please choose MP4 or WebM video files." });
+      return;
+    }
+
+    const assets = [...get().assets];
+    const sequence = [...get().sequence];
+    const newClips: TimelineClip[] = [];
+    for (const file of list) {
+      const asset: VideoAsset = {
+        id: createId("asset"),
+        name: file.name,
+        type: file.type || "video/mp4",
+        size: file.size,
+        updatedAt: Date.now(),
+        blob: file,
+      };
+      assets.push(asset);
+      const clip: TimelineClip = {
+        id: createId("clip"),
+        assetId: asset.id,
+        trimStart: 0,
+        trimEnd: 0,
+      };
+      sequence.push(clip);
+      newClips.push(clip);
+    }
+
+    set({ assets, sequence, videoError: null });
+    persistProjectMedia(get().projectId, assets, sequence);
+
+    const firstClip = newClips[0];
+    const firstAsset = assets.find((asset) => asset.id === firstClip.assetId);
+    if (firstAsset) {
+      set({ activeClipId: firstClip.id, pendingTrim: null });
+      get().loadVideoBlob(firstAsset.blob, firstAsset.name);
+    }
+  },
+
+  removeAsset: (assetId) => {
+    const assets = get().assets.filter((asset) => asset.id !== assetId);
+    const sequence = get().sequence.filter((clip) => clip.assetId !== assetId);
+    set({ assets, sequence });
+    persistProjectMedia(get().projectId, assets, sequence);
+
+    const activeGone =
+      !get().activeClipId ||
+      !sequence.some((clip) => clip.id === get().activeClipId);
+    if (activeGone && get().activeClipId) {
+      const { videoEl, videoUrl } = get();
+      releaseVideo(videoEl, videoUrl);
+      set({
+        videoEl: null,
+        videoUrl: null,
+        videoFile: null,
+        videoName: null,
+        activeClipId: null,
+        pendingTrim: null,
+        duration: 0,
+        currentTime: 0,
+        trimStart: 0,
+        trimEnd: 0,
+        playing: false,
+        videoMissing: sequence.length === 0,
+      });
+      const next = sequence[0];
+      if (next) get().selectClip(next.id);
+    }
+  },
+
+  selectClip: (clipId) => {
+    const clip = get().sequence.find((item) => item.id === clipId);
+    if (!clip) return;
+    const asset = get().assets.find((item) => item.id === clip.assetId);
+    if (!asset) return;
+    set({
+      activeClipId: clipId,
+      pendingTrim: { trimStart: clip.trimStart, trimEnd: clip.trimEnd },
+    });
+    get().loadVideoBlob(asset.blob, asset.name);
+  },
+
+  removeClip: (clipId) => {
+    const sequence = get().sequence.filter((clip) => clip.id !== clipId);
+    set({ sequence });
+    persistProjectMedia(get().projectId, get().assets, sequence);
+
+    if (get().activeClipId === clipId) {
+      const { videoEl, videoUrl } = get();
+      releaseVideo(videoEl, videoUrl);
+      set({
+        videoEl: null,
+        videoUrl: null,
+        videoFile: null,
+        videoName: null,
+        activeClipId: null,
+        pendingTrim: null,
+        duration: 0,
+        currentTime: 0,
+        trimStart: 0,
+        trimEnd: 0,
+        playing: false,
+        videoMissing: sequence.length === 0,
+      });
+      const next = sequence[0];
+      if (next) get().selectClip(next.id);
+    }
+  },
+
+  moveClip: (clipId, direction) => {
+    const sequence = [...get().sequence];
+    const index = sequence.findIndex((clip) => clip.id === clipId);
+    const target = index + direction;
+    if (index < 0 || target < 0 || target >= sequence.length) return;
+    const [clip] = sequence.splice(index, 1);
+    sequence.splice(target, 0, clip);
+    set({ sequence });
+    persistProjectMedia(get().projectId, get().assets, sequence);
+  },
+
+  setClipTrim: (clipId, patch) => {
+    const sequence = get().sequence.map((clip) =>
+      clip.id === clipId ? { ...clip, ...patch } : clip
+    );
+    set({ sequence });
+    persistProjectMedia(get().projectId, get().assets, sequence);
+  },
+
   resetEditor: () => {
     const { videoEl, videoUrl, audioTracks } = get();
     releaseVideo(videoEl, videoUrl);
@@ -613,6 +855,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       projectId: null,
       videoMissing: false,
       videoRestoring: false,
+      assets: [],
+      sequence: [],
+      activeClipId: null,
+      assetsLoading: false,
+      pendingTrim: null,
+      captionLanguage: "auto",
       duration: 0,
       currentTime: 0,
       trimStart: 0,
@@ -681,6 +929,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const { trimEnd, duration } = get();
     const max = Math.max(0, Math.min(trimEnd - 0.1, duration || trimEnd));
     set({ trimStart: Math.min(Math.max(time, 0), max) });
+    const id = get().activeClipId;
+    if (id) get().setClipTrim(id, { trimStart: get().trimStart });
   },
 
   setTrimEnd: (time) => {
@@ -688,6 +938,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     if (duration <= 0) return;
     const min = Math.min(Math.max(trimStart + 0.1, 0), duration);
     set({ trimEnd: Math.max(Math.min(time, duration), min) });
+    const id = get().activeClipId;
+    if (id) get().setClipTrim(id, { trimEnd: get().trimEnd });
   },
 
   resetTrim: () => {
@@ -779,6 +1031,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       const { buildAutoCaptions } = await import("@/lib/captions");
 
       const words = await transcribeVideoFile(videoFile, {
+        language: get().captionLanguage,
         onProgress: (status, progress) =>
           set({
             transcribingStatus: status,

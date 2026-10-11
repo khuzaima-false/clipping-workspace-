@@ -40,7 +40,7 @@ export function PreviewPanel() {
   const hasVideo = useEditorStore((state) => state.videoEl !== null);
   const videoMissing = useEditorStore((state) => state.videoMissing);
   const videoRestoring = useEditorStore((state) => state.videoRestoring);
-  const loadVideo = useEditorStore((state) => state.loadVideo);
+  const addVideoAssets = useEditorStore((state) => state.addVideoAssets);
 
   const seek = useEditorStore((state) => state.seek);
   const setPlaying = useEditorStore((state) => state.setPlaying);
@@ -218,10 +218,12 @@ export function PreviewPanel() {
               ref={fileInputRef}
               type="file"
               accept="video/mp4,video/webm,video/*"
+              multiple
               className="hidden"
               onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (file) loadVideo(file);
+                if (event.target.files?.length) {
+                  void addVideoAssets(event.target.files);
+                }
                 event.target.value = "";
               }}
             />

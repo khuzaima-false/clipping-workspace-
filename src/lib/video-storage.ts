@@ -55,3 +55,63 @@ export async function deleteVideoSource(projectId: string): Promise<void> {
   if (!projectId || !idbAvailable()) return;
   await del(keyFor(projectId), store);
 }
+
+/* -------------------------------------------------------------------------- */
+/* Multi-clip media library (multiple videos per project)                      */
+/* -------------------------------------------------------------------------- */
+
+const mediaStore = createStore("forgevyn-editor", "project-media");
+const mediaKeyFor = (projectId: string) => `media:${projectId}`;
+
+/** One uploaded video in a project's media library. */
+export type VideoAsset = {
+  id: string;
+  name: string;
+  type: string;
+  size: number;
+  updatedAt: number;
+  blob: Blob;
+};
+
+/** One clip placed on the timeline sequence, referencing a library asset. */
+export type TimelineClip = {
+  id: string;
+  assetId: string;
+  /** Seconds trimmed from the start of the source. */
+  trimStart: number;
+  /** Seconds trimmed to the end of the source. */
+  trimEnd: number;
+};
+
+export type ProjectMedia = {
+  assets: VideoAsset[];
+  /** Ordered clips that make up the exported sequence. */
+  sequence: TimelineClip[];
+};
+
+/** Reads a project's media library + timeline sequence (empty when none). */
+export async function loadProjectMedia(
+  projectId: string
+): Promise<ProjectMedia> {
+  if (!projectId || !idbAvailable()) return { assets: [], sequence: [] };
+  const value = await get<ProjectMedia>(mediaKeyFor(projectId), mediaStore);
+  if (!value) return { assets: [], sequence: [] };
+  const assets = Array.isArray(value.assets)
+    ? value.assets.filter((asset) => asset?.blob instanceof Blob)
+    : [];
+  const sequence = Array.isArray(value.sequence)
+    ? value.sequence.filter((clip) =>
+        assets.some((asset) => asset.id === clip.assetId)
+      )
+    : [];
+  return { assets, sequence };
+}
+
+/** Persists a project's media library + timeline sequence. */
+export async function saveProjectMedia(
+  projectId: string,
+  media: ProjectMedia
+): Promise<void> {
+  if (!projectId || !idbAvailable()) return;
+  await set(mediaKeyFor(projectId), media, mediaStore);
+}

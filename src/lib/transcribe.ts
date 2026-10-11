@@ -11,11 +11,33 @@ import type { CaptionWord } from "@/store/editor";
 
 /** Whisper checkpoints known to work well with the WASM backend. */
 export const WHISPER_MODELS = {
-  tiny: "Xenova/whisper-tiny.en",
-  small: "Xenova/whisper-small.en",
+  tiny: "Xenova/whisper-tiny",
+  small: "Xenova/whisper-small",
 } as const;
 
 export type WhisperModelId = (typeof WHISPER_MODELS)[keyof typeof WHISPER_MODELS];
+
+/** Languages offered in the caption language picker. */
+export const CAPTION_LANGUAGES = [
+  { id: "auto", label: "Auto-detect" },
+  { id: "english", label: "English" },
+  { id: "urdu", label: "Urdu" },
+  { id: "hindi", label: "Hindi" },
+  { id: "spanish", label: "Spanish" },
+  { id: "french", label: "French" },
+  { id: "german", label: "German" },
+  { id: "arabic", label: "Arabic" },
+  { id: "portuguese", label: "Portuguese" },
+  { id: "italian", label: "Italian" },
+  { id: "japanese", label: "Japanese" },
+  { id: "korean", label: "Korean" },
+  { id: "chinese", label: "Chinese" },
+  { id: "russian", label: "Russian" },
+  { id: "turkish", label: "Turkish" },
+  { id: "indonesian", label: "Indonesian" },
+] as const;
+
+export type CaptionLanguageId = (typeof CAPTION_LANGUAGES)[number]["id"];
 
 /** Whisper always expects 16 kHz audio. */
 const WHISPER_SAMPLE_RATE = 16000;
@@ -25,8 +47,10 @@ const STRIDE_LENGTH_S = 5;
 export type TranscribeProgressHandler = (status: string, progress: number) => void;
 
 export type TranscribeOptions = {
-  /** Which checkpoint to load. Defaults to the fast `whisper-tiny.en`. */
+  /** Which checkpoint to load. Defaults to the fast `whisper-tiny`. */
   model?: WhisperModelId;
+  /** Spoken language, or `"auto"`/undefined to let Whisper detect it. */
+  language?: CaptionLanguageId;
   /** Called as the model downloads and the audio is transcribed. */
   onProgress?: TranscribeProgressHandler;
 };
@@ -96,6 +120,7 @@ export async function transcribeVideoFile(
 ): Promise<CaptionWord[]> {
   const report = options.onProgress ?? (() => {});
   const model = options.model ?? WHISPER_MODELS.tiny;
+  const language = options.language;
 
   report("Extracting audio…", 1);
   const audio = await extractMonoAudio(file);
@@ -155,6 +180,8 @@ export async function transcribeVideoFile(
     chunk_length_s: CHUNK_LENGTH_S,
     stride_length_s: STRIDE_LENGTH_S,
     task: "transcribe",
+    // Omit `language` entirely to let Whisper auto-detect the spoken language.
+    ...(language && language !== "auto" ? { language } : {}),
     chunk_callback: () => {
       processedChunks += 1;
       const fraction = Math.min(1, processedChunks / estimatedChunks);
