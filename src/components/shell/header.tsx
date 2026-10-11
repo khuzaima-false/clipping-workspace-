@@ -18,6 +18,7 @@ import { createClient } from "@/lib/supabase/client";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
 import { SignOutButton } from "@/components/auth/sign-out-button";
 import { ReferralModal } from "@/components/credits/referral-modal";
+import { Logo } from "@/components/ui/logo";
 import { useWorkspaceStore } from "@/store/workspace";
 
 type HeaderProps = {
@@ -108,6 +109,15 @@ export function Header({ onMenuClick }: HeaderProps) {
       >
         <Menu className="h-5 w-5" aria-hidden />
       </button>
+
+      {/* Mobile brand — the sidebar lockup is hidden below `lg`. */}
+      <Link
+        href="/dashboard"
+        aria-label="Forgevyn Clipping home"
+        className="flex items-center lg:hidden"
+      >
+        <Logo size="sm" />
+      </Link>
 
       {/* Active channel switcher — global Zustand state */}
       <div className="relative" ref={channelRef}>

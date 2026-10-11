@@ -6,6 +6,7 @@ import {
   Sparkles,
   TrendingUp,
 } from "lucide-react";
+import { Logo } from "@/components/ui/logo";
 
 const PERKS = [
   { icon: Clapperboard, text: "30 free daily credits — 15 1080p exports every day" },
@@ -35,14 +36,8 @@ export default async function ReferralLandingPage({
 
   return (
     <div className="flex min-h-screen flex-col bg-zinc-950 text-zinc-100">
-      <header className="flex items-center gap-2.5 px-6 py-5">
-        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-600 text-white">
-          <Clapperboard className="h-4.5 w-4.5" aria-hidden />
-        </span>
-        <span className="text-sm font-semibold tracking-tight text-zinc-100">
-          Forgevyn
-          <span className="text-zinc-500"> Clipping</span>
-        </span>
+      <header className="flex items-center px-6 py-5">
+        <Logo size="md" />
       </header>
 
       <main className="flex flex-1 items-center justify-center px-4 pb-16">

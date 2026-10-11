@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Clapperboard, X } from "lucide-react";
+import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AdSlot } from "@/components/credits/ad-slot";
+import { Logo } from "@/components/ui/logo";
 import { NAV_ITEMS } from "./nav-items";
 
 type SidebarProps = {
@@ -34,14 +35,8 @@ export function Sidebar({ open, onClose }: SidebarProps) {
         )}
       >
         <div className="flex h-16 items-center justify-between gap-2 border-b border-zinc-800 px-5">
-          <Link href="/dashboard" className="flex items-center gap-2.5" onClick={onClose}>
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-600 text-white">
-              <Clapperboard className="h-4.5 w-4.5" aria-hidden />
-            </span>
-            <span className="text-sm font-semibold tracking-tight text-zinc-100">
-              Forgevyn
-              <span className="text-zinc-500"> Clipping</span>
-            </span>
+          <Link href="/dashboard" className="flex items-center" onClick={onClose}>
+            <Logo size="md" />
           </Link>
           <button
             type="button"

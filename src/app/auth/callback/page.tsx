@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Clapperboard } from "lucide-react";
+import { Logo } from "@/components/ui/logo";
 import { createClient } from "@/lib/supabase/client";
 
 /**
@@ -64,9 +64,7 @@ function CallbackHandler() {
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-zinc-950 px-6 text-center">
-      <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500 to-fuchsia-600 text-white">
-        <Clapperboard className="h-6 w-6" aria-hidden />
-      </span>
+      <Logo size="lg" iconOnly />
       <p className="text-sm text-zinc-400">{message}</p>
     </div>
   );
