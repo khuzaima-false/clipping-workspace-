@@ -160,6 +160,7 @@ function ProjectBinPanel({ onRequireCredits }: { onRequireCredits?: () => void }
   const sequence = useEditorStore((s) => s.sequence);
   const addVideoAssets = useEditorStore((s) => s.addVideoAssets);
   const selectClip = useEditorStore((s) => s.selectClip);
+  const removeClip = useEditorStore((s) => s.removeClip);
   const activeClipId = useEditorStore((s) => s.activeClipId);
   const currentTime = useEditorStore((s) => s.currentTime);
 
@@ -285,12 +286,12 @@ function ProjectBinPanel({ onRequireCredits }: { onRequireCredits?: () => void }
             ) : (
               <ul className="space-y-1.5">
                 {sequence.map((clip, index) => (
-                  <li key={clip.id}>
+                  <li key={clip.id} className="flex items-center gap-1">
                     <button
                       type="button"
                       onClick={() => selectClip(clip.id)}
                       className={cn(
-                        "flex w-full items-center gap-2 rounded-lg border px-2 py-2 text-left text-xs transition-colors",
+                        "flex min-w-0 flex-1 items-center gap-2 rounded-lg border px-2 py-2 text-left text-xs transition-colors",
                         clip.id === activeClipId
                           ? "border-violet-500/50 bg-violet-500/10 text-violet-100"
                           : "border-zinc-800 bg-zinc-950/50 text-zinc-300 hover:border-zinc-600"
@@ -303,6 +304,14 @@ function ProjectBinPanel({ onRequireCredits }: { onRequireCredits?: () => void }
                       <span className="shrink-0 text-[10px] text-zinc-500">
                         {(Math.max(0, clip.trimEnd - clip.trimStart)).toFixed(1)}s
                       </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => removeClip(clip.id)}
+                      aria-label={`Remove ${nameFor(clip.assetId)}`}
+                      className="shrink-0 rounded-lg border border-zinc-800 p-2 text-zinc-500 transition-colors hover:border-red-500/40 hover:text-red-400"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" aria-hidden />
                     </button>
                   </li>
                 ))}
@@ -1153,6 +1162,8 @@ function PremiereTimeline() {
   const setClipTrim = useEditorStore((s) => s.setClipTrim);
   const setTrimStart = useEditorStore((s) => s.setTrimStart);
   const setTrimEnd = useEditorStore((s) => s.setTrimEnd);
+  const removeClip = useEditorStore((s) => s.removeClip);
+  const removeAudioTrack = useEditorStore((s) => s.removeAudioTrack);
 
   const [pps, setPps] = useState(48);
   const [toggles, setToggles] = useState<Record<TrackKey, { m: boolean; s: boolean; lock: boolean; eye: boolean }>>({
@@ -1359,7 +1370,7 @@ function PremiereTimeline() {
               {videoBlocks.map(({ clip, start, dur }) => (
                 <div
                   key={clip.id}
-                  className="absolute inset-y-1.5"
+                  className="group absolute inset-y-1.5"
                   style={{ left: `${start * pps}px`, width: `${Math.max(28, dur * pps)}px` }}
                 >
                   <button
@@ -1389,6 +1400,17 @@ function PremiereTimeline() {
                     onPointerUp={onTrimUp}
                     className="absolute inset-y-0 right-0 w-2 cursor-ew-resize rounded-r-md bg-white/25 transition-colors hover:bg-white/60"
                   />
+                  <button
+                    type="button"
+                    aria-label="Delete clip"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeClip(clip.id);
+                    }}
+                    className="absolute right-1 top-0.5 z-10 flex h-4 w-4 items-center justify-center rounded bg-black/75 text-zinc-100 opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100"
+                  >
+                    <Trash2 className="h-3 w-3" aria-hidden />
+                  </button>
                 </div>
               ))}
             </div>
@@ -1399,12 +1421,20 @@ function PremiereTimeline() {
                 {audioByLane(lane).map((track) => (
                   <div
                     key={track.id}
-                    className={cn("absolute inset-y-1.5 flex items-center gap-1 overflow-hidden px-1.5", audioChip)}
+                    className={cn("group absolute inset-y-1.5 flex items-center gap-1 overflow-hidden px-1.5", audioChip)}
                     style={{ left: `${track.startTime * pps}px`, width: `${Math.max(28, track.duration * pps)}px` }}
                     title={track.name}
                   >
                     <Music className="h-3 w-3 shrink-0" aria-hidden />
                     <span className="truncate">{track.name}</span>
+                    <button
+                      type="button"
+                      aria-label="Remove audio"
+                      onClick={() => removeAudioTrack(track.id)}
+                      className="absolute right-0.5 top-0.5 z-10 flex h-4 w-4 items-center justify-center rounded bg-black/75 text-zinc-100 opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100"
+                    >
+                      <Trash2 className="h-3 w-3" aria-hidden />
+                    </button>
                   </div>
                 ))}
               </div>

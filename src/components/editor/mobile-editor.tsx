@@ -243,6 +243,7 @@ function MobileTimeline({
 
   const nameFor = (assetId: string) =>
     assets.find((asset) => asset.id === assetId)?.name ?? "Clip";
+  const removeClip = useEditorStore((state) => state.removeClip);
 
   return (
     <div className="relative mt-3 w-full max-w-full min-w-0 overflow-hidden select-none">
@@ -265,25 +266,40 @@ function MobileTimeline({
           const length = Math.max(0.1, clip.trimEnd - clip.trimStart);
           const active = clip.id === selectedClipId;
           return (
-            <button
+            <div
               key={clip.id}
-              type="button"
-              onClick={() => onSelectClip(clip.id)}
+              className="relative h-16 shrink-0"
               style={{ width: `${Math.min(220, Math.max(84, length * 26))}px` }}
-              className={cn(
-                "relative h-16 shrink-0 overflow-hidden rounded-lg border text-left",
-                active ? "border-fuchsia-400" : "border-zinc-700"
-              )}
             >
-              <span className="absolute inset-0 bg-gradient-to-br from-violet-600/35 via-zinc-800 to-blue-600/25" />
-              <span className="relative block truncate px-2 pt-1.5 text-[10px] font-medium text-zinc-100">
-                {nameFor(clip.assetId)}
-              </span>
-              {/* Duration handle */}
-              <span className="absolute bottom-1 left-1 rounded bg-black/60 px-1 text-[9px] tabular-nums text-zinc-200">
-                {length.toFixed(1)}s
-              </span>
-            </button>
+              <button
+                type="button"
+                onClick={() => onSelectClip(clip.id)}
+                className={cn(
+                  "absolute inset-0 h-full w-full overflow-hidden rounded-lg border text-left",
+                  active ? "border-fuchsia-400" : "border-zinc-700"
+                )}
+              >
+                <span className="absolute inset-0 bg-gradient-to-br from-violet-600/35 via-zinc-800 to-blue-600/25" />
+                <span className="relative block truncate py-1.5 pl-2 pr-6 text-[10px] font-medium text-zinc-100">
+                  {nameFor(clip.assetId)}
+                </span>
+                {/* Duration handle */}
+                <span className="absolute bottom-1 left-1 rounded bg-black/60 px-1 text-[9px] tabular-nums text-zinc-200">
+                  {length.toFixed(1)}s
+                </span>
+              </button>
+              <button
+                type="button"
+                aria-label="Remove clip"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  removeClip(clip.id);
+                }}
+                className="absolute right-0.5 top-0.5 z-10 flex h-4 w-4 items-center justify-center rounded bg-black/70 text-zinc-300 transition-colors hover:text-red-400"
+              >
+                <X className="h-3 w-3" aria-hidden />
+              </button>
+            </div>
           );
         })}
         <input
@@ -369,6 +385,7 @@ export function MobileEditor() {
   const setAspect = useEditorStore((s) => s.setAspect);
   const addAudioFiles = useEditorStore((s) => s.addAudioFiles);
   const audioTracks = useEditorStore((s) => s.audioTracks);
+  const removeAudioTrack = useEditorStore((s) => s.removeAudioTrack);
   const captionLanguage = useEditorStore((s) => s.captionLanguage);
   const setCaptionLanguage = useEditorStore((s) => s.setCaptionLanguage);
   const generateAutoCaptions = useEditorStore((s) => s.generateAutoCaptions);
@@ -689,8 +706,16 @@ export function MobileEditor() {
           <ul className="mt-3 space-y-1.5">
             {audioTracks.map((track) => (
               <li key={track.id} className="flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-2 text-xs text-zinc-300">
-                <Music className="h-3.5 w-3.5 text-violet-400" aria-hidden />
+                <Music className="h-3.5 w-3.5 shrink-0 text-violet-400" aria-hidden />
                 <span className="min-w-0 flex-1 truncate">{track.name}</span>
+                <button
+                  type="button"
+                  onClick={() => removeAudioTrack(track.id)}
+                  aria-label="Remove audio"
+                  className="shrink-0 rounded p-1 text-zinc-500 transition-colors hover:text-red-400"
+                >
+                  <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                </button>
               </li>
             ))}
           </ul>
