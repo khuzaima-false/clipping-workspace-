@@ -139,7 +139,7 @@ function ColorWheel({
 /* Top-left: Project bin + Inspector                                    */
 /* ------------------------------------------------------------------ */
 function ProjectBinPanel() {
-  const [tab, setTab] = useState<"media" | "effects" | "properties" | "crop">("media");
+  const [tab, setTab] = useState<"media" | "effects" | "properties" | "clip">("media");
   const inputRef = useRef<HTMLInputElement>(null);
 
   const assets = useEditorStore((s) => s.assets);
@@ -164,6 +164,13 @@ function ProjectBinPanel() {
   const offsetY = useEditorStore((s) => s.offsetY);
   const setOffset = useEditorStore((s) => s.setOffset);
 
+  const duration = useEditorStore((s) => s.duration);
+  const trimStart = useEditorStore((s) => s.trimStart);
+  const trimEnd = useEditorStore((s) => s.trimEnd);
+  const setTrimStart = useEditorStore((s) => s.setTrimStart);
+  const setTrimEnd = useEditorStore((s) => s.setTrimEnd);
+  const resetTrim = useEditorStore((s) => s.resetTrim);
+
   const nameFor = (assetId: string) =>
     assets.find((a) => a.id === assetId)?.name ?? "Clip";
 
@@ -179,7 +186,7 @@ function ProjectBinPanel() {
             ["media", "Media"],
             ["effects", "Effects"],
             ["properties", "Props"],
-            ["crop", "Crop"],
+            ["clip", "Clip"],
           ] as const
         ).map(([id, label]) => (
           <button
@@ -335,11 +342,81 @@ function ProjectBinPanel() {
           </div>
         )}
 
-        {tab === "crop" && (
-          <div className="space-y-3">
-            <div>
-              <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-                Frame
+        {tab === "clip" && (
+          <div className="space-y-4">
+            {/* Trim — remove the start/end of the clip */}
+            <div className="space-y-2">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                Trim
+              </p>
+              <p className="text-[10px] text-zinc-500">
+                Source {duration.toFixed(1)}s · Clip{" "}
+                {Math.max(0, trimEnd - trimStart).toFixed(1)}s
+              </p>
+              <label className="block">
+                <span className="flex items-center justify-between text-[10px] text-zinc-500">
+                  <span>Start (In)</span>
+                  <span className="tabular-nums">{trimStart.toFixed(1)}s</span>
+                </span>
+                <input
+                  type="range"
+                  min={0}
+                  max={Math.max(trimEnd - 0.1, 0.1)}
+                  step={0.1}
+                  value={trimStart}
+                  disabled={duration <= 0}
+                  onChange={(e) => setTrimStart(Number(e.target.value))}
+                  className="mt-0.5 w-full accent-violet-500 disabled:opacity-40"
+                />
+              </label>
+              <label className="block">
+                <span className="flex items-center justify-between text-[10px] text-zinc-500">
+                  <span>End (Out)</span>
+                  <span className="tabular-nums">{trimEnd.toFixed(1)}s</span>
+                </span>
+                <input
+                  type="range"
+                  min={trimStart + 0.1}
+                  max={Math.max(duration, 0.1)}
+                  step={0.1}
+                  value={trimEnd}
+                  disabled={duration <= 0}
+                  onChange={(e) => setTrimEnd(Number(e.target.value))}
+                  className="mt-0.5 w-full accent-violet-500 disabled:opacity-40"
+                />
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setTrimStart(currentTime)}
+                  disabled={duration <= 0}
+                  className="rounded-lg border border-zinc-800 bg-zinc-950/60 px-2 py-2 text-[11px] text-zinc-300 hover:border-zinc-600 disabled:opacity-40"
+                >
+                  Set In @ playhead
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTrimEnd(currentTime)}
+                  disabled={duration <= 0}
+                  className="rounded-lg border border-zinc-800 bg-zinc-950/60 px-2 py-2 text-[11px] text-zinc-300 hover:border-zinc-600 disabled:opacity-40"
+                >
+                  Set Out @ playhead
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={resetTrim}
+                disabled={duration <= 0}
+                className="w-full rounded-lg border border-zinc-800 bg-zinc-950/60 px-2 py-2 text-[11px] text-zinc-300 hover:border-zinc-600 disabled:opacity-40"
+              >
+                Reset trim (full clip)
+              </button>
+            </div>
+
+            {/* Framing / crop */}
+            <div className="space-y-2 border-t border-zinc-800 pt-3">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                Framing
               </p>
               <div className="grid grid-cols-2 gap-2">
                 {(["contain", "cover"] as const).map((mode) => (
@@ -359,59 +436,49 @@ function ProjectBinPanel() {
                   </button>
                 ))}
               </div>
+              <label className="block">
+                <span className="flex items-center justify-between text-[10px] text-zinc-500">
+                  <span>Position X</span>
+                  <span className="tabular-nums">{Math.round(offsetX)}%</span>
+                </span>
+                <input
+                  type="range"
+                  min={-100}
+                  max={100}
+                  step={1}
+                  value={offsetX}
+                  disabled={fit !== "cover"}
+                  onChange={(e) => setOffset(Number(e.target.value), offsetY)}
+                  className="mt-0.5 w-full accent-violet-500 disabled:opacity-40"
+                />
+              </label>
+              <label className="block">
+                <span className="flex items-center justify-between text-[10px] text-zinc-500">
+                  <span>Position Y</span>
+                  <span className="tabular-nums">{Math.round(offsetY)}%</span>
+                </span>
+                <input
+                  type="range"
+                  min={-100}
+                  max={100}
+                  step={1}
+                  value={offsetY}
+                  disabled={fit !== "cover"}
+                  onChange={(e) => setOffset(offsetX, Number(e.target.value))}
+                  className="mt-0.5 w-full accent-violet-500 disabled:opacity-40"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  setFit("contain");
+                  setOffset(0, 0);
+                }}
+                className="w-full rounded-lg border border-zinc-800 bg-zinc-950/60 px-2 py-2 text-[11px] text-zinc-300 hover:border-zinc-600"
+              >
+                Reset framing
+              </button>
             </div>
-
-            <label className="block">
-              <span className="flex items-center justify-between text-[10px] text-zinc-500">
-                <span>Position X</span>
-                <span className="tabular-nums">{Math.round(offsetX)}%</span>
-              </span>
-              <input
-                type="range"
-                min={-100}
-                max={100}
-                step={1}
-                value={offsetX}
-                disabled={fit !== "cover"}
-                onChange={(e) => setOffset(Number(e.target.value), offsetY)}
-                className="mt-0.5 w-full accent-violet-500 disabled:opacity-40"
-              />
-            </label>
-
-            <label className="block">
-              <span className="flex items-center justify-between text-[10px] text-zinc-500">
-                <span>Position Y</span>
-                <span className="tabular-nums">{Math.round(offsetY)}%</span>
-              </span>
-              <input
-                type="range"
-                min={-100}
-                max={100}
-                step={1}
-                value={offsetY}
-                disabled={fit !== "cover"}
-                onChange={(e) => setOffset(offsetX, Number(e.target.value))}
-                className="mt-0.5 w-full accent-violet-500 disabled:opacity-40"
-              />
-            </label>
-
-            {fit !== "cover" && (
-              <p className="text-[10px] leading-4 text-zinc-500">
-                Choose &ldquo;Fill &amp; Crop&rdquo; to pan the video and crop off
-                the edges.
-              </p>
-            )}
-
-            <button
-              type="button"
-              onClick={() => {
-                setFit("contain");
-                setOffset(0, 0);
-              }}
-              className="w-full rounded-lg border border-zinc-800 bg-zinc-950/60 px-2 py-2 text-[11px] text-zinc-300 hover:border-zinc-600"
-            >
-              Reset framing
-            </button>
           </div>
         )}
       </div>
@@ -767,6 +834,9 @@ function PremiereTimeline() {
   const selectClip = useEditorStore((s) => s.selectClip);
   const selectOverlay = useEditorStore((s) => s.selectOverlay);
   const seek = useEditorStore((s) => s.seek);
+  const setClipTrim = useEditorStore((s) => s.setClipTrim);
+  const setTrimStart = useEditorStore((s) => s.setTrimStart);
+  const setTrimEnd = useEditorStore((s) => s.setTrimEnd);
 
   const [pps, setPps] = useState(48);
   const [toggles, setToggles] = useState<Record<TrackKey, { m: boolean; s: boolean; lock: boolean; eye: boolean }>>({
@@ -799,6 +869,54 @@ function PremiereTimeline() {
   );
 
   const laneRef = useRef<HTMLDivElement>(null);
+
+  const trimDragRef = useRef<{
+    clipId: string;
+    side: "in" | "out";
+    startX: number;
+    trimStart: number;
+    trimEnd: number;
+    sourceMax: number;
+  } | null>(null);
+
+  const onTrimDown = (
+    e: React.PointerEvent<HTMLButtonElement>,
+    clip: { id: string; trimStart: number; trimEnd: number },
+    side: "in" | "out"
+  ) => {
+    e.stopPropagation();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const sourceMax =
+      clip.id === activeClipId && duration > 0 ? duration : clip.trimEnd;
+    trimDragRef.current = {
+      clipId: clip.id,
+      side,
+      startX: e.clientX,
+      trimStart: clip.trimStart,
+      trimEnd: clip.trimEnd,
+      sourceMax,
+    };
+  };
+  const onTrimMove = (e: React.PointerEvent<HTMLButtonElement>) => {
+    const d = trimDragRef.current;
+    if (!d) return;
+    const delta = (e.clientX - d.startX) / pps;
+    if (d.side === "in") {
+      const next = Math.min(Math.max(d.trimStart + delta, 0), d.trimEnd - 0.2);
+      if (d.clipId === activeClipId) setTrimStart(next);
+      else setClipTrim(d.clipId, { trimStart: next });
+    } else {
+      const next = Math.max(
+        Math.min(d.trimEnd + delta, d.sourceMax),
+        d.trimStart + 0.2
+      );
+      if (d.clipId === activeClipId) setTrimEnd(next);
+      else setClipTrim(d.clipId, { trimEnd: next });
+    }
+  };
+  const onTrimUp = () => {
+    trimDragRef.current = null;
+  };
 
   const seekFromClientX = (clientX: number) => {
     const lane = laneRef.current;
@@ -920,18 +1038,42 @@ function PremiereTimeline() {
               ))}
             </div>
 
-            {/* V1 — video clips (purple/blue) */}
+            {/* V1 — video clips (purple/blue) with trim handles */}
             <div className="relative h-12 border-b border-zinc-800 bg-zinc-950/40">
               {videoBlocks.map(({ clip, start, dur }) => (
-                <button
+                <div
                   key={clip.id}
-                  type="button"
-                  onClick={() => selectClip(clip.id)}
-                  className={cn("absolute inset-y-1.5 overflow-hidden px-1.5 text-left", videoChip, clip.id === activeClipId && "ring-2 ring-white/70")}
+                  className="absolute inset-y-1.5"
                   style={{ left: `${start * pps}px`, width: `${Math.max(28, dur * pps)}px` }}
                 >
-                  <span className="block truncate">{nameFor(clip.assetId)}</span>
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => selectClip(clip.id)}
+                    className={cn(
+                      "h-full w-full overflow-hidden px-2 text-left",
+                      videoChip,
+                      clip.id === activeClipId && "ring-2 ring-white/70"
+                    )}
+                  >
+                    <span className="block truncate">{nameFor(clip.assetId)}</span>
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Trim start"
+                    onPointerDown={(e) => onTrimDown(e, clip, "in")}
+                    onPointerMove={onTrimMove}
+                    onPointerUp={onTrimUp}
+                    className="absolute inset-y-0 left-0 w-2 cursor-ew-resize rounded-l-md bg-white/25 transition-colors hover:bg-white/60"
+                  />
+                  <button
+                    type="button"
+                    aria-label="Trim end"
+                    onPointerDown={(e) => onTrimDown(e, clip, "out")}
+                    onPointerMove={onTrimMove}
+                    onPointerUp={onTrimUp}
+                    className="absolute inset-y-0 right-0 w-2 cursor-ew-resize rounded-r-md bg-white/25 transition-colors hover:bg-white/60"
+                  />
+                </div>
               ))}
             </div>
 
