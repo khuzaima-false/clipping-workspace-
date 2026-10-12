@@ -57,11 +57,89 @@ function formatTimecode(seconds: number, fps: number): string {
 const panelTitle =
   "border-b border-zinc-800 px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-zinc-400";
 
+type WheelKey = "master" | "shadows" | "midtones" | "highlights";
+type WheelValue = { x: number; y: number };
+
+/** Premiere-style round color wheel (hue around, saturation outward). */
+function ColorWheel({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: WheelValue;
+  onChange: (value: WheelValue) => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const size = 72;
+  const radius = size / 2 - 5;
+
+  const handle = (clientX: number, clientY: number) => {
+    const el = ref.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    let dx = (clientX - cx) / radius;
+    let dy = (clientY - cy) / radius;
+    const dist = Math.hypot(dx, dy);
+    if (dist > 1) {
+      dx /= dist;
+      dy /= dist;
+    }
+    onChange({ x: dx, y: dy });
+  };
+
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <div
+        ref={ref}
+        role="slider"
+        aria-label={label}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.round(((value.x + 1) / 2) * 100)}
+        aria-valuetext={`x ${value.x.toFixed(2)}, y ${value.y.toFixed(2)}`}
+        tabIndex={0}
+        onPointerDown={(e) => {
+          e.currentTarget.setPointerCapture(e.pointerId);
+          handle(e.clientX, e.clientY);
+        }}
+        onPointerMove={(e) => {
+          if (e.buttons === 1) handle(e.clientX, e.clientY);
+        }}
+        className="relative cursor-crosshair rounded-full ring-1 ring-inset ring-white/20"
+        style={{
+          width: size,
+          height: size,
+          background:
+            "conic-gradient(from 90deg, #ff0000, #ffff00, #00ff00, #00ffff, #0000ff, #ff00ff, #ff0000)",
+        }}
+      >
+        <span
+          className="pointer-events-none absolute inset-0 rounded-full"
+          style={{
+            background:
+              "radial-gradient(circle at center, rgba(113,113,122,0.95) 0%, rgba(113,113,122,0.5) 45%, transparent 76%)",
+          }}
+        />
+        <span
+          className="pointer-events-none absolute left-1/2 top-1/2 h-2.5 w-2.5 rounded-full border-2 border-white bg-black/30 shadow"
+          style={{
+            transform: `translate(calc(-50% + ${value.x * radius}px), calc(-50% + ${value.y * radius}px))`,
+          }}
+        />
+      </div>
+      <span className="text-[10px] text-zinc-500">{label}</span>
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------------ */
 /* Top-left: Project bin + Inspector                                    */
 /* ------------------------------------------------------------------ */
 function ProjectBinPanel() {
-  const [tab, setTab] = useState<"media" | "effects" | "properties">("media");
+  const [tab, setTab] = useState<"media" | "effects" | "properties" | "crop">("media");
   const inputRef = useRef<HTMLInputElement>(null);
 
   const assets = useEditorStore((s) => s.assets);
@@ -80,6 +158,12 @@ function ProjectBinPanel() {
   const updateOverlay = useEditorStore((s) => s.updateOverlay);
   const selected = overlays.find((o) => o.id === selectedId) ?? null;
 
+  const fit = useEditorStore((s) => s.fit);
+  const setFit = useEditorStore((s) => s.setFit);
+  const offsetX = useEditorStore((s) => s.offsetX);
+  const offsetY = useEditorStore((s) => s.offsetY);
+  const setOffset = useEditorStore((s) => s.setOffset);
+
   const nameFor = (assetId: string) =>
     assets.find((a) => a.id === assetId)?.name ?? "Clip";
 
@@ -92,9 +176,10 @@ function ProjectBinPanel() {
       <div className="flex border-b border-zinc-800">
         {(
           [
-            ["media", "Project Media"],
+            ["media", "Media"],
             ["effects", "Effects"],
-            ["properties", "Properties"],
+            ["properties", "Props"],
+            ["crop", "Crop"],
           ] as const
         ).map(([id, label]) => (
           <button
@@ -247,6 +332,86 @@ function ProjectBinPanel() {
                 ))}
               </>
             )}
+          </div>
+        )}
+
+        {tab === "crop" && (
+          <div className="space-y-3">
+            <div>
+              <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                Frame
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                {(["contain", "cover"] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setFit(mode)}
+                    aria-pressed={fit === mode}
+                    className={cn(
+                      "rounded-lg border px-2 py-2 text-[11px] transition-colors",
+                      fit === mode
+                        ? "border-violet-500 bg-violet-600/15 text-violet-200"
+                        : "border-zinc-800 bg-zinc-950/60 text-zinc-300 hover:border-zinc-600"
+                    )}
+                  >
+                    {mode === "contain" ? "Fit" : "Fill & Crop"}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <label className="block">
+              <span className="flex items-center justify-between text-[10px] text-zinc-500">
+                <span>Position X</span>
+                <span className="tabular-nums">{Math.round(offsetX)}%</span>
+              </span>
+              <input
+                type="range"
+                min={-100}
+                max={100}
+                step={1}
+                value={offsetX}
+                disabled={fit !== "cover"}
+                onChange={(e) => setOffset(Number(e.target.value), offsetY)}
+                className="mt-0.5 w-full accent-violet-500 disabled:opacity-40"
+              />
+            </label>
+
+            <label className="block">
+              <span className="flex items-center justify-between text-[10px] text-zinc-500">
+                <span>Position Y</span>
+                <span className="tabular-nums">{Math.round(offsetY)}%</span>
+              </span>
+              <input
+                type="range"
+                min={-100}
+                max={100}
+                step={1}
+                value={offsetY}
+                disabled={fit !== "cover"}
+                onChange={(e) => setOffset(offsetX, Number(e.target.value))}
+                className="mt-0.5 w-full accent-violet-500 disabled:opacity-40"
+              />
+            </label>
+
+            {fit !== "cover" && (
+              <p className="text-[10px] leading-4 text-zinc-500">
+                Choose &ldquo;Fill &amp; Crop&rdquo; to pan the video and crop off
+                the edges.
+              </p>
+            )}
+
+            <button
+              type="button"
+              onClick={() => {
+                setFit("contain");
+                setOffset(0, 0);
+              }}
+              className="w-full rounded-lg border border-zinc-800 bg-zinc-950/60 px-2 py-2 text-[11px] text-zinc-300 hover:border-zinc-600"
+            >
+              Reset framing
+            </button>
           </div>
         )}
       </div>
@@ -441,6 +606,42 @@ function LumetriPanel() {
   const resetColorAdjustments = useEditorStore((s) => s.resetColorAdjustments);
   const scopeRef = useRef<HTMLCanvasElement>(null);
 
+  const [wheels, setWheels] = useState<Record<WheelKey, WheelValue>>({
+    master: { x: 0, y: 0 },
+    shadows: { x: 0, y: 0 },
+    midtones: { x: 0, y: 0 },
+    highlights: { x: 0, y: 0 },
+  });
+
+  // Fold the wheels into the render's hue/tint colour model.
+  useEffect(() => {
+    const angleOf = (v: WheelValue) => (Math.atan2(v.y, v.x) * 180) / Math.PI;
+    const radOf = (v: WheelValue) => Math.min(1, Math.hypot(v.x, v.y));
+    const hue = Math.max(
+      -180,
+      Math.min(
+        180,
+        angleOf(wheels.master) * radOf(wheels.master) +
+          0.25 *
+            (angleOf(wheels.shadows) * radOf(wheels.shadows) +
+              angleOf(wheels.midtones) * radOf(wheels.midtones) +
+              angleOf(wheels.highlights) * radOf(wheels.highlights))
+      )
+    );
+    const tint = Math.max(
+      -100,
+      Math.min(
+        100,
+        radOf(wheels.master) * 100 +
+          15 *
+            (radOf(wheels.shadows) +
+              radOf(wheels.midtones) +
+              radOf(wheels.highlights))
+      )
+    );
+    setColorAdjustment({ hue: Math.round(hue), tint: Math.round(tint) });
+  }, [wheels, setColorAdjustment]);
+
   // Lightweight real luminance histogram of the current frame.
   useEffect(() => {
     const canvas = scopeRef.current;
@@ -487,6 +688,18 @@ function LumetriPanel() {
     <section className="glass-card flex min-h-0 flex-col overflow-hidden rounded-2xl">
       <div className={panelTitle}>Lumetri Color &amp; Scopes</div>
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
+        <div>
+          <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+            Color Wheels
+          </p>
+          <div className="grid grid-cols-2 justify-items-center gap-2">
+            <ColorWheel label="Master" value={wheels.master} onChange={(v) => setWheels((p) => ({ ...p, master: v }))} />
+            <ColorWheel label="Shadows" value={wheels.shadows} onChange={(v) => setWheels((p) => ({ ...p, shadows: v }))} />
+            <ColorWheel label="Midtones" value={wheels.midtones} onChange={(v) => setWheels((p) => ({ ...p, midtones: v }))} />
+            <ColorWheel label="Highlights" value={wheels.highlights} onChange={(v) => setWheels((p) => ({ ...p, highlights: v }))} />
+          </div>
+        </div>
+
         {sliders.map(([label, key, min, max, suffix]) => (
           <label key={key} className="block">
             <span className="flex items-center justify-between text-[10px] text-zinc-500">
@@ -754,7 +967,7 @@ function PremiereTimeline() {
 export function DesktopEditor() {
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
-      <div className="grid min-h-0 gap-3 lg:grid-cols-[300px_minmax(0,1fr)_320px]" style={{ height: "min(48vh, 500px)", minHeight: 340 }}>
+      <div className="grid min-h-0 gap-3 lg:grid-cols-[280px_minmax(0,1fr)_300px] xl:grid-cols-[320px_minmax(0,1fr)_340px]" style={{ height: "min(58vh, 600px)", minHeight: 380 }}>
         <ProjectBinPanel />
         <ProgramPreview />
         <LumetriPanel />
