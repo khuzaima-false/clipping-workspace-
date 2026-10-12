@@ -18,10 +18,7 @@ import {
 } from "@/lib/exporter";
 import { useWorkspaceStore } from "@/store/workspace";
 import { EXPORT_CREDIT_COST } from "@/lib/credits";
-import { LeftPanel } from "@/components/editor/left-panel";
-import { PreviewPanel } from "@/components/editor/preview-panel";
-import { RightPanel } from "@/components/editor/right-panel";
-import { MediaLibrary } from "@/components/editor/media-library";
+import { DesktopEditor } from "@/components/editor/desktop-editor";
 import { MobileEditor } from "@/components/editor/mobile-editor";
 import { ExportDialog, type ExportRun } from "@/components/editor/export-dialog";
 import { ReferralModal } from "@/components/credits/referral-modal";
@@ -392,20 +389,9 @@ function EditorView() {
         </p>
       ) : (
         <>
-          {/* Desktop layout (unchanged) */}
-          <div className="hidden md:block">
-            <div className="grid gap-4 lg:grid-cols-[300px_minmax(0,1fr)_320px]">
-              <div className="space-y-4">
-                <MediaLibrary />
-                <LeftPanel onRequireCredits={() => setReferralOpen(true)} />
-              </div>
-              <div className="min-w-0">
-                <PreviewPanel />
-              </div>
-              <div>
-                <RightPanel />
-              </div>
-            </div>
+          {/* Desktop: Premiere-style 4-panel workspace */}
+          <div className="hidden md:flex md:min-h-0 md:flex-1 md:flex-col">
+            <DesktopEditor />
           </div>
 
           {/* Mobile CapCut-style timeline editor */}

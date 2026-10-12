@@ -55,6 +55,8 @@ export type ColorAdjustments = {
   saturation: number;
   /** -180..180 (degrees) — a.k.a. temperature tilt. */
   hue: number;
+  /** -100..100 — green/magenta tint (folded into hue-rotate). */
+  tint: number;
   /** 0..20 (px) */
   blur: number;
 };
@@ -64,6 +66,7 @@ export const DEFAULT_COLOR_ADJUSTMENTS: ColorAdjustments = {
   contrast: 0,
   saturation: 0,
   hue: 0,
+  tint: 0,
   blur: 0,
 };
 
@@ -109,6 +112,8 @@ export type TextOverlay = {
   /** Background corner radius, output px. */
   radius: number;
   alignment: OverlayAlign;
+  /** Rotation around the overlay's center, degrees. */
+  rotation: number;
   /** Seconds from the start of the video when this overlay appears. */
   startTime: number;
   /** Seconds from the start of the video when this overlay disappears. */
@@ -287,6 +292,7 @@ function createOverlay(duration: number): TextOverlay {
     padding: 24,
     radius: 16,
     alignment: "center",
+    rotation: 0,
     startTime: 0,
     // Default to the first five seconds, or the whole clip when shorter.
     endTime: duration > 0 ? Math.min(5, duration) : 5,

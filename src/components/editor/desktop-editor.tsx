@@ -1,0 +1,745 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import {
+  Activity,
+  Eye,
+  EyeOff,
+  Film,
+  Lock,
+  Music,
+  Pause,
+  Play,
+  Plus,
+  Repeat,
+  Scissors,
+  SlidersHorizontal,
+  Trash2,
+  Unlock,
+  Wand2,
+  ZoomIn,
+  ZoomOut,
+} from "lucide-react";
+import { ASPECT_RESOLUTIONS, drawScene } from "@/lib/render";
+import {
+  useEditorStore,
+  type TextOverlay,
+  type VideoEffectType,
+} from "@/store/editor";
+import { cn } from "@/lib/utils";
+
+const EFFECT_CARDS: { type: VideoEffectType; label: string; Icon: typeof Wand2 }[] = [
+  { type: "zoom-in", label: "Zoom In", Icon: Wand2 },
+  { type: "zoom-out", label: "Zoom Out", Icon: SlidersHorizontal },
+  { type: "camera-shake", label: "Camera Shake", Icon: Activity },
+  { type: "flash", label: "Flash", Icon: Repeat },
+  { type: "blur-vignette", label: "Blur Vignette", Icon: EyeOff },
+];
+
+const LUMETRI_PRESETS: { id: string; label: string; patch: Record<string, number> }[] = [
+  { id: "none", label: "Neutral", patch: { brightness: 0, contrast: 0, saturation: 0, hue: 0, tint: 0, blur: 0 } },
+  { id: "vivid", label: "Vivid", patch: { contrast: 14, saturation: 32, tint: 0 } },
+  { id: "warm", label: "Warm", patch: { saturation: 10, hue: 12 } },
+  { id: "cool", label: "Cool", patch: { saturation: 8, hue: -16, tint: -5 } },
+  { id: "film", label: "Film", patch: { contrast: 8, saturation: -18, tint: 6 } },
+];
+
+function formatTimecode(seconds: number, fps: number): string {
+  const safe = Number.isFinite(seconds) && seconds > 0 ? seconds : 0;
+  const total = Math.floor(safe);
+  const frames = Math.floor((safe - total) * (fps > 0 ? fps : 30));
+  const hh = Math.floor(total / 3600);
+  const mm = Math.floor((total % 3600) / 60);
+  const ss = total % 60;
+  return [hh, mm, ss, frames].map((n) => String(n).padStart(2, "0")).join(":");
+}
+
+const panelTitle =
+  "border-b border-zinc-800 px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-zinc-400";
+
+/* ------------------------------------------------------------------ */
+/* Top-left: Project bin + Inspector                                    */
+/* ------------------------------------------------------------------ */
+function ProjectBinPanel() {
+  const [tab, setTab] = useState<"media" | "effects" | "properties">("media");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const assets = useEditorStore((s) => s.assets);
+  const sequence = useEditorStore((s) => s.sequence);
+  const addVideoAssets = useEditorStore((s) => s.addVideoAssets);
+  const selectClip = useEditorStore((s) => s.selectClip);
+  const activeClipId = useEditorStore((s) => s.activeClipId);
+  const currentTime = useEditorStore((s) => s.currentTime);
+
+  const addEffect = useEditorStore((s) => s.addEffect);
+  const activeEffects = useEditorStore((s) => s.activeEffects);
+  const removeEffect = useEditorStore((s) => s.removeEffect);
+
+  const overlays = useEditorStore((s) => s.overlays);
+  const selectedId = useEditorStore((s) => s.selectedId);
+  const updateOverlay = useEditorStore((s) => s.updateOverlay);
+  const selected = overlays.find((o) => o.id === selectedId) ?? null;
+
+  const nameFor = (assetId: string) =>
+    assets.find((a) => a.id === assetId)?.name ?? "Clip";
+
+  const patchSelected = (patch: Partial<Omit<TextOverlay, "id">>) => {
+    if (selected) updateOverlay(selected.id, patch);
+  };
+
+  return (
+    <section className="glass-card flex min-h-0 flex-col overflow-hidden rounded-2xl">
+      <div className="flex border-b border-zinc-800">
+        {(
+          [
+            ["media", "Project Media"],
+            ["effects", "Effects"],
+            ["properties", "Properties"],
+          ] as const
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setTab(id)}
+            aria-pressed={tab === id}
+            className={cn(
+              "flex-1 px-2 py-2 text-[11px] font-medium transition-colors",
+              tab === id
+                ? "bg-violet-600/15 text-violet-200"
+                : "text-zinc-400 hover:text-zinc-100"
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto p-3">
+        {tab === "media" && (
+          <div className="space-y-2">
+            <button
+              type="button"
+              onClick={() => inputRef.current?.click()}
+              className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg brand-gradient brand-gradient-hover px-3 py-2 text-xs font-semibold text-white"
+            >
+              <Plus className="h-3.5 w-3.5" aria-hidden /> Import media
+            </button>
+            <input
+              ref={inputRef}
+              type="file"
+              accept="video/mp4,video/webm,video/*"
+              multiple
+              className="hidden"
+              onChange={(e) => {
+                if (e.target.files?.length) void addVideoAssets(e.target.files);
+                e.target.value = "";
+              }}
+            />
+            {sequence.length === 0 ? (
+              <p className="text-[11px] leading-4 text-zinc-500">
+                No media yet — import clips to build your sequence.
+              </p>
+            ) : (
+              <ul className="space-y-1.5">
+                {sequence.map((clip, index) => (
+                  <li key={clip.id}>
+                    <button
+                      type="button"
+                      onClick={() => selectClip(clip.id)}
+                      className={cn(
+                        "flex w-full items-center gap-2 rounded-lg border px-2 py-2 text-left text-xs transition-colors",
+                        clip.id === activeClipId
+                          ? "border-violet-500/50 bg-violet-500/10 text-violet-100"
+                          : "border-zinc-800 bg-zinc-950/50 text-zinc-300 hover:border-zinc-600"
+                      )}
+                    >
+                      <Film className="h-3.5 w-3.5 shrink-0 text-violet-400" aria-hidden />
+                      <span className="min-w-0 flex-1 truncate">
+                        {index + 1}. {nameFor(clip.assetId)}
+                      </span>
+                      <span className="shrink-0 text-[10px] text-zinc-500">
+                        {(Math.max(0, clip.trimEnd - clip.trimStart)).toFixed(1)}s
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+
+        {tab === "effects" && (
+          <div className="space-y-2">
+            <div className="grid grid-cols-2 gap-2">
+              {EFFECT_CARDS.map((card) => (
+                <button
+                  key={card.type}
+                  type="button"
+                  onClick={() => addEffect(card.type, currentTime)}
+                  className="flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-950/60 p-2 text-left text-[11px] text-zinc-200"
+                >
+                  <card.Icon className="h-3.5 w-3.5 text-violet-400" aria-hidden />
+                  {card.label}
+                </button>
+              ))}
+            </div>
+            {activeEffects.length > 0 && (
+              <ul className="space-y-1.5 pt-1">
+                {activeEffects.map((fx) => (
+                  <li
+                    key={fx.id}
+                    className="flex items-center gap-2 rounded-lg border border-fuchsia-500/30 bg-fuchsia-500/10 px-2 py-1.5 text-[11px] text-fuchsia-100"
+                  >
+                    <span className="min-w-0 flex-1 truncate capitalize">
+                      {fx.type.replace("-", " ")} · {fx.startTime.toFixed(1)}s
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => removeEffect(fx.id)}
+                      aria-label="Remove effect"
+                      className="rounded p-1 text-fuchsia-200/70 hover:text-white"
+                    >
+                      <Trash2 className="h-3 w-3" aria-hidden />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+
+        {tab === "properties" && (
+          <div className="space-y-3">
+            {!selected ? (
+              <p className="text-[11px] leading-4 text-zinc-500">
+                Select a text overlay on the timeline to edit its Position, Scale
+                and Rotation.
+              </p>
+            ) : (
+              <>
+                <p className="truncate text-xs text-zinc-300">{selected.text || "Untitled"}</p>
+                {(
+                  [
+                    ["Position X", "x", 0, 100, "%"],
+                    ["Position Y", "y", 0, 100, "%"],
+                    ["Scale", "fontSize", 16, 180, "px"],
+                    ["Rotation", "rotation", -180, 180, "°"],
+                  ] as const
+                ).map(([label, key, min, max, suffix]) => (
+                  <label key={key} className="block">
+                    <span className="flex items-center justify-between text-[10px] text-zinc-500">
+                      <span>{label}</span>
+                      <span className="tabular-nums">
+                        {Math.round(selected[key])}
+                        {suffix}
+                      </span>
+                    </span>
+                    <input
+                      type="range"
+                      min={min}
+                      max={max}
+                      step={1}
+                      value={selected[key]}
+                      onChange={(e) => patchSelected({ [key]: Number(e.target.value) })}
+                      className="mt-0.5 w-full accent-violet-500"
+                    />
+                  </label>
+                ))}
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Top-center: Program monitor + transport                              */
+/* ------------------------------------------------------------------ */
+function ProgramPreview() {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const loopRef = useRef(true);
+  const [loop, setLoop] = useState(true);
+
+  const playing = useEditorStore((s) => s.playing);
+  const currentTime = useEditorStore((s) => s.currentTime);
+  const duration = useEditorStore((s) => s.duration);
+  const fps = useEditorStore((s) => s.fps);
+  const hasVideo = useEditorStore((s) => s.videoEl !== null);
+  const aspect = useEditorStore((s) => s.aspect);
+  const setPlaying = useEditorStore((s) => s.setPlaying);
+  const seek = useEditorStore((s) => s.seek);
+  const setTrimStart = useEditorStore((s) => s.setTrimStart);
+  const setTrimEnd = useEditorStore((s) => s.setTrimEnd);
+
+  useEffect(() => {
+    loopRef.current = loop;
+  }, [loop]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    let rafId = 0;
+    let lastSync = 0;
+    const tick = () => {
+      rafId = requestAnimationFrame(tick);
+      if (!canvas.isConnected || canvas.offsetParent === null) return;
+
+      const state = useEditorStore.getState();
+      const { width, height } = ASPECT_RESOLUTIONS[state.aspect];
+      if (canvas.width !== width) canvas.width = width;
+      if (canvas.height !== height) canvas.height = height;
+
+      const video = state.videoEl;
+      if (video && !video.paused && !video.ended) {
+        const now = performance.now();
+        if (now - lastSync >= 100) {
+          lastSync = now;
+          if (Math.abs(video.currentTime - useEditorStore.getState().currentTime) > 0.01) {
+            useEditorStore.setState({ currentTime: video.currentTime });
+          }
+        }
+        if (state.duration > 0 && video.currentTime >= state.trimEnd - 0.02) {
+          if (loopRef.current) video.currentTime = state.trimStart;
+          else state.setPlaying(false);
+        }
+      }
+
+      drawScene(
+        ctx,
+        video,
+        {
+          width,
+          height,
+          fit: state.fit,
+          offsetX: state.offsetX,
+          offsetY: state.offsetY,
+          overlays: state.overlays,
+          captionStyle: state.captionStyle,
+          colorAdjustments: state.colorAdjustments,
+          activeEffects: state.activeEffects,
+          sceneTime: video ? video.currentTime : state.currentTime,
+        },
+        { placeholder: true }
+      );
+    };
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
+  }, []);
+
+  const res = ASPECT_RESOLUTIONS[aspect];
+
+  return (
+    <section className="glass-card flex min-h-0 flex-col overflow-hidden rounded-2xl">
+      <div className="flex items-center justify-between border-b border-zinc-800 px-3 py-2">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+          Program Monitor
+        </span>
+        <span className="text-[10px] tabular-nums text-zinc-500">
+          {res.width}×{res.height} · {fps}fps
+        </span>
+      </div>
+
+      <div className="flex min-h-0 flex-1 items-center justify-center bg-black p-3">
+        <canvas ref={canvasRef} className="max-h-full max-w-full rounded-lg ring-1 ring-zinc-800" aria-label="Program preview" />
+      </div>
+
+      {/* Transport */}
+      <div className="space-y-2 border-t border-zinc-800 px-3 py-2">
+        <div className="flex items-center gap-2">
+          <span className="rounded bg-zinc-950 px-2 py-1 font-mono text-xs tabular-nums text-emerald-300 ring-1 ring-inset ring-zinc-800">
+            {formatTimecode(currentTime, fps)}
+          </span>
+          <input
+            type="range"
+            min={0}
+            max={Math.max(duration, 0.01)}
+            step={0.01}
+            value={Math.min(currentTime, duration)}
+            disabled={!hasVideo}
+            onChange={(e) => seek(Number(e.target.value))}
+            aria-label="Scrub"
+            className="min-w-0 flex-1 accent-violet-500"
+          />
+          <span className="font-mono text-[10px] tabular-nums text-zinc-500">
+            {formatTimecode(duration, fps)}
+          </span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => setPlaying(!playing)}
+            disabled={!hasVideo}
+            aria-label={playing ? "Pause" : "Play"}
+            className="flex h-8 w-8 items-center justify-center rounded-full bg-violet-600 text-white transition-colors hover:bg-violet-500 disabled:opacity-40"
+          >
+            {playing ? <Pause className="h-3.5 w-3.5" aria-hidden /> : <Play className="h-3.5 w-3.5 translate-x-px" aria-hidden />}
+          </button>
+          <button
+            type="button"
+            onClick={() => setLoop((v) => !v)}
+            aria-pressed={loop}
+            className={cn(
+              "inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[11px]",
+              loop ? "border-violet-500/50 bg-violet-500/10 text-violet-200" : "border-zinc-800 bg-zinc-950/60 text-zinc-300"
+            )}
+          >
+            <Repeat className="h-3.5 w-3.5" aria-hidden /> Loop
+          </button>
+          <button
+            type="button"
+            onClick={() => setTrimStart(currentTime)}
+            disabled={!hasVideo}
+            className="inline-flex items-center gap-1 rounded-lg border border-zinc-800 bg-zinc-950/60 px-2.5 py-1.5 text-[11px] text-zinc-300 disabled:opacity-40"
+          >
+            <Scissors className="h-3.5 w-3.5" aria-hidden /> Mark In
+          </button>
+          <button
+            type="button"
+            onClick={() => setTrimEnd(currentTime)}
+            disabled={!hasVideo}
+            className="inline-flex items-center gap-1 rounded-lg border border-zinc-800 bg-zinc-950/60 px-2.5 py-1.5 text-[11px] text-zinc-300 disabled:opacity-40"
+          >
+            <Scissors className="h-3.5 w-3.5 -scale-x-100" aria-hidden /> Mark Out
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Top-right: Lumetri colour + scopes                                   */
+/* ------------------------------------------------------------------ */
+function LumetriPanel() {
+  const adjustments = useEditorStore((s) => s.colorAdjustments);
+  const setColorAdjustment = useEditorStore((s) => s.setColorAdjustment);
+  const resetColorAdjustments = useEditorStore((s) => s.resetColorAdjustments);
+  const scopeRef = useRef<HTMLCanvasElement>(null);
+
+  // Lightweight real luminance histogram of the current frame.
+  useEffect(() => {
+    const canvas = scopeRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const sample = document.createElement("canvas");
+    sample.width = 120;
+    sample.height = 68;
+    const sampleCtx = sample.getContext("2d");
+
+    const id = window.setInterval(() => {
+      const video = useEditorStore.getState().videoEl;
+      if (!sampleCtx || !video || video.readyState < 2 || canvas.offsetParent === null) return;
+      sampleCtx.drawImage(video, 0, 0, sample.width, sample.height);
+      const { data } = sampleCtx.getImageData(0, 0, sample.width, sample.height);
+      const bins = new Array(32).fill(0);
+      for (let i = 0; i < data.length; i += 4) {
+        const luma = (0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]) / 255;
+        bins[Math.min(31, Math.floor(luma * 32))] += 1;
+      }
+      const max = Math.max(1, ...bins);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const barW = canvas.width / bins.length;
+      bins.forEach((count, index) => {
+        const h = (count / max) * canvas.height;
+        ctx.fillStyle = "#a78bfa";
+        ctx.fillRect(index * barW, canvas.height - h, barW - 1, h);
+      });
+    }, 500);
+
+    return () => window.clearInterval(id);
+  }, []);
+
+  const sliders = [
+    ["Exposure", "brightness", -100, 100, "%"],
+    ["Contrast", "contrast", -100, 100, "%"],
+    ["Saturation", "saturation", -100, 100, "%"],
+    ["Temperature", "hue", -180, 180, "°"],
+    ["Tint", "tint", -100, 100, ""],
+  ] as const;
+
+  return (
+    <section className="glass-card flex min-h-0 flex-col overflow-hidden rounded-2xl">
+      <div className={panelTitle}>Lumetri Color &amp; Scopes</div>
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
+        {sliders.map(([label, key, min, max, suffix]) => (
+          <label key={key} className="block">
+            <span className="flex items-center justify-between text-[10px] text-zinc-500">
+              <span>{label}</span>
+              <span className="tabular-nums">
+                {Math.round(adjustments[key])}
+                {suffix}
+              </span>
+            </span>
+            <input
+              type="range"
+              min={min}
+              max={max}
+              step={1}
+              value={adjustments[key]}
+              onChange={(e) => setColorAdjustment({ [key]: Number(e.target.value) })}
+              className="mt-0.5 w-full accent-violet-500"
+            />
+          </label>
+        ))}
+
+        <div className="flex flex-wrap gap-1.5 pt-1">
+          {LUMETRI_PRESETS.map((preset) => (
+            <button
+              key={preset.id}
+              type="button"
+              onClick={() => {
+                resetColorAdjustments();
+                if (preset.id !== "none") setColorAdjustment(preset.patch);
+              }}
+              className="rounded-lg border border-zinc-800 bg-zinc-950/60 px-2.5 py-1 text-[11px] text-zinc-300 hover:border-zinc-600"
+            >
+              {preset.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="pt-1">
+          <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+            Luma scopes
+          </p>
+          <canvas ref={scopeRef} width={240} height={90} className="h-24 w-full rounded-lg bg-zinc-950 ring-1 ring-inset ring-zinc-800" />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Bottom: multi-track Premiere timeline                                */
+/* ------------------------------------------------------------------ */
+type TrackKey = "V2" | "V1" | "A1" | "A2";
+
+function PremiereTimeline() {
+  const assets = useEditorStore((s) => s.assets);
+  const sequence = useEditorStore((s) => s.sequence);
+  const overlays = useEditorStore((s) => s.overlays);
+  const activeEffects = useEditorStore((s) => s.activeEffects);
+  const audioTracks = useEditorStore((s) => s.audioTracks);
+  const activeClipId = useEditorStore((s) => s.activeClipId);
+  const selectedId = useEditorStore((s) => s.selectedId);
+  const currentTime = useEditorStore((s) => s.currentTime);
+  const duration = useEditorStore((s) => s.duration);
+  const fps = useEditorStore((s) => s.fps);
+  const selectClip = useEditorStore((s) => s.selectClip);
+  const selectOverlay = useEditorStore((s) => s.selectOverlay);
+  const seek = useEditorStore((s) => s.seek);
+
+  const [pps, setPps] = useState(48);
+  const [toggles, setToggles] = useState<Record<TrackKey, { m: boolean; s: boolean; lock: boolean; eye: boolean }>>({
+    V2: { m: false, s: false, lock: false, eye: true },
+    V1: { m: false, s: false, lock: false, eye: true },
+    A1: { m: false, s: false, lock: false, eye: true },
+    A2: { m: false, s: false, lock: false, eye: true },
+  });
+
+  const nameFor = (assetId: string) =>
+    assets.find((a) => a.id === assetId)?.name ?? "Clip";
+
+  // Cumulative timeline positions for V1 clips.
+  const videoBlocks = sequence.reduce<{ clip: (typeof sequence)[number]; start: number; dur: number }[]>(
+    (acc, clip) => {
+      const prev = acc[acc.length - 1];
+      const start = prev ? prev.start + prev.dur : 0;
+      const dur = Math.max(0.1, clip.trimEnd - clip.trimStart);
+      acc.push({ clip, start, dur });
+      return acc;
+    },
+    []
+  );
+
+  const timelineDuration = Math.max(
+    duration || 0,
+    videoBlocks.reduce((sum, b) => sum + b.dur, 0),
+    ...audioTracks.map((t) => t.startTime + t.duration),
+    5
+  );
+
+  const laneRef = useRef<HTMLDivElement>(null);
+
+  const seekFromClientX = (clientX: number) => {
+    const lane = laneRef.current;
+    if (!lane) return;
+    const rect = lane.getBoundingClientRect();
+    const time = (clientX - rect.left) / pps;
+    seek(Math.min(Math.max(time, 0), timelineDuration));
+  };
+
+  const onScrubPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    seekFromClientX(e.clientX);
+  };
+  const onScrubPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.buttons !== 1) return;
+    seekFromClientX(e.clientX);
+  };
+
+  const ticks = Math.max(1, Math.ceil(timelineDuration / 5));
+  const toggleTrack = (key: TrackKey, field: "m" | "s" | "lock" | "eye") =>
+    setToggles((prev) => ({ ...prev, [key]: { ...prev[key], [field]: !prev[key][field] } }));
+
+  const audioByLane = (lane: 0 | 1) => audioTracks.filter((_, i) => i % 2 === lane);
+
+  const videoChip = "rounded-md bg-gradient-to-b from-violet-500/80 to-blue-600/70 text-[10px] text-white ring-1 ring-inset ring-white/20";
+  const adjustChip = "rounded-md bg-gradient-to-b from-pink-500/80 to-fuchsia-600/70 text-[10px] text-white ring-1 ring-inset ring-white/20";
+  const audioChip = "rounded-md bg-gradient-to-b from-teal-500/80 to-emerald-600/70 text-[10px] text-white ring-1 ring-inset ring-white/20";
+
+  const TrackHeader = ({ keyName }: { keyName: TrackKey }) => {
+    const t = toggles[keyName];
+    const btn =
+      "flex h-5 w-5 items-center justify-center rounded text-[9px] font-bold transition-colors";
+    return (
+      <div className="flex h-12 w-24 shrink-0 items-center gap-1 border-b border-r border-zinc-800 bg-zinc-900/60 px-1.5">
+        <span className="mr-0.5 w-6 shrink-0 text-[10px] font-semibold text-zinc-300">{keyName}</span>
+        <button type="button" aria-label={`Mute ${keyName}`} onClick={() => toggleTrack(keyName, "m")} className={cn(btn, t.m ? "bg-amber-500/30 text-amber-300" : "text-zinc-500 hover:text-zinc-200")}>M</button>
+        <button type="button" aria-label={`Solo ${keyName}`} onClick={() => toggleTrack(keyName, "s")} className={cn(btn, t.s ? "bg-sky-500/30 text-sky-300" : "text-zinc-500 hover:text-zinc-200")}>S</button>
+        <button type="button" aria-label={`Lock ${keyName}`} onClick={() => toggleTrack(keyName, "lock")} className={cn(btn, "text-zinc-500 hover:text-zinc-200")}>
+          {t.lock ? <Lock className="h-3 w-3" aria-hidden /> : <Unlock className="h-3 w-3" aria-hidden />}
+        </button>
+        <button type="button" aria-label={`${t.eye ? "Hide" : "Show"} ${keyName}`} onClick={() => toggleTrack(keyName, "eye")} className={cn(btn, "text-zinc-500 hover:text-zinc-200")}>
+          {t.eye ? <Eye className="h-3 w-3" aria-hidden /> : <EyeOff className="h-3 w-3" aria-hidden />}
+        </button>
+      </div>
+    );
+  };
+
+  return (
+    <section className="glass-card flex min-h-0 flex-col overflow-hidden rounded-2xl">
+      {/* Timeline toolbar */}
+      <div className="flex items-center gap-2 border-b border-zinc-800 px-3 py-2">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+          Timeline
+        </span>
+        <span className="font-mono text-[10px] tabular-nums text-zinc-500">
+          {formatTimecode(currentTime, fps)} / {formatTimecode(timelineDuration, fps)}
+        </span>
+        <div className="ml-auto flex items-center gap-1.5">
+          <button type="button" aria-label="Zoom out" onClick={() => setPps((v) => Math.max(12, v - 12))} className="rounded-lg border border-zinc-800 bg-zinc-950/60 p-1.5 text-zinc-300 hover:border-zinc-600">
+            <ZoomOut className="h-3.5 w-3.5" aria-hidden />
+          </button>
+          <input type="range" min={12} max={200} step={4} value={pps} onChange={(e) => setPps(Number(e.target.value))} aria-label="Timeline zoom" className="w-28 accent-violet-500" />
+          <button type="button" aria-label="Zoom in" onClick={() => setPps((v) => Math.min(200, v + 12))} className="rounded-lg border border-zinc-800 bg-zinc-950/60 p-1.5 text-zinc-300 hover:border-zinc-600">
+            <ZoomIn className="h-3.5 w-3.5" aria-hidden />
+          </button>
+        </div>
+      </div>
+
+      <div className="flex min-h-0 flex-1">
+        {/* Track headers column */}
+        <div className="flex shrink-0 flex-col">
+          <div className="h-6 w-24 border-b border-r border-zinc-800 bg-zinc-900/60" />
+          {(["V2", "V1", "A1", "A2"] as TrackKey[]).map((keyName) => (
+            <TrackHeader key={keyName} keyName={keyName} />
+          ))}
+        </div>
+
+        {/* Ruler + lanes */}
+        <div className="relative min-h-0 flex-1 overflow-x-auto overflow-y-hidden">
+          <div className="relative" style={{ width: `${Math.max(timelineDuration * pps, 400)}px` }} ref={laneRef}>
+            {/* Ruler */}
+            <div
+              className="relative h-6 select-none border-b border-zinc-800 bg-zinc-900/40"
+              onPointerDown={onScrubPointerDown}
+              onPointerMove={onScrubPointerMove}
+            >
+              {Array.from({ length: ticks + 1 }).map((_, i) => {
+                const t = i * 5;
+                return (
+                  <div key={i} className="absolute top-0 h-full border-l border-zinc-800 pl-1 text-[9px] tabular-nums text-zinc-500" style={{ left: `${t * pps}px` }}>
+                    {formatTimecode(t, fps).slice(3, 8)}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* V2 — adjustment / effect layers (pink) */}
+            <div className="relative h-12 border-b border-zinc-800 bg-zinc-950/40">
+              {overlays.map((o) => (
+                <button
+                  key={o.id}
+                  type="button"
+                  onClick={() => selectOverlay(o.id)}
+                  className={cn("absolute inset-y-1.5 overflow-hidden px-1.5 text-left", adjustChip, o.id === selectedId && "ring-2 ring-white/70")}
+                  style={{ left: `${o.startTime * pps}px`, width: `${Math.max(24, (o.endTime - o.startTime) * pps)}px` }}
+                >
+                  <span className="block truncate">{o.text || "Text"}</span>
+                </button>
+              ))}
+              {activeEffects.map((fx) => (
+                <div
+                  key={fx.id}
+                  className={cn("absolute top-1.5 h-4 overflow-hidden px-1.5", adjustChip)}
+                  style={{ left: `${fx.startTime * pps}px`, width: `${Math.max(20, fx.duration * pps)}px` }}
+                  title={`Effect: ${fx.type}`}
+                >
+                  <span className="block truncate capitalize">{fx.type}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* V1 — video clips (purple/blue) */}
+            <div className="relative h-12 border-b border-zinc-800 bg-zinc-950/40">
+              {videoBlocks.map(({ clip, start, dur }) => (
+                <button
+                  key={clip.id}
+                  type="button"
+                  onClick={() => selectClip(clip.id)}
+                  className={cn("absolute inset-y-1.5 overflow-hidden px-1.5 text-left", videoChip, clip.id === activeClipId && "ring-2 ring-white/70")}
+                  style={{ left: `${start * pps}px`, width: `${Math.max(28, dur * pps)}px` }}
+                >
+                  <span className="block truncate">{nameFor(clip.assetId)}</span>
+                </button>
+              ))}
+            </div>
+
+            {/* A1 / A2 — audio tracks (teal/green) */}
+            {([0, 1] as const).map((lane) => (
+              <div key={lane} className="relative h-12 border-b border-zinc-800 bg-zinc-950/40">
+                {audioByLane(lane).map((track) => (
+                  <div
+                    key={track.id}
+                    className={cn("absolute inset-y-1.5 flex items-center gap-1 overflow-hidden px-1.5", audioChip)}
+                    style={{ left: `${track.startTime * pps}px`, width: `${Math.max(28, track.duration * pps)}px` }}
+                    title={track.name}
+                  >
+                    <Music className="h-3 w-3 shrink-0" aria-hidden />
+                    <span className="truncate">{track.name}</span>
+                  </div>
+                ))}
+              </div>
+            ))}
+
+            {/* Playhead */}
+            <div className="pointer-events-none absolute inset-y-0 z-20 w-px bg-fuchsia-400" style={{ left: `${currentTime * pps}px` }}>
+              <span className="absolute -top-0 left-1/2 h-2.5 w-2.5 -translate-x-1/2 rounded-sm bg-fuchsia-400" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+export function DesktopEditor() {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
+      <div className="grid min-h-0 gap-3 lg:grid-cols-[300px_minmax(0,1fr)_320px]" style={{ height: "min(56vh, 560px)", minHeight: 360 }}>
+        <ProjectBinPanel />
+        <ProgramPreview />
+        <LumetriPanel />
+      </div>
+      <PremiereTimeline />
+    </div>
+  );
+}

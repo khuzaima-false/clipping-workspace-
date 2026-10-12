@@ -195,13 +195,14 @@ export function buildCanvasFilter(
   adjustments: ColorAdjustments,
   extraBlur = 0
 ): string {
-  const { brightness, contrast, saturation, hue, blur } = adjustments;
+  const { brightness, contrast, saturation, hue, tint, blur } = adjustments;
   const totalBlur = blur + extraBlur;
   if (
     brightness === 0 &&
     contrast === 0 &&
     saturation === 0 &&
     hue === 0 &&
+    tint === 0 &&
     totalBlur <= 0
   ) {
     return "none";
@@ -211,7 +212,9 @@ export function buildCanvasFilter(
     `contrast(${Math.max(0, 100 + contrast)}%)`,
     `saturate(${Math.max(0, 100 + saturation)}%)`,
   ];
-  if (hue !== 0) parts.push(`hue-rotate(${hue}deg)`);
+  // Temperature (hue) and tint both fold into a single hue rotation.
+  const hueShift = hue + tint * 0.5;
+  if (hueShift !== 0) parts.push(`hue-rotate(${hueShift}deg)`);
   if (totalBlur > 0) parts.push(`blur(${totalBlur.toFixed(2)}px)`);
   return parts.join(" ");
 }
@@ -387,6 +390,15 @@ function drawOverlay(
   const boxY = centerY - boxH / 2;
   // Keep the box on-canvas even at extreme anchor positions.
   boxX = Math.min(Math.max(boxX, 0), Math.max(0, width - boxW));
+
+  // Rotate the whole block around its center.
+  if (overlay.rotation) {
+    const rcx = boxX + boxW / 2;
+    const rcy = boxY + boxH / 2;
+    ctx.translate(rcx, rcy);
+    ctx.rotate((overlay.rotation * Math.PI) / 180);
+    ctx.translate(-rcx, -rcy);
+  }
 
   // Pop the whole block in for overlays without word-level timing.
   if (!timing) {

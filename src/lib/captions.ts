@@ -104,6 +104,7 @@ export function buildAutoCaptions(
       padding: 0,
       radius: 0,
       alignment: "center",
+      rotation: 0,
       startTime: start,
       endTime: end,
       words: group,
