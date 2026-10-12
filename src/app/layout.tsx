@@ -48,12 +48,14 @@ export const metadata: Metadata = {
   description: DESCRIPTION,
   keywords: KEYWORDS,
   applicationName: SITE_NAME,
-  // Explicit, high-resolution square icons so Google Search, browsers, and iOS
-  // pick up the brand mark (served from /public).
+  // Icons served from /public. Google Search favours square, 48px-multiple
+  // sizes, so we declare 48/96/144/192 PNGs (plus the .ico for browsers).
   icons: {
     icon: [
       { url: "/favicon.ico", sizes: "any" },
-      { url: "/icon.png", type: "image/png", sizes: "512x512" },
+      { url: "/icon-48.png", type: "image/png", sizes: "48x48" },
+      { url: "/icon-96.png", type: "image/png", sizes: "96x96" },
+      { url: "/icon-144.png", type: "image/png", sizes: "144x144" },
       { url: "/icon-192.png", type: "image/png", sizes: "192x192" },
     ],
     apple: [{ url: "/apple-icon.png", type: "image/png", sizes: "180x180" }],

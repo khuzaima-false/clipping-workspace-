@@ -117,8 +117,8 @@ async function main() {
     .toBuffer();
   writeFileSync(resolve(publicDir, "logo.png"), logo);
 
-  // 2. Favicon — PNG frames wrapped into a multi-size .ico.
-  const icoSizes = [16, 32, 48, 64];
+  // 2. Favicon — multi-size .ico (includes a 48px frame, which Google wants).
+  const icoSizes = [16, 32, 48, 96];
   const icoEntries = await Promise.all(
     icoSizes.map(async (size) => ({
       size,
@@ -131,19 +131,22 @@ async function main() {
   const ico = buildIco(icoEntries);
   writeFileSync(resolve(publicDir, "favicon.ico"), ico);
 
-  // 2b. Square PNG icons for Google Search + PWA. Google renders multiples of
-  //     48px crisply, so we ship 512/192/180 square assets.
+  // 2b. PNG icons in the sizes Google Search wants: square multiples of 48px
+  //     (48, 96, 144, 192). Shipping these gives Googlebot clean pixels.
+  for (const size of [48, 96, 144, 192]) {
+    const png = await sharp(Buffer.from(centeredMarkSvg(size)))
+      .resize(size, size)
+      .png()
+      .toBuffer();
+    writeFileSync(resolve(publicDir, `icon-${size}.png`), png);
+  }
+
+  // A high-res master square + the iOS home-screen icon.
   const iconPng = await sharp(Buffer.from(centeredMarkSvg(512)))
     .resize(512, 512)
     .png()
     .toBuffer();
   writeFileSync(resolve(publicDir, "icon.png"), iconPng);
-
-  const icon192 = await sharp(Buffer.from(centeredMarkSvg(192)))
-    .resize(192, 192)
-    .png()
-    .toBuffer();
-  writeFileSync(resolve(publicDir, "icon-192.png"), icon192);
 
   const appleIcon = await sharp(Buffer.from(centeredMarkSvg(180)))
     .resize(180, 180)
@@ -161,8 +164,8 @@ async function main() {
   console.log("Brand assets written:");
   console.log(`  public/logo.png        ${logo.length} bytes (512x512)`);
   console.log(`  public/favicon.ico     ${icoSizes.join("/")} (${ico.length} bytes)`);
+  console.log(`  public/icon-48/96/144/192.png  (Google multiples of 48)`);
   console.log(`  public/icon.png        ${iconPng.length} bytes (512x512)`);
-  console.log(`  public/icon-192.png    ${icon192.length} bytes (192x192)`);
   console.log(`  public/apple-icon.png  ${appleIcon.length} bytes (180x180)`);
   console.log(`  public/og-image.png    ${og.length} bytes (1200x630)`);
 }
