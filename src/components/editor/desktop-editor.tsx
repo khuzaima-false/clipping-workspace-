@@ -506,6 +506,9 @@ function ProjectBinPanel({ onRequireCredits }: { onRequireCredits?: () => void }
                   <option value="pop">Pop-in</option>
                   <option value="bounce">Bounce</option>
                   <option value="karaoke">Karaoke</option>
+                  <option value="typewriter">Typewriter</option>
+                  <option value="fadeIn">Fade In</option>
+                  <option value="neon">Neon Glow</option>
                 </select>
               </label>
               <div className="grid grid-cols-2 gap-2">

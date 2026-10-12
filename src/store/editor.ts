@@ -21,7 +21,14 @@ export type CaptionWord = {
 };
 
 /** How AI-generated words animate as they are spoken. */
-export type CaptionAnimation = "none" | "pop" | "bounce" | "karaoke";
+export type CaptionAnimation =
+  | "none"
+  | "pop"
+  | "bounce"
+  | "karaoke"
+  | "typewriter"
+  | "fadeIn"
+  | "neon";
 
 /** Global styling applied to every auto-generated caption overlay. */
 export type CaptionStyle = {
@@ -125,6 +132,8 @@ export type TextOverlay = {
   words?: CaptionWord[];
   /** Marks a caption produced by the AI transcriber so it can be replaced on regeneration. */
   auto?: boolean;
+  /** Per-overlay animation; falls back to the global caption style. */
+  animation?: CaptionAnimation;
 };
 
 /** A keyframe on the speed (velocity) curve. `time` is in source-video seconds. */
@@ -388,6 +397,8 @@ type EditorState = {
   removeClip: (clipId: string) => void;
   /** Splits the active clip into two clips at the current playhead. */
   splitActiveClip: () => void;
+  /** Duplicates the active clip immediately after it. */
+  duplicateActiveClip: () => void;
   /** Reorders a clip up (-1) or down (+1). */
   moveClip: (clipId: string, direction: -1 | 1) => void;
   /** Updates a clip's trim range. */
@@ -894,6 +905,27 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       trimStart: second.trimStart,
       trimEnd: second.trimEnd,
     });
+    persistProjectMedia(get().projectId, get().assets, next);
+  },
+
+  duplicateActiveClip: () => {
+    const { activeClipId, sequence } = get();
+    if (!activeClipId) return;
+    const index = sequence.findIndex((clip) => clip.id === activeClipId);
+    if (index < 0) return;
+    const clip = sequence[index];
+    const copy: TimelineClip = {
+      id: createId("clip"),
+      assetId: clip.assetId,
+      trimStart: clip.trimStart,
+      trimEnd: clip.trimEnd,
+    };
+    const next = [
+      ...sequence.slice(0, index + 1),
+      copy,
+      ...sequence.slice(index + 1),
+    ];
+    set({ sequence: next, activeClipId: copy.id });
     persistProjectMedia(get().projectId, get().assets, next);
   },
 

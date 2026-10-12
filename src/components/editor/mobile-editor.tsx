@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import {
   Captions,
   Clapperboard,
+  Copy,
   Crop,
   Film,
   Gauge,
@@ -60,12 +61,14 @@ const EFFECT_CARDS: { type: VideoEffectType; label: string; Icon: typeof Wand2 }
   { type: "blur-vignette", label: "Vignette", Icon: Layers },
 ];
 
-const FILTERS: { id: string; label: string; patch: Record<string, number> }[] = [
-  { id: "none", label: "None", patch: { brightness: 0, contrast: 0, saturation: 0, hue: 0, blur: 0 } },
-  { id: "vivid", label: "Vivid", patch: { contrast: 12, saturation: 30 } },
-  { id: "warm", label: "Warm", patch: { saturation: 12, hue: 10 } },
-  { id: "cool", label: "Cool", patch: { saturation: 8, hue: -14 } },
-  { id: "mono", label: "Mono", patch: { contrast: 10, saturation: -100 } },
+const FILTERS: { id: string; label: string; swatch: string; patch: Record<string, number> }[] = [
+  { id: "none", label: "None", swatch: "linear-gradient(135deg,#3f3f46,#18181b)", patch: {} },
+  { id: "glitch", label: "Glitch", swatch: "linear-gradient(135deg,#22d3ee,#f43f5e,#a855f7)", patch: { contrast: 40, saturation: 60, hue: 20, tint: 30 } },
+  { id: "blur", label: "Blur", swatch: "linear-gradient(135deg,#64748b,#334155)", patch: { blur: 8 } },
+  { id: "vhs", label: "VHS", swatch: "linear-gradient(135deg,#f59e0b,#10b981,#3b82f6)", patch: { saturation: 45, hue: -12, contrast: 18, blur: 2 } },
+  { id: "cyberpunk", label: "Cyberpunk", swatch: "linear-gradient(135deg,#d946ef,#06b6d4)", patch: { saturation: 55, hue: -60, tint: 40, contrast: 30 } },
+  { id: "cinematic", label: "Cinematic", swatch: "linear-gradient(135deg,#0ea5e9,#f59e0b)", patch: { contrast: 22, saturation: -8, hue: 8, blur: 1 } },
+  { id: "bw", label: "B&W", swatch: "linear-gradient(135deg,#e5e7eb,#111827)", patch: { saturation: -100, contrast: 14 } },
 ];
 
 const SPEED_PRESETS = ["none", "montage", "hero", "bullet"] as const;
@@ -110,6 +113,32 @@ function Sheet({
       </div>
     </div>,
     document.body
+  );
+}
+
+/** Visual filter preset cards that apply live colour grading to the preview. */
+function FilterGallery() {
+  const resetColorAdjustments = useEditorStore((s) => s.resetColorAdjustments);
+  const setColorAdjustment = useEditorStore((s) => s.setColorAdjustment);
+  return (
+    <div className="grid grid-cols-3 gap-2">
+      {FILTERS.map((filter) => (
+        <button
+          key={filter.id}
+          type="button"
+          onClick={() => {
+            resetColorAdjustments();
+            if (filter.id !== "none") setColorAdjustment(filter.patch);
+          }}
+          className="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950/60 text-left transition-colors hover:border-zinc-600"
+        >
+          <span className="block h-12 w-full" style={{ background: filter.swatch }} />
+          <span className="block px-2 py-1.5 text-[10px] text-zinc-200">
+            {filter.label}
+          </span>
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -368,7 +397,10 @@ export function MobileEditor() {
 
   const selectClip = useEditorStore((s) => s.selectClip);
   const splitActiveClip = useEditorStore((s) => s.splitActiveClip);
+  const duplicateActiveClip = useEditorStore((s) => s.duplicateActiveClip);
   const removeClip = useEditorStore((s) => s.removeClip);
+  const selectedId = useEditorStore((s) => s.selectedId);
+  const updateOverlay = useEditorStore((s) => s.updateOverlay);
   const setTrimStart = useEditorStore((s) => s.setTrimStart);
   const setTrimEnd = useEditorStore((s) => s.setTrimEnd);
   const resetTrim = useEditorStore((s) => s.resetTrim);
@@ -377,9 +409,8 @@ export function MobileEditor() {
   const addEffect = useEditorStore((s) => s.addEffect);
   const clearEffects = useEditorStore((s) => s.clearEffects);
   const activeEffects = useEditorStore((s) => s.activeEffects);
-  const resetColorAdjustments = useEditorStore((s) => s.resetColorAdjustments);
-  const setColorAdjustment = useEditorStore((s) => s.setColorAdjustment);
   const setSpeedPreset = useEditorStore((s) => s.setSpeedPreset);
+  const setSpeedPoints = useEditorStore((s) => s.setSpeedPoints);
   const speedPreset = useEditorStore((s) => s.speedPreset);
   const aspect = useEditorStore((s) => s.aspect);
   const setAspect = useEditorStore((s) => s.setAspect);
@@ -388,6 +419,7 @@ export function MobileEditor() {
   const removeAudioTrack = useEditorStore((s) => s.removeAudioTrack);
   const captionLanguage = useEditorStore((s) => s.captionLanguage);
   const setCaptionLanguage = useEditorStore((s) => s.setCaptionLanguage);
+  const setCaptionStyle = useEditorStore((s) => s.setCaptionStyle);
   const generateAutoCaptions = useEditorStore((s) => s.generateAutoCaptions);
   const transcribing = useEditorStore((s) => s.transcribing);
   const autoCaptionCount = useEditorStore(
@@ -461,6 +493,8 @@ export function MobileEditor() {
     "inline-flex items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-2 text-xs text-zinc-300";
   const primaryBtn =
     "brand-gradient brand-gradient-hover inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold text-white";
+  const quickBtn =
+    "inline-flex items-center gap-1 rounded-lg border border-zinc-800 bg-zinc-950/60 px-2.5 py-1.5 text-[10px] text-zinc-200 transition-colors hover:border-zinc-600";
 
   return (
     <div className="md:hidden flex min-h-0 flex-1 flex-col justify-between overflow-x-hidden rounded-xl border border-zinc-800/80 bg-zinc-950">
@@ -516,6 +550,31 @@ export function MobileEditor() {
           onAddAudio={() => openSheet("audio")}
           onAddText={() => openSheet("text")}
         />
+
+        {/* Inline contextual menu for the tapped clip */}
+        {clipSelected && (
+          <div className="mt-2 flex flex-wrap items-center gap-1.5 rounded-xl border border-fuchsia-500/40 bg-fuchsia-500/5 p-1.5">
+            <button type="button" onClick={splitActiveClip} className={quickBtn}>
+              <Scissors className="h-3.5 w-3.5" aria-hidden /> Split
+            </button>
+            <button type="button" onClick={duplicateActiveClip} className={quickBtn}>
+              <Copy className="h-3.5 w-3.5" aria-hidden /> Duplicate
+            </button>
+            <button type="button" onClick={() => openSheet("speed")} className={quickBtn}>
+              <Gauge className="h-3.5 w-3.5" aria-hidden /> Speed
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (selectedClipId) removeClip(selectedClipId);
+                setSelectedClipId(null);
+              }}
+              className={cn(quickBtn, "text-red-400")}
+            >
+              <Trash2 className="h-3.5 w-3.5" aria-hidden /> Delete
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Pinned bottom action dock */}
@@ -611,27 +670,47 @@ export function MobileEditor() {
             Clear {activeEffects.length} effect{activeEffects.length === 1 ? "" : "s"}
           </button>
         )}
-      </Sheet>
-
-      <Sheet open={sheet === "filters"} title="Filters" onClose={() => setSheet(null)}>
-        <div className="grid grid-cols-3 gap-2">
-          {FILTERS.map((filter) => (
-            <button
-              key={filter.id}
-              type="button"
-              onClick={() => {
-                resetColorAdjustments();
-                if (filter.id !== "none") setColorAdjustment(filter.patch);
-              }}
-              className="rounded-xl border border-zinc-800 bg-zinc-950/60 px-3 py-3 text-xs text-zinc-200"
-            >
-              {filter.label}
-            </button>
-          ))}
+        <div className="mt-4 border-t border-zinc-800 pt-3">
+          <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+            Filter presets
+          </p>
+          <FilterGallery />
         </div>
       </Sheet>
 
+      <Sheet open={sheet === "filters"} title="Filters" onClose={() => setSheet(null)}>
+        <FilterGallery />
+      </Sheet>
+
       <Sheet open={sheet === "speed"} title="Speed" onClose={() => setSheet(null)}>
+        <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+          Speed
+        </p>
+        <div className="grid grid-cols-4 gap-2">
+          {[0.5, 1, 2, 5].map((rate) => (
+            <button
+              key={rate}
+              type="button"
+              onClick={() => {
+                if (rate === 1) {
+                  setSpeedPreset("none");
+                  return;
+                }
+                const span = Math.max(duration, 1);
+                setSpeedPoints([
+                  { time: 0, speed: rate },
+                  { time: span, speed: rate },
+                ]);
+              }}
+              className="rounded-xl border border-zinc-800 bg-zinc-950/60 px-2 py-3 text-xs text-zinc-200 transition-colors hover:border-zinc-600"
+            >
+              {rate}×
+            </button>
+          ))}
+        </div>
+        <p className="mb-1.5 mt-4 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+          Ramp presets
+        </p>
         <div className="grid grid-cols-4 gap-2">
           {SPEED_PRESETS.map((preset) => (
             <button
@@ -726,6 +805,33 @@ export function MobileEditor() {
         <button type="button" onClick={addOverlay} className={cn(primaryBtn, "w-full justify-center")}>
           <Plus className="h-3.5 w-3.5" aria-hidden /> Add text overlay
         </button>
+
+        <p className="mb-1.5 mt-4 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+          Text animation
+        </p>
+        <div className="grid grid-cols-2 gap-2">
+          {(
+            [
+              ["typewriter", "Typewriter"],
+              ["fadeIn", "Fade In"],
+              ["bounce", "Bounce"],
+              ["neon", "Neon Glow"],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => {
+                setCaptionStyle({ animation: id });
+                if (selectedId) updateOverlay(selectedId, { animation: id });
+              }}
+              className="rounded-xl border border-zinc-800 bg-zinc-950/60 px-3 py-2.5 text-xs text-zinc-200 transition-colors hover:border-zinc-600"
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
         {overlays.length > 0 && (
           <ul className="mt-3 space-y-1.5">
             {overlays.map((overlay) => (

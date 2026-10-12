@@ -362,6 +362,7 @@ function drawOverlay(
   // Only trust word timings when they still line up with the (editable) text.
   const timing =
     overlay.words && overlay.words.length === textWords.length ? overlay.words : null;
+  const anim = overlay.animation ?? style.animation;
 
   const lines: LayoutLine[] = timing
     ? layoutTimedLines(ctx, textWords, maxTextW)
@@ -402,7 +403,7 @@ function drawOverlay(
 
   // Pop the whole block in for overlays without word-level timing.
   if (!timing) {
-    const scale = animationScale(style.animation, sceneTime - overlay.startTime);
+    const scale = animationScale(anim, sceneTime - overlay.startTime);
     if (scale !== 1) {
       const cx = boxX + boxW / 2;
       const cy = boxY + boxH / 2;
@@ -422,6 +423,7 @@ function drawOverlay(
   const spaceWidth = ctx.measureText(" ").width;
   const highlightColor = style.highlightColor || "#facc15";
 
+  let wordCounter = 0;
   lines.forEach((line, lineIndex) => {
     const baselineY = boxY + overlay.padding + lineHeight * (lineIndex + 0.5);
     let cursorX =
@@ -434,6 +436,8 @@ function drawOverlay(
     for (const word of line.words) {
       let fill = overlay.fillColor;
       let scale = 1;
+      let alpha = 1;
+      let glow = false;
 
       if (timing) {
         const wordTiming = timing[word.wordIndex];
@@ -441,18 +445,42 @@ function drawOverlay(
           const active =
             sceneTime >= wordTiming.start && sceneTime <= wordTiming.end;
           const spoken = sceneTime > wordTiming.end;
-          if (style.animation === "karaoke") {
+          if (anim === "karaoke") {
             // Karaoke progressively fills already-spoken words.
             if (active || spoken) fill = highlightColor;
           } else if (style.activeWordHighlight && active) {
             fill = highlightColor;
           }
-          if (active) scale = animationScale(style.animation, sceneTime - wordTiming.start);
+          if (active) scale = animationScale(anim, sceneTime - wordTiming.start);
         }
       }
 
-      drawWord(ctx, word.text, cursorX, baselineY, word.width, fill, strokeWidth, scale);
+      // Non-scale animations.
+      if (anim === "fadeIn") {
+        alpha = Math.min(1, Math.max(0, (sceneTime - overlay.startTime) / 0.35));
+      } else if (anim === "typewriter") {
+        const start = timing
+          ? timing[word.wordIndex]?.start ?? overlay.startTime
+          : overlay.startTime + wordCounter * 0.06;
+        if (sceneTime < start) alpha = 0;
+      } else if (anim === "neon") {
+        glow = true;
+      }
+
+      drawWord(
+        ctx,
+        word.text,
+        cursorX,
+        baselineY,
+        word.width,
+        fill,
+        strokeWidth,
+        scale,
+        alpha,
+        glow
+      );
       cursorX += word.width + spaceWidth;
+      wordCounter += 1;
     }
   });
 
@@ -509,6 +537,13 @@ function animationScale(
   elapsed: number
 ): number {
   if (elapsed < 0 || animation === "none") return 1;
+  if (
+    animation === "typewriter" ||
+    animation === "fadeIn" ||
+    animation === "neon"
+  ) {
+    return 1;
+  }
   if (animation === "bounce") {
     const t = Math.min(1, elapsed / 0.3);
     return 1 + 0.16 * (1 - t) * Math.cos(t * Math.PI * 1.5);
@@ -527,13 +562,22 @@ function drawWord(
   width: number,
   fill: string,
   strokeWidth: number,
-  scale: number
+  scale: number,
+  alpha = 1,
+  glow = false
 ): void {
+  if (alpha <= 0) return;
   ctx.save();
+  if (alpha < 1) ctx.globalAlpha = alpha;
   ctx.translate(x + width / 2, baselineY);
   if (scale !== 1) ctx.scale(scale, scale);
   ctx.textAlign = "left";
   ctx.textBaseline = "middle";
+
+  if (glow) {
+    ctx.shadowColor = fill;
+    ctx.shadowBlur = Math.max(12, strokeWidth * 6);
+  }
 
   if (strokeWidth > 0) {
     ctx.lineWidth = strokeWidth;
