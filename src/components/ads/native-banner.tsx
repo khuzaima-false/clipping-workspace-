@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useIsAdFree } from "@/components/credits/use-ad-free";
+import { useInterval } from "@/hooks/use-interval";
 import { cn } from "@/lib/utils";
 
 /** Adsterra Native Banner loader. */
@@ -53,13 +54,13 @@ export function NativeAdBanner({
   const adFree = useIsAdFree();
   const [refreshKey, setRefreshKey] = useState(0);
 
-  useEffect(() => {
-    if (adFree) return;
-    const interval = window.setInterval(() => {
+  // Stable 30s refresh loop (paused for ad-free users and hidden tabs).
+  useInterval(
+    () => {
       if (!document.hidden) setRefreshKey((prev) => prev + 1);
-    }, REFRESH_MS);
-    return () => window.clearInterval(interval);
-  }, [adFree]);
+    },
+    adFree ? null : REFRESH_MS
+  );
 
   if (adFree) return null;
 
