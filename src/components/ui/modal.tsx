@@ -1,8 +1,14 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
 import { ChevronDown, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+/** Client-mount detection without setState-in-effect (SSR-safe). */
+const subscribeNoop = () => () => {};
+const getClientMounted = () => true;
+const getServerMounted = () => false;
 
 type ModalProps = {
   open: boolean;
@@ -28,6 +34,14 @@ export function Modal({
   bottomClose = false,
   bottomCloseLabel = "Close dialog",
 }: ModalProps) {
+  // Portal to <body> so `position: fixed` resolves against the viewport, not
+  // an ancestor with `backdrop-filter`/`transform` (e.g. the sticky header).
+  const mounted = useSyncExternalStore(
+    subscribeNoop,
+    getClientMounted,
+    getServerMounted
+  );
+
   // Escape closes the dialog; lock background scroll while open.
   useEffect(() => {
     if (!open) return;
@@ -44,9 +58,9 @@ export function Modal({
     };
   }, [open, onClose]);
 
-  if (!open) return null;
+  if (!open || !mounted) return null;
 
-  return (
+  return createPortal(
     <div
       role="dialog"
       aria-modal="true"
@@ -108,6 +122,7 @@ export function Modal({
           </button>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
