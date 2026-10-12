@@ -8,7 +8,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
-    <div className="flex h-dvh w-full overflow-hidden bg-zinc-950 text-zinc-100">
+    <div className="relative flex h-dvh max-h-dvh w-full max-w-full overflow-hidden bg-zinc-950 text-zinc-100">
       {/**
        * The sidebar reads `usePathname()` for active-link highlighting. On
        * routes with dynamic params it suspends during prerendering, so it is

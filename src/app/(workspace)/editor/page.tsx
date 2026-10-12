@@ -315,9 +315,9 @@ function EditorView() {
   const exporting = exportRun?.status === "running";
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex w-full max-w-full min-w-0 flex-col gap-4 max-md:h-full max-md:min-h-0 max-md:overflow-x-hidden">
       {/* Top bar */}
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex w-full max-w-full min-w-0 flex-wrap items-center gap-3 max-md:overflow-hidden">
         <Link
           href="/projects"
           className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-900/60 px-3 py-2 text-xs text-zinc-400 transition-colors hover:border-zinc-600 hover:text-zinc-100"

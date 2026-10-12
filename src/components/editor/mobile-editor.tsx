@@ -245,7 +245,7 @@ function MobileTimeline({
     assets.find((asset) => asset.id === assetId)?.name ?? "Clip";
 
   return (
-    <div className="relative mt-3 select-none">
+    <div className="relative mt-3 w-full max-w-full min-w-0 overflow-hidden select-none">
       {/* Fixed playhead needle */}
       <div className="pointer-events-none absolute inset-y-0 left-1/2 z-20 w-px -translate-x-1/2 bg-fuchsia-400">
         <span className="absolute -top-1 left-1/2 h-2 w-2 -translate-x-1/2 rounded-full bg-fuchsia-400" />
@@ -446,16 +446,16 @@ export function MobileEditor() {
     "brand-gradient brand-gradient-hover inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold text-white";
 
   return (
-    <div className="md:hidden">
-      {/* Compact sticky preview + controls */}
+    <div className="md:hidden flex min-h-0 flex-1 flex-col justify-between overflow-x-hidden rounded-xl border border-zinc-800/80 bg-zinc-950">
+      {/* Compact preview + controls (fixed at the top) */}
       <div
         ref={previewWrapRef}
-        className="-mx-4 -mt-4 border-b border-zinc-800/80 bg-zinc-950/95 backdrop-blur-xl sm:-mx-6 sticky top-0 z-20"
+        className="z-20 w-full max-w-full min-w-0 shrink-0 overflow-hidden rounded-t-xl border-b border-zinc-800/80 bg-black"
       >
-        <div className="h-[34vh] min-h-[200px]">
+        <div className="h-[32dvh] min-h-[180px] w-full">
           <MobilePreview wrapRef={previewWrapRef} />
         </div>
-        <div className="flex items-center justify-between gap-2 px-3 py-2">
+        <div className="flex w-full max-w-full min-w-0 items-center justify-between gap-2 px-3 py-2">
           <button
             type="button"
             onClick={undo}
@@ -491,16 +491,18 @@ export function MobileEditor() {
         </div>
       </div>
 
-      {/* Filmstrip */}
-      <MobileTimeline
-        selectedClipId={selectedClipId}
-        onSelectClip={handleSelectClip}
-        onAddAudio={() => openSheet("audio")}
-        onAddText={() => openSheet("text")}
-      />
+      {/* Scrollable middle: filmstrip + lanes */}
+      <div className="min-h-0 w-full max-w-full min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-3">
+        <MobileTimeline
+          selectedClipId={selectedClipId}
+          onSelectClip={handleSelectClip}
+          onAddAudio={() => openSheet("audio")}
+          onAddText={() => openSheet("text")}
+        />
+      </div>
 
-      {/* Contextual bottom dock */}
-      <div className="mt-3 rounded-2xl border border-zinc-800 bg-zinc-950/80 p-1.5 backdrop-blur">
+      {/* Pinned bottom action dock */}
+      <div className="sticky bottom-0 left-0 right-0 z-30 w-full shrink-0 border-t border-zinc-800 bg-zinc-950/95 px-2 py-2 backdrop-blur-md">
         {clipSelected ? (
           <div className="flex items-stretch gap-1">
             <button type="button" onClick={splitActiveClip} className={toolbarBtn}>
