@@ -268,6 +268,7 @@ function ProgramPreview() {
   const fps = useEditorStore((s) => s.fps);
   const hasVideo = useEditorStore((s) => s.videoEl !== null);
   const aspect = useEditorStore((s) => s.aspect);
+  const setAspect = useEditorStore((s) => s.setAspect);
   const setPlaying = useEditorStore((s) => s.setPlaying);
   const seek = useEditorStore((s) => s.seek);
   const setTrimStart = useEditorStore((s) => s.setTrimStart);
@@ -335,10 +336,29 @@ function ProgramPreview() {
 
   return (
     <section className="glass-card flex min-h-0 flex-col overflow-hidden rounded-2xl">
-      <div className="flex items-center justify-between border-b border-zinc-800 px-3 py-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-800 px-3 py-2">
         <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
           Program Monitor
         </span>
+        {/* Aspect-ratio switcher: 16:9 ↔ 9:16 ↔ 1:1 */}
+        <div className="flex items-center gap-1" role="group" aria-label="Aspect ratio">
+          {(["9:16", "16:9", "1:1"] as const).map((option) => (
+            <button
+              key={option}
+              type="button"
+              onClick={() => setAspect(option)}
+              aria-pressed={aspect === option}
+              className={cn(
+                "shrink-0 rounded-md px-2 py-1 text-[10px] font-semibold transition-colors",
+                aspect === option
+                  ? "brand-gradient text-white"
+                  : "border border-zinc-800 bg-zinc-950/60 text-zinc-400 hover:text-zinc-100"
+              )}
+            >
+              {option}
+            </button>
+          ))}
+        </div>
         <span className="text-[10px] tabular-nums text-zinc-500">
           {res.width}×{res.height} · {fps}fps
         </span>
@@ -350,8 +370,8 @@ function ProgramPreview() {
 
       {/* Transport */}
       <div className="space-y-2 border-t border-zinc-800 px-3 py-2">
-        <div className="flex items-center gap-2">
-          <span className="rounded bg-zinc-950 px-2 py-1 font-mono text-xs tabular-nums text-emerald-300 ring-1 ring-inset ring-zinc-800">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="shrink-0 rounded bg-zinc-950 px-2 py-1 font-mono text-[11px] tabular-nums text-emerald-300 ring-1 ring-inset ring-zinc-800">
             {formatTimecode(currentTime, fps)}
           </span>
           <input
@@ -363,19 +383,19 @@ function ProgramPreview() {
             disabled={!hasVideo}
             onChange={(e) => seek(Number(e.target.value))}
             aria-label="Scrub"
-            className="min-w-0 flex-1 accent-violet-500"
+            className="min-w-[120px] flex-1 accent-violet-500"
           />
-          <span className="font-mono text-[10px] tabular-nums text-zinc-500">
+          <span className="shrink-0 font-mono text-[10px] tabular-nums text-zinc-500">
             {formatTimecode(duration, fps)}
           </span>
         </div>
-        <div className="flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
           <button
             type="button"
             onClick={() => setPlaying(!playing)}
             disabled={!hasVideo}
             aria-label={playing ? "Pause" : "Play"}
-            className="flex h-8 w-8 items-center justify-center rounded-full bg-violet-600 text-white transition-colors hover:bg-violet-500 disabled:opacity-40"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-violet-600 text-white transition-colors hover:bg-violet-500 disabled:opacity-40"
           >
             {playing ? <Pause className="h-3.5 w-3.5" aria-hidden /> : <Play className="h-3.5 w-3.5 translate-x-px" aria-hidden />}
           </button>
@@ -384,7 +404,7 @@ function ProgramPreview() {
             onClick={() => setLoop((v) => !v)}
             aria-pressed={loop}
             className={cn(
-              "inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[11px]",
+              "inline-flex shrink-0 items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[11px]",
               loop ? "border-violet-500/50 bg-violet-500/10 text-violet-200" : "border-zinc-800 bg-zinc-950/60 text-zinc-300"
             )}
           >
@@ -394,7 +414,7 @@ function ProgramPreview() {
             type="button"
             onClick={() => setTrimStart(currentTime)}
             disabled={!hasVideo}
-            className="inline-flex items-center gap-1 rounded-lg border border-zinc-800 bg-zinc-950/60 px-2.5 py-1.5 text-[11px] text-zinc-300 disabled:opacity-40"
+            className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-zinc-800 bg-zinc-950/60 px-2.5 py-1.5 text-[11px] text-zinc-300 disabled:opacity-40"
           >
             <Scissors className="h-3.5 w-3.5" aria-hidden /> Mark In
           </button>
@@ -402,7 +422,7 @@ function ProgramPreview() {
             type="button"
             onClick={() => setTrimEnd(currentTime)}
             disabled={!hasVideo}
-            className="inline-flex items-center gap-1 rounded-lg border border-zinc-800 bg-zinc-950/60 px-2.5 py-1.5 text-[11px] text-zinc-300 disabled:opacity-40"
+            className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-zinc-800 bg-zinc-950/60 px-2.5 py-1.5 text-[11px] text-zinc-300 disabled:opacity-40"
           >
             <Scissors className="h-3.5 w-3.5 -scale-x-100" aria-hidden /> Mark Out
           </button>
@@ -734,7 +754,7 @@ function PremiereTimeline() {
 export function DesktopEditor() {
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
-      <div className="grid min-h-0 gap-3 lg:grid-cols-[300px_minmax(0,1fr)_320px]" style={{ height: "min(56vh, 560px)", minHeight: 360 }}>
+      <div className="grid min-h-0 gap-3 lg:grid-cols-[300px_minmax(0,1fr)_320px]" style={{ height: "min(48vh, 500px)", minHeight: 340 }}>
         <ProjectBinPanel />
         <ProgramPreview />
         <LumetriPanel />
