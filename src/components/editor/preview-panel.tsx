@@ -98,6 +98,9 @@ export function PreviewPanel() {
     const tick = () => {
       rafId = requestAnimationFrame(tick);
 
+      // Skip work while this canvas is hidden (e.g. on the mobile layout).
+      if (!canvas.isConnected || canvas.offsetParent === null) return;
+
       // Read fresh state every frame so edits (overlays, fit, aspect) show
       // immediately without re-subscribing this effect.
       const state = useEditorStore.getState();

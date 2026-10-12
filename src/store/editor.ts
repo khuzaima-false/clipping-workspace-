@@ -380,6 +380,8 @@ type EditorState = {
   selectClip: (clipId: string) => void;
   /** Removes a clip from the sequence. */
   removeClip: (clipId: string) => void;
+  /** Splits the active clip into two clips at the current playhead. */
+  splitActiveClip: () => void;
   /** Reorders a clip up (-1) or down (+1). */
   moveClip: (clipId: string, direction: -1 | 1) => void;
   /** Updates a clip's trim range. */
@@ -387,6 +389,13 @@ type EditorState = {
     clipId: string,
     patch: { trimStart?: number; trimEnd?: number }
   ) => void;
+  /** Restores an undo/redo snapshot of the editable timeline state. */
+  restoreEdit: (snapshot: {
+    sequence: TimelineClip[];
+    overlays: TextOverlay[];
+    trimStart: number;
+    trimEnd: number;
+  }) => void;
   resetEditor: () => void;
   seek: (time: number) => void;
   /** Moves the playhead by `delta` frames (negative steps backwards). */
@@ -839,6 +848,47 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     );
     set({ sequence });
     persistProjectMedia(get().projectId, get().assets, sequence);
+  },
+
+  restoreEdit: (snapshot) =>
+    set({
+      sequence: snapshot.sequence,
+      overlays: snapshot.overlays,
+      trimStart: snapshot.trimStart,
+      trimEnd: snapshot.trimEnd,
+    }),
+
+  splitActiveClip: () => {
+    const { activeClipId, sequence, currentTime } = get();
+    if (!activeClipId || sequence.length === 0) return;
+    const index = sequence.findIndex((clip) => clip.id === activeClipId);
+    if (index < 0) return;
+    const clip = sequence[index];
+    const at = Math.min(
+      Math.max(currentTime, clip.trimStart + 0.05),
+      clip.trimEnd - 0.05
+    );
+    if (at <= clip.trimStart + 0.01 || at >= clip.trimEnd - 0.01) return;
+    const first: TimelineClip = { ...clip, trimEnd: at };
+    const second: TimelineClip = {
+      id: createId("clip"),
+      assetId: clip.assetId,
+      trimStart: at,
+      trimEnd: clip.trimEnd,
+    };
+    const next = [
+      ...sequence.slice(0, index),
+      first,
+      second,
+      ...sequence.slice(index + 1),
+    ];
+    set({
+      sequence: next,
+      activeClipId: second.id,
+      trimStart: second.trimStart,
+      trimEnd: second.trimEnd,
+    });
+    persistProjectMedia(get().projectId, get().assets, next);
   },
 
   resetEditor: () => {
