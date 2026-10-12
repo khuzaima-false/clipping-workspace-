@@ -7,3 +7,7 @@
 
 /editor/*  /editor.html      200
 /ref/*     /ref/index.html   200
+
+# Retire the old fitness-calibration page so crawlers drop it.
+/quiz      /  301
+/quiz/*    /  301

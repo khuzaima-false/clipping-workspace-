@@ -17,7 +17,6 @@ import sharp from "sharp";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const publicDir = resolve(root, "public");
-const appDir = resolve(root, "src/app");
 const mark = JSON.parse(
   readFileSync(resolve(root, "src/lib/brand-mark.json"), "utf8")
 );
@@ -118,9 +117,7 @@ async function main() {
     .toBuffer();
   writeFileSync(resolve(publicDir, "logo.png"), logo);
 
-  // 2. Favicon — PNG frames wrapped into a multi-size .ico. Written to
-  //    `public/` and mirrored into `src/app/` so Next's file convention serves
-  //    the same brand icon at /favicon.ico.
+  // 2. Favicon — PNG frames wrapped into a multi-size .ico.
   const icoSizes = [16, 32, 48, 64];
   const icoEntries = await Promise.all(
     icoSizes.map(async (size) => ({
@@ -133,22 +130,26 @@ async function main() {
   );
   const ico = buildIco(icoEntries);
   writeFileSync(resolve(publicDir, "favicon.ico"), ico);
-  mkdirSync(appDir, { recursive: true });
-  writeFileSync(resolve(appDir, "favicon.ico"), ico);
 
-  // 2b. PNG icon + apple touch icon via Next's file conventions, so a fresh
-  //     (non-cached) icon path is emitted alongside /favicon.ico.
-  const appIcon = await sharp(Buffer.from(centeredMarkSvg(512)))
+  // 2b. Square PNG icons for Google Search + PWA. Google renders multiples of
+  //     48px crisply, so we ship 512/192/180 square assets.
+  const iconPng = await sharp(Buffer.from(centeredMarkSvg(512)))
     .resize(512, 512)
     .png()
     .toBuffer();
-  writeFileSync(resolve(appDir, "icon.png"), appIcon);
+  writeFileSync(resolve(publicDir, "icon.png"), iconPng);
+
+  const icon192 = await sharp(Buffer.from(centeredMarkSvg(192)))
+    .resize(192, 192)
+    .png()
+    .toBuffer();
+  writeFileSync(resolve(publicDir, "icon-192.png"), icon192);
 
   const appleIcon = await sharp(Buffer.from(centeredMarkSvg(180)))
     .resize(180, 180)
     .png()
     .toBuffer();
-  writeFileSync(resolve(appDir, "apple-icon.png"), appleIcon);
+  writeFileSync(resolve(publicDir, "apple-icon.png"), appleIcon);
 
   // 3. Open Graph card — 1200x630.
   const og = await sharp(Buffer.from(ogSvg()))
@@ -160,9 +161,9 @@ async function main() {
   console.log("Brand assets written:");
   console.log(`  public/logo.png        ${logo.length} bytes (512x512)`);
   console.log(`  public/favicon.ico     ${icoSizes.join("/")} (${ico.length} bytes)`);
-  console.log(`  src/app/favicon.ico    ${ico.length} bytes (mirrored)`);
-  console.log(`  src/app/icon.png       ${appIcon.length} bytes (512x512)`);
-  console.log(`  src/app/apple-icon.png ${appleIcon.length} bytes (180x180)`);
+  console.log(`  public/icon.png        ${iconPng.length} bytes (512x512)`);
+  console.log(`  public/icon-192.png    ${icon192.length} bytes (192x192)`);
+  console.log(`  public/apple-icon.png  ${appleIcon.length} bytes (180x180)`);
   console.log(`  public/og-image.png    ${og.length} bytes (1200x630)`);
 }
 

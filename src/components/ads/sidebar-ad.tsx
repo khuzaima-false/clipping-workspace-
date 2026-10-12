@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useIsAdFree } from "@/components/credits/use-ad-free";
 import { cn } from "@/lib/utils";
 
 /** Adsterra 300x250 iframe unit. */
 const AD_KEY = "61a37ba5abbb5ed6eb1ae935df24e239";
 const AD_SRC = `https://bauval.org/22/${AD_KEY}`;
+/** How often a fresh ad is fetched. */
+const REFRESH_MS = 30_000;
 
 type AtOptions = {
   key: string;
@@ -24,22 +26,35 @@ type SidebarAdProps = {
 };
 
 /**
- * Sidebar 300x250 iframe banner.
+ * Sidebar 300x250 iframe banner with a 30s auto-refresh.
  *
  * Adsterra expects the `window.atOptions` config to exist *before* the loader
- * script runs, so both are injected in the same effect. Renders nothing for
- * ad-free (premium) accounts.
+ * script runs, so both are injected together on every refresh cycle. The
+ * refresh timer pauses while the tab is hidden. Renders nothing for ad-free
+ * (premium) accounts.
  */
 export function SidebarAd({ className, label = "Sponsored" }: SidebarAdProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
   const adFree = useIsAdFree();
+
+  // Auto-refresh every 30s, paused while the browser tab is hidden.
+  useEffect(() => {
+    if (adFree) return;
+    const id = window.setInterval(() => {
+      if (document.hidden) return;
+      setRefreshKey((prev) => prev + 1);
+    }, REFRESH_MS);
+    return () => window.clearInterval(id);
+  }, [adFree]);
 
   useEffect(() => {
     if (adFree) return;
     const container = containerRef.current;
     if (!container) return;
-    // Guard against duplicate injection across Fast Refresh / remounts.
-    if (container.querySelector("script[data-adsterra-sidebar]")) return;
+
+    // Drop the previous script/iframe before loading a new ad.
+    container.innerHTML = "";
 
     (window as unknown as AtWindow).atOptions = {
       key: AD_KEY,
@@ -58,9 +73,9 @@ export function SidebarAd({ className, label = "Sponsored" }: SidebarAdProps) {
 
     return () => {
       script.remove();
-      delete (window as unknown as AtWindow).atOptions;
+      container.innerHTML = "";
     };
-  }, [adFree]);
+  }, [adFree, refreshKey]);
 
   if (adFree) return null;
 

@@ -10,7 +10,7 @@ const SITE_URL = (
 const SITE_NAME = "Forgevyn Clipping";
 const TITLE = "Forgevyn | AI Video Clipper & Short-Form Video Generator";
 const DESCRIPTION =
-  "Turn long podcasts, streams, and YouTube videos into viral TikToks, YouTube Shorts, and Instagram Reels with AI captions and smart framing.";
+  "Turn long videos into viral short clips with AI captions, multi-clip timeline, and dynamic auto-framing.";
 const KEYWORDS = [
   "AI video clipping tool",
   "long video to short clips",
@@ -48,15 +48,15 @@ export const metadata: Metadata = {
   description: DESCRIPTION,
   keywords: KEYWORDS,
   applicationName: SITE_NAME,
-  // Explicit icon tags (also emitted automatically by the `src/app` file
-  // conventions: favicon.ico, icon.png, apple-icon.png).
+  // Explicit, high-resolution square icons so Google Search, browsers, and iOS
+  // pick up the brand mark (served from /public).
   icons: {
     icon: [
       { url: "/favicon.ico", sizes: "any" },
-      { url: "/logo.png", type: "image/png", sizes: "512x512" },
+      { url: "/icon.png", type: "image/png", sizes: "512x512" },
+      { url: "/icon-192.png", type: "image/png", sizes: "192x192" },
     ],
-    shortcut: "/favicon.ico",
-    apple: [{ url: "/logo.png", type: "image/png", sizes: "512x512" }],
+    apple: [{ url: "/apple-icon.png", type: "image/png", sizes: "180x180" }],
   },
   openGraph: {
     type: "website",
