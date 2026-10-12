@@ -3,9 +3,14 @@
 import { useEffect, useRef, useState } from "react";
 import {
   Activity,
+  AlignCenter,
+  AlignLeft,
+  AlignRight,
+  Captions,
   Eye,
   EyeOff,
   Film,
+  LoaderCircle,
   Lock,
   Music,
   Pause,
@@ -14,6 +19,7 @@ import {
   Repeat,
   Scissors,
   SlidersHorizontal,
+  Sparkles,
   Trash2,
   Unlock,
   Wand2,
@@ -22,10 +28,16 @@ import {
 } from "lucide-react";
 import { ASPECT_RESOLUTIONS, drawScene } from "@/lib/render";
 import {
+  FONT_FAMILIES,
   useEditorStore,
+  type CaptionAnimation,
+  type OverlayAlign,
   type TextOverlay,
   type VideoEffectType,
 } from "@/store/editor";
+import { CAPTIONS_CREDIT_COST } from "@/lib/credits";
+import { CAPTION_LANGUAGES, type CaptionLanguageId } from "@/lib/transcribe";
+import { useWorkspaceStore } from "@/store/workspace";
 import { cn } from "@/lib/utils";
 
 const EFFECT_CARDS: { type: VideoEffectType; label: string; Icon: typeof Wand2 }[] = [
@@ -138,8 +150,10 @@ function ColorWheel({
 /* ------------------------------------------------------------------ */
 /* Top-left: Project bin + Inspector                                    */
 /* ------------------------------------------------------------------ */
-function ProjectBinPanel() {
-  const [tab, setTab] = useState<"media" | "effects" | "properties" | "clip">("media");
+function ProjectBinPanel({ onRequireCredits }: { onRequireCredits?: () => void }) {
+  const [tab, setTab] = useState<
+    "media" | "effects" | "properties" | "clip" | "captions"
+  >("media");
   const inputRef = useRef<HTMLInputElement>(null);
 
   const assets = useEditorStore((s) => s.assets);
@@ -171,6 +185,42 @@ function ProjectBinPanel() {
   const setTrimEnd = useEditorStore((s) => s.setTrimEnd);
   const resetTrim = useEditorStore((s) => s.resetTrim);
 
+  // Captions + text styling
+  const hasVideo = useEditorStore((s) => s.videoEl !== null);
+  const captionLanguage = useEditorStore((s) => s.captionLanguage);
+  const setCaptionLanguage = useEditorStore((s) => s.setCaptionLanguage);
+  const generateAutoCaptions = useEditorStore((s) => s.generateAutoCaptions);
+  const clearAutoCaptions = useEditorStore((s) => s.clearAutoCaptions);
+  const transcribing = useEditorStore((s) => s.transcribing);
+  const transcribingProgress = useEditorStore((s) => s.transcribingProgress);
+  const transcribingStatus = useEditorStore((s) => s.transcribingStatus);
+  const transcriptionError = useEditorStore((s) => s.transcriptionError);
+  const autoCaptionCount = useEditorStore(
+    (s) => s.overlays.filter((o) => o.auto).length
+  );
+  const addOverlay = useEditorStore((s) => s.addOverlay);
+  const removeOverlay = useEditorStore((s) => s.removeOverlay);
+  const selectOverlay = useEditorStore((s) => s.selectOverlay);
+  const captionStyle = useEditorStore((s) => s.captionStyle);
+  const setCaptionStyle = useEditorStore((s) => s.setCaptionStyle);
+  const consumeCredits = useWorkspaceStore((s) => s.consumeCredits);
+  const [captionError, setCaptionError] = useState<string | null>(null);
+
+  const handleAutoCaptions = async () => {
+    if (transcribing) return;
+    setCaptionError(null);
+    const result = await consumeCredits(CAPTIONS_CREDIT_COST);
+    if (!result.ok) {
+      if (result.reason === "insufficient") onRequireCredits?.();
+      else
+        setCaptionError(
+          result.error ?? "Could not verify your credits. Please try again."
+        );
+      return;
+    }
+    void generateAutoCaptions();
+  };
+
   const nameFor = (assetId: string) =>
     assets.find((a) => a.id === assetId)?.name ?? "Clip";
 
@@ -187,6 +237,7 @@ function ProjectBinPanel() {
             ["effects", "Effects"],
             ["properties", "Props"],
             ["clip", "Clip"],
+            ["captions", "Captions"],
           ] as const
         ).map(([id, label]) => (
           <button
@@ -304,12 +355,100 @@ function ProjectBinPanel() {
           <div className="space-y-3">
             {!selected ? (
               <p className="text-[11px] leading-4 text-zinc-500">
-                Select a text overlay on the timeline to edit its Position, Scale
-                and Rotation.
+                Select a text overlay (Captions tab or timeline) to edit its text,
+                font, colors, animation and transform.
               </p>
             ) : (
               <>
-                <p className="truncate text-xs text-zinc-300">{selected.text || "Untitled"}</p>
+                <label className="block">
+                  <span className="mb-1 block text-[10px] font-medium text-zinc-400">
+                    Text
+                  </span>
+                  <textarea
+                    value={selected.text}
+                    onChange={(e) => patchSelected({ text: e.target.value })}
+                    rows={2}
+                    className="w-full resize-none rounded-lg border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-[11px] text-zinc-100 focus:border-violet-500 focus:outline-none"
+                  />
+                </label>
+
+                <label className="block">
+                  <span className="mb-1 block text-[10px] font-medium text-zinc-400">
+                    Font
+                  </span>
+                  <select
+                    value={selected.fontFamily}
+                    onChange={(e) => patchSelected({ fontFamily: e.target.value })}
+                    className="w-full rounded-lg border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-[11px] text-zinc-100"
+                  >
+                    {FONT_FAMILIES.map((font) => (
+                      <option key={font} value={font}>
+                        {font}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="block">
+                    <span className="mb-1 block text-[10px] text-zinc-400">Fill</span>
+                    <input
+                      type="color"
+                      value={selected.fillColor}
+                      onChange={(e) => patchSelected({ fillColor: e.target.value })}
+                      className="h-8 w-full rounded border border-zinc-800 bg-zinc-950"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block text-[10px] text-zinc-400">
+                      Background
+                    </span>
+                    <input
+                      type="color"
+                      value={selected.bgColor || "#000000"}
+                      onChange={(e) => patchSelected({ bgColor: e.target.value })}
+                      className="h-8 w-full rounded border border-zinc-800 bg-zinc-950"
+                    />
+                  </label>
+                </div>
+                {selected.bgColor && (
+                  <button
+                    type="button"
+                    onClick={() => patchSelected({ bgColor: "" })}
+                    className="text-[10px] text-zinc-500 hover:text-zinc-200"
+                  >
+                    Remove background
+                  </button>
+                )}
+
+                <div>
+                  <span className="mb-1 block text-[10px] text-zinc-400">Alignment</span>
+                  <div className="grid grid-cols-3 gap-1">
+                    {(
+                      [
+                        ["left", AlignLeft],
+                        ["center", AlignCenter],
+                        ["right", AlignRight],
+                      ] as const
+                    ).map(([id, Icon]) => (
+                      <button
+                        key={id}
+                        type="button"
+                        onClick={() => patchSelected({ alignment: id as OverlayAlign })}
+                        aria-pressed={selected.alignment === id}
+                        className={cn(
+                          "flex items-center justify-center rounded-lg border py-1.5",
+                          selected.alignment === id
+                            ? "border-violet-500 bg-violet-600/15 text-violet-200"
+                            : "border-zinc-800 bg-zinc-950/60 text-zinc-400"
+                        )}
+                      >
+                        <Icon className="h-3.5 w-3.5" aria-hidden />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 {(
                   [
                     ["Position X", "x", 0, 100, "%"],
@@ -339,6 +478,59 @@ function ProjectBinPanel() {
                 ))}
               </>
             )}
+
+            {/* Global caption animation + style (applies to AI captions) */}
+            <div className="space-y-2 border-t border-zinc-800 pt-3">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                Caption Style
+              </p>
+              <label className="block">
+                <span className="mb-1 block text-[10px] text-zinc-400">Animation</span>
+                <select
+                  value={captionStyle.animation}
+                  onChange={(e) =>
+                    setCaptionStyle({ animation: e.target.value as CaptionAnimation })
+                  }
+                  className="w-full rounded-lg border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-[11px] text-zinc-100"
+                >
+                  <option value="none">None</option>
+                  <option value="pop">Pop-in</option>
+                  <option value="bounce">Bounce</option>
+                  <option value="karaoke">Karaoke</option>
+                </select>
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="flex items-center gap-1.5 text-[10px] text-zinc-400">
+                  <input
+                    type="checkbox"
+                    checked={captionStyle.activeWordHighlight}
+                    onChange={(e) =>
+                      setCaptionStyle({ activeWordHighlight: e.target.checked })
+                    }
+                    className="accent-violet-500"
+                  />
+                  Word highlight
+                </label>
+                <label className="flex items-center gap-1.5 text-[10px] text-zinc-400">
+                  <input
+                    type="checkbox"
+                    checked={captionStyle.textStroke}
+                    onChange={(e) => setCaptionStyle({ textStroke: e.target.checked })}
+                    className="accent-violet-500"
+                  />
+                  Outline
+                </label>
+              </div>
+              <label className="flex items-center justify-between text-[10px] text-zinc-400">
+                Highlight color
+                <input
+                  type="color"
+                  value={captionStyle.highlightColor}
+                  onChange={(e) => setCaptionStyle({ highlightColor: e.target.value })}
+                  className="h-6 w-12 rounded border border-zinc-800 bg-zinc-950"
+                />
+              </label>
+            </div>
           </div>
         )}
 
@@ -479,6 +671,130 @@ function ProjectBinPanel() {
                 Reset framing
               </button>
             </div>
+          </div>
+        )}
+
+        {tab === "captions" && (
+          <div className="space-y-3">
+            <label className="block">
+              <span className="mb-1 block text-[10px] font-medium text-zinc-400">
+                Spoken language
+              </span>
+              <select
+                value={captionLanguage}
+                onChange={(e) =>
+                  setCaptionLanguage(e.target.value as CaptionLanguageId)
+                }
+                className="w-full rounded-lg border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-[11px] text-zinc-100 focus:border-violet-500 focus:outline-none"
+              >
+                {CAPTION_LANGUAGES.map((language) => (
+                  <option key={language.id} value={language.id}>
+                    {language.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <button
+              type="button"
+              onClick={() => void handleAutoCaptions()}
+              disabled={transcribing || !hasVideo}
+              className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg brand-gradient brand-gradient-hover px-3 py-2 text-[11px] font-semibold text-white disabled:opacity-40"
+            >
+              {transcribing ? (
+                <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden />
+              ) : (
+                <Sparkles className="h-3.5 w-3.5" aria-hidden />
+              )}
+              {transcribing ? "Transcribing…" : "Auto-generate AI captions"}
+              {!transcribing && (
+                <span className="rounded bg-black/25 px-1.5 py-0.5 text-[10px]">
+                  {CAPTIONS_CREDIT_COST}
+                </span>
+              )}
+            </button>
+
+            {transcribing && (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between text-[10px] text-zinc-500">
+                  <span className="truncate">{transcribingStatus || "Working…"}</span>
+                  <span className="tabular-nums">{transcribingProgress}%</span>
+                </div>
+                <div className="h-1.5 overflow-hidden rounded-full bg-zinc-800">
+                  <div
+                    className="brand-gradient h-full"
+                    style={{ width: `${Math.max(2, transcribingProgress)}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {(transcriptionError || captionError) && (
+              <p role="alert" className="text-[10px] leading-4 text-red-400">
+                {captionError ?? transcriptionError}
+              </p>
+            )}
+
+            {autoCaptionCount > 0 && (
+              <div className="flex items-center justify-between rounded-lg border border-zinc-800 bg-zinc-950/60 px-2 py-1.5">
+                <span className="text-[10px] text-zinc-400">
+                  {autoCaptionCount} AI caption{autoCaptionCount === 1 ? "" : "s"}
+                </span>
+                <button
+                  type="button"
+                  onClick={clearAutoCaptions}
+                  className="text-[10px] text-zinc-500 hover:text-red-400"
+                >
+                  Clear
+                </button>
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={addOverlay}
+              className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-2 text-[11px] text-zinc-200 hover:border-zinc-600"
+            >
+              <Plus className="h-3.5 w-3.5" aria-hidden /> Add text overlay
+            </button>
+
+            {overlays.length > 0 && (
+              <ul className="space-y-1.5">
+                {overlays.map((overlay) => (
+                  <li
+                    key={overlay.id}
+                    className={cn(
+                      "flex items-center gap-1 rounded-lg border px-2 py-1.5 text-[11px]",
+                      overlay.id === selectedId
+                        ? "border-violet-500/50 bg-violet-500/10"
+                        : "border-zinc-800 bg-zinc-950/60"
+                    )}
+                  >
+                    <Captions className="h-3 w-3 shrink-0 text-violet-400" aria-hidden />
+                    <button
+                      type="button"
+                      onClick={() => selectOverlay(overlay.id)}
+                      className="min-w-0 flex-1 truncate text-left text-zinc-300"
+                    >
+                      {overlay.text || "Untitled"}
+                    </button>
+                    {overlay.auto && (
+                      <span className="shrink-0 rounded bg-violet-500/15 px-1 text-[9px] uppercase text-violet-300">
+                        AI
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => removeOverlay(overlay.id)}
+                      aria-label="Delete caption"
+                      className="shrink-0 rounded p-0.5 text-zinc-500 hover:text-red-400"
+                    >
+                      <Trash2 className="h-3 w-3" aria-hidden />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         )}
       </div>
@@ -1106,11 +1422,15 @@ function PremiereTimeline() {
 }
 
 /* ------------------------------------------------------------------ */
-export function DesktopEditor() {
+export function DesktopEditor({
+  onRequireCredits,
+}: {
+  onRequireCredits?: () => void;
+}) {
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
       <div className="grid min-h-0 gap-3 lg:grid-cols-[280px_minmax(0,1fr)_300px] xl:grid-cols-[320px_minmax(0,1fr)_340px]" style={{ height: "min(58vh, 600px)", minHeight: 380 }}>
-        <ProjectBinPanel />
+        <ProjectBinPanel onRequireCredits={onRequireCredits} />
         <ProgramPreview />
         <LumetriPanel />
       </div>

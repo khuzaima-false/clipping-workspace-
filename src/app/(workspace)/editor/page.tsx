@@ -391,7 +391,7 @@ function EditorView() {
         <>
           {/* Desktop: Premiere-style 4-panel workspace */}
           <div className="hidden md:flex md:min-h-0 md:flex-1 md:flex-col">
-            <DesktopEditor />
+            <DesktopEditor onRequireCredits={() => setReferralOpen(true)} />
           </div>
 
           {/* Mobile CapCut-style timeline editor */}
