@@ -20,42 +20,19 @@ type AtOptions = {
 
 type AtWindow = Window & { atOptions?: AtOptions };
 
-type SidebarAdProps = {
-  className?: string;
-  label?: string;
-};
-
 /**
- * Sidebar 300x250 iframe banner with a 30s auto-refresh.
- *
- * Adsterra expects the `window.atOptions` config to exist *before* the loader
- * script runs, so both are injected together on every refresh cycle. The
- * refresh timer pauses while the tab is hidden. Renders nothing for ad-free
- * (premium) accounts.
+ * A single, disposable ad instance. Mounting it (re)injects a fresh script +
+ * iframe; unmounting tears the whole node down. Remounting via a changed `key`
+ * is what forces Adsterra to fetch a brand-new ad.
  */
-export function SidebarAd({ className, label = "Sponsored" }: SidebarAdProps) {
+function AdInstance() {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [refreshKey, setRefreshKey] = useState(0);
-  const adFree = useIsAdFree();
-
-  // Auto-refresh every 30s, paused while the browser tab is hidden.
-  useEffect(() => {
-    if (adFree) return;
-    const id = window.setInterval(() => {
-      if (document.hidden) return;
-      setRefreshKey((prev) => prev + 1);
-    }, REFRESH_MS);
-    return () => window.clearInterval(id);
-  }, [adFree]);
 
   useEffect(() => {
-    if (adFree) return;
     const container = containerRef.current;
     if (!container) return;
 
-    // Drop the previous script/iframe before loading a new ad.
-    container.innerHTML = "";
-
+    // Adsterra reads the config global before the loader runs.
     (window as unknown as AtWindow).atOptions = {
       key: AD_KEY,
       format: "iframe",
@@ -68,14 +45,44 @@ export function SidebarAd({ className, label = "Sponsored" }: SidebarAdProps) {
     script.src = AD_SRC;
     script.async = true;
     script.setAttribute("data-cfasync", "false");
-    script.dataset.adsterraSidebar = "true";
     container.appendChild(script);
 
     return () => {
       script.remove();
       container.innerHTML = "";
     };
-  }, [adFree, refreshKey]);
+  }, []);
+
+  return (
+    <div
+      ref={containerRef}
+      className="flex h-[250px] w-[300px] max-w-full items-center justify-center overflow-hidden rounded-lg bg-zinc-950/40 ring-1 ring-inset ring-zinc-800/80"
+    />
+  );
+}
+
+type SidebarAdProps = {
+  className?: string;
+  label?: string;
+};
+
+/**
+ * Sidebar 300x250 banner that refreshes every 30s by remounting a fresh
+ * `<AdInstance>` (a changed `key` destroys the old iframe and triggers a new
+ * ad request). The timer pauses while the tab is hidden, and the whole slot is
+ * hidden for ad-free (premium) accounts.
+ */
+export function SidebarAd({ className, label = "Sponsored" }: SidebarAdProps) {
+  const adFree = useIsAdFree();
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  useEffect(() => {
+    if (adFree) return;
+    const interval = window.setInterval(() => {
+      if (!document.hidden) setRefreshKey((prev) => prev + 1);
+    }, REFRESH_MS);
+    return () => window.clearInterval(interval);
+  }, [adFree]);
 
   if (adFree) return null;
 
@@ -87,10 +94,7 @@ export function SidebarAd({ className, label = "Sponsored" }: SidebarAdProps) {
       <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-600">
         {label}
       </span>
-      <div
-        ref={containerRef}
-        className="flex h-[250px] w-[300px] max-w-full items-center justify-center overflow-hidden rounded-lg bg-zinc-950/40 ring-1 ring-inset ring-zinc-800/80"
-      />
+      <AdInstance key={refreshKey} />
     </aside>
   );
 }
