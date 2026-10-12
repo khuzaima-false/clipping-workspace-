@@ -97,6 +97,8 @@ export function ReferralModal({ open, onClose }: ReferralModalProps) {
       title="Referrals & Rewards"
       onClose={onClose}
       className="max-w-lg"
+      bottomClose
+      bottomCloseLabel="Close referral window"
     >
       <div className="space-y-5">
         <div className="flex items-start gap-2.5 rounded-lg border border-violet-500/30 bg-violet-500/10 px-3.5 py-3 text-sm text-violet-200">
