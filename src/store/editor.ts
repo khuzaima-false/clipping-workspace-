@@ -1049,15 +1049,8 @@ export const useEditorStore = create<EditorState>()(
       }
 
       const assetIds = new Set(assets.map((asset) => asset.id));
-      // Re-flow the timeline: the sequence order is the play order, so drop any
-      // stale free-position offsets from older sessions.
-      const sequence = media.sequence
-        .filter((clip) => assetIds.has(clip.assetId))
-        .map((clip) => {
-          const copy = { ...clip };
-          delete copy.timelineStart;
-          return copy;
-        });
+      // Free timeline positions are preserved (clips may overlap on a track).
+      const sequence = media.sequence.filter((clip) => assetIds.has(clip.assetId));
       const overlays = (media.overlays as TextOverlay[]).filter(Boolean);
 
       // Rehydrate audio tracks (fetch + decode).
@@ -1249,10 +1242,13 @@ export const useEditorStore = create<EditorState>()(
   advanceClip: (wrap = false) => {
     const { sequence, activeClipId } = get();
     if (sequence.length === 0) return false;
-    const index = sequence.findIndex((clip) => clip.id === activeClipId);
+    // Order by absolute timeline position so playback follows the visual order
+    // even when clips have been dragged around (overlaps included).
+    const ordered = computeClipStarts(sequence).sort((a, b) => a.start - b.start);
+    const index = ordered.findIndex((entry) => entry.clip.id === activeClipId);
     let next: TimelineClip | undefined;
-    if (index >= 0 && index + 1 < sequence.length) next = sequence[index + 1];
-    else if (wrap) next = sequence[0];
+    if (index >= 0 && index + 1 < ordered.length) next = ordered[index + 1].clip;
+    else if (wrap) next = ordered[0].clip;
     // Single-clip wrap loops in place; the preview loop handles it.
     if (!next || next.id === activeClipId) return false;
     const asset = get().assets.find((item) => item.id === next.assetId);

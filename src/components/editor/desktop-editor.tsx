@@ -53,6 +53,7 @@ import {
   type VideoEffectType,
 } from "@/store/editor";
 import { useOverlayCanvasDrag } from "@/components/editor/use-overlay-drag";
+import { clampTimelineStart, usePointerDrag } from "@/lib/timeline-drag";
 import { audioPreview } from "@/lib/audio-preview";
 import { SOUND_EFFECTS, type SoundEffectId } from "@/lib/sfx";
 import { createDictation, isDictationSupported } from "@/lib/dictation";
@@ -2154,7 +2155,7 @@ function PremiereTimeline() {
   const setOverlayEndTime = useEditorStore((s) => s.setOverlayEndTime);
   const updateEffect = useEditorStore((s) => s.updateEffect);
   const addAudioTrackFromBlob = useEditorStore((s) => s.addAudioTrackFromBlob);
-  const reorderClip = useEditorStore((s) => s.reorderClip);
+  const moveClipTo = useEditorStore((s) => s.moveClipTo);
   const moveOverlayTo = useEditorStore((s) => s.moveOverlayTo);
   const moveAudioTrackTo = useEditorStore((s) => s.moveAudioTrackTo);
   const moveEffectTo = useEditorStore((s) => s.moveEffectTo);
@@ -2322,15 +2323,12 @@ function PremiereTimeline() {
   /* ------------------------------------------------------------------ */
   /* Free horizontal position dragging (overlays, audio, effects)         */
   /* ------------------------------------------------------------------ */
-  type BodyDrag = {
-    kind: "overlay" | "audio" | "effect";
+  type BodyDragKind = "overlay" | "audio" | "effect";
+  const bodyDragState = useRef<{
+    kind: BodyDragKind;
     id: string;
-    pointerId: number;
-    startX: number;
     start: number;
-    moved: boolean;
-  };
-  const bodyDragRef = useRef<BodyDrag | null>(null);
+  } | null>(null);
 
   const SNAP_PX = 8;
 
@@ -2349,112 +2347,95 @@ function PremiereTimeline() {
     return best;
   };
 
+  /** Applies a body-drag pixel delta to the store. */
+  const applyBodyDrag = (dx: number) => {
+    const active = bodyDragState.current;
+    if (!active) return;
+    const delta = dx / pps;
+    if (active.kind === "overlay") {
+      const targets = [0, currentTime];
+      for (const overlay of overlays) {
+        if (overlay.id === active.id) continue;
+        targets.push(overlay.startTime, overlay.endTime);
+      }
+      moveOverlayTo(active.id, snapValue(Math.max(0, active.start + delta), targets));
+    } else if (active.kind === "audio") {
+      moveAudioTrackTo(
+        active.id,
+        snapValue(Math.max(0, active.start + delta), [0, currentTime])
+      );
+    } else {
+      moveEffectTo(
+        active.id,
+        snapValue(Math.max(0, active.start + delta), [0, currentTime])
+      );
+    }
+  };
+
+  // Pointer-locked, rAF-coalesced drag for overlays / audio / effects. Clips may
+  // overlap freely — this never blocks a position.
+  const bodyDragHandlers = usePointerDrag({
+    threshold: 4,
+    onDrag: (info) => applyBodyDrag(info.dx),
+    onEnd: (info) => {
+      if (info.moved) applyBodyDrag(info.dx);
+      bodyDragState.current = null;
+    },
+  });
+
   const beginBodyDrag = (
     event: React.PointerEvent<HTMLElement>,
-    kind: BodyDrag["kind"],
+    kind: BodyDragKind,
     id: string,
     start: number
   ) => {
     event.stopPropagation();
-    event.currentTarget.setPointerCapture(event.pointerId);
-    bodyDragRef.current = {
-      kind,
-      id,
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      start,
-      moved: false,
-    };
+    bodyDragState.current = { kind, id, start };
+    bodyDragHandlers.onPointerDown(event);
   };
 
-  const moveBodyDrag = (event: React.PointerEvent<HTMLElement>) => {
-    const drag = bodyDragRef.current;
-    if (!drag) return;
-    const dx = event.clientX - drag.startX;
-    if (!drag.moved && Math.abs(dx) < 4) return;
-    drag.moved = true;
-    const delta = dx / pps;
+  /* ------------------------------------------------------------------ */
+  /* Free V1 clip positioning — pointer-locked, rAF preview, overlaps OK  */
+  /* ------------------------------------------------------------------ */
+  const [clipPreview, setClipPreview] = useState<{ id: string; start: number } | null>(
+    null
+  );
+  const clipDragState = useRef<{ id: string; baseStart: number } | null>(null);
+  const clipDragMovedRef = useRef(false);
 
-    if (drag.kind === "overlay") {
-      const targets = [0, currentTime];
-      for (const overlay of overlays) {
-        if (overlay.id === drag.id) continue;
-        targets.push(overlay.startTime, overlay.endTime);
+  const clipDragHandlers = usePointerDrag({
+    threshold: 6,
+    onDrag: (info) => {
+      const state = clipDragState.current;
+      if (!state) return;
+      setClipPreview({
+        id: state.id,
+        start: clampTimelineStart(state.baseStart + info.dx / pps),
+      });
+    },
+    onEnd: (info) => {
+      const state = clipDragState.current;
+      clipDragState.current = null;
+      setClipPreview(null);
+      if (!state || !info.moved) {
+        clipDragMovedRef.current = false;
+        return;
       }
-      moveOverlayTo(drag.id, snapValue(Math.max(0, drag.start + delta), targets));
-    } else if (drag.kind === "audio") {
-      moveAudioTrackTo(drag.id, snapValue(Math.max(0, drag.start + delta), [0, currentTime]));
-    } else {
-      moveEffectTo(drag.id, snapValue(Math.max(0, drag.start + delta), [0, currentTime]));
-    }
-  };
+      clipDragMovedRef.current = true;
+      // Commit the exact previewed position (scroll/zoom aware → no snap-back).
+      moveClipTo(state.id, clampTimelineStart(state.baseStart + info.dx / pps));
+    },
+  });
 
-  const endBodyDrag = (event: React.PointerEvent<HTMLElement>) => {
-    const drag = bodyDragRef.current;
-    if (drag && event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-    bodyDragRef.current = null;
-  };
-
-  /* ------------------------------------------------------------------ */
-  /* Drag-to-reorder V1 clips (grab a clip, drop it first / in between)   */
-  /* ------------------------------------------------------------------ */
-  const clipReorderRef = useRef<{
-    id: string;
-    startX: number;
-    moved: boolean;
-    /** Centres of the *other* clips, snapshotted at drag start (stable target). */
-    centers: number[];
-    lastTarget: number;
-  } | null>(null);
-
-  const onClipDragDown = (
+  const beginClipDrag = (
     event: React.PointerEvent<HTMLButtonElement>,
-    clipId: string
+    clipId: string,
+    baseStart: number
   ) => {
     event.stopPropagation();
-    event.currentTarget.setPointerCapture(event.pointerId);
-    clipReorderRef.current = {
-      id: clipId,
-      startX: event.clientX,
-      moved: false,
-      centers: videoBlocks
-        .filter((block) => block.clip.id !== clipId)
-        .map((block) => block.start + block.dur / 2),
-      lastTarget: -1,
-    };
-  };
-
-  const onClipDragMove = (event: React.PointerEvent<HTMLButtonElement>) => {
-    const drag = clipReorderRef.current;
-    if (!drag) return;
-    const dx = event.clientX - drag.startX;
-    if (!drag.moved && Math.abs(dx) < 8) return;
-    drag.moved = true;
-
-    const lane = laneRef.current;
-    if (!lane || drag.centers.length === 0) return;
-    const rect = lane.getBoundingClientRect();
-    const pointerTime = (event.clientX - rect.left) / pps;
-
-    // Insertion index = how many other clips sit left of the pointer. The
-    // snapshot keeps this monotonic so the clip can't flicker between slots.
-    let target = 0;
-    for (const center of drag.centers) {
-      if (pointerTime > center) target += 1;
-    }
-    if (target !== drag.lastTarget) {
-      drag.lastTarget = target;
-      reorderClip(drag.id, target);
-    }
-  };
-
-  const onClipDragUp = (event: React.PointerEvent<HTMLButtonElement>) => {
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-    clipReorderRef.current = null;
+    clipDragMovedRef.current = false;
+    clipDragState.current = { id: clipId, baseStart };
+    clipDragHandlers.onPointerDown(event);
   };
 
   // Audio in/out trims (Update trimStart + duration).
@@ -2678,9 +2659,9 @@ function PremiereTimeline() {
                   style={{ left: `${timelineLeft(fx.startTime) * pps}px`, width: `${Math.max(20, fx.duration * pps)}px` }}
                   title={`Effect: ${fx.type}`}
                   onPointerDown={(e) => beginBodyDrag(e, "effect", fx.id, fx.startTime)}
-                  onPointerMove={moveBodyDrag}
-                  onPointerUp={endBodyDrag}
-                  onPointerCancel={endBodyDrag}
+                  onPointerMove={bodyDragHandlers.onPointerMove}
+                  onPointerUp={bodyDragHandlers.onPointerUp}
+                  onPointerCancel={bodyDragHandlers.onPointerCancel}
                 >
                   <span className="block truncate capitalize">{fx.type}</span>
                   <button
@@ -2723,9 +2704,9 @@ function PremiereTimeline() {
                   <button
                     type="button"
                     onPointerDown={(e) => beginBodyDrag(e, "overlay", o.id, o.startTime)}
-                    onPointerMove={moveBodyDrag}
-                    onPointerUp={endBodyDrag}
-                    onPointerCancel={endBodyDrag}
+                    onPointerMove={bodyDragHandlers.onPointerMove}
+                    onPointerUp={bodyDragHandlers.onPointerUp}
+                    onPointerCancel={bodyDragHandlers.onPointerCancel}
                     onClick={() => selectOverlay(o.id)}
                     className={cn("h-full w-full cursor-grab overflow-hidden px-1.5 text-left active:cursor-grabbing", adjustChip, o.id === selectedId && "ring-2 ring-white/70")}
                   >
@@ -2774,23 +2755,37 @@ function PremiereTimeline() {
 
             {/* V1 — video clips (purple/blue) with trim handles */}
             <div className="relative h-12 border-b border-zinc-800 bg-zinc-950/40">
-              {videoBlocks.map(({ clip, start, dur }) => (
+              {videoBlocks.map(({ clip, start, dur }) => {
+                const dragging = clipPreview?.id === clip.id;
+                const displayStart = dragging && clipPreview ? clipPreview.start : start;
+                return (
                 <div
                   key={clip.id}
-                  className="group absolute inset-y-1.5"
-                  style={{ left: `${start * pps}px`, width: `${Math.max(28, dur * pps)}px` }}
+                  className={cn("group absolute inset-y-1.5", dragging && "z-30")}
+                  style={{
+                    left: `${displayStart * pps}px`,
+                    width: `${Math.max(28, dur * pps)}px`,
+                  }}
                 >
                   <button
                     type="button"
-                    onPointerDown={(e) => onClipDragDown(e, clip.id)}
-                    onPointerMove={onClipDragMove}
-                    onPointerUp={onClipDragUp}
-                    onPointerCancel={onClipDragUp}
-                    onClick={() => selectClip(clip.id)}
+                    onPointerDown={(e) => beginClipDrag(e, clip.id, start)}
+                    onPointerMove={clipDragHandlers.onPointerMove}
+                    onPointerUp={clipDragHandlers.onPointerUp}
+                    onPointerCancel={clipDragHandlers.onPointerCancel}
+                    onClick={() => {
+                      // A real drag shouldn't also "select" (which reloads the clip).
+                      if (clipDragMovedRef.current) {
+                        clipDragMovedRef.current = false;
+                        return;
+                      }
+                      selectClip(clip.id);
+                    }}
                     className={cn(
                       "h-full w-full cursor-grab overflow-hidden px-2 text-left active:cursor-grabbing",
                       videoChip,
-                      clip.id === activeClipId && "ring-2 ring-white/70"
+                      clip.id === activeClipId && "ring-2 ring-white/70",
+                      dragging && "shadow-xl ring-2 ring-white"
                     )}
                   >
                     <span className="block truncate">{nameFor(clip.assetId)}</span>
@@ -2831,7 +2826,8 @@ function PremiereTimeline() {
                     </span>
                   )}
                 </div>
-              ))}
+                );
+              })}
             </div>
 
             {/* A1 / A2 — audio tracks (teal/green) */}
@@ -2844,9 +2840,9 @@ function PremiereTimeline() {
                     style={{ left: `${timelineLeft(track.startTime) * pps}px`, width: `${Math.max(28, track.duration * pps)}px` }}
                     title={track.name}
                     onPointerDown={(e) => beginBodyDrag(e, "audio", track.id, track.startTime)}
-                    onPointerMove={moveBodyDrag}
-                    onPointerUp={endBodyDrag}
-                    onPointerCancel={endBodyDrag}
+                    onPointerMove={bodyDragHandlers.onPointerMove}
+                    onPointerUp={bodyDragHandlers.onPointerUp}
+                    onPointerCancel={bodyDragHandlers.onPointerCancel}
                   >
                     <Music className="h-3 w-3 shrink-0" aria-hidden />
                     <span className="truncate">{track.name}</span>

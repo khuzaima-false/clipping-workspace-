@@ -48,6 +48,7 @@ import {
 import { CAPTIONS_CREDIT_COST } from "@/lib/credits";
 import { CAPTION_LANGUAGES } from "@/lib/transcribe";
 import { useOverlayCanvasDrag } from "@/components/editor/use-overlay-drag";
+import { usePointerDrag } from "@/lib/timeline-drag";
 import { audioPreview } from "@/lib/audio-preview";
 import { SOUND_EFFECTS } from "@/lib/sfx";
 import { createDictation, isDictationSupported } from "@/lib/dictation";
@@ -488,19 +489,40 @@ function MobileTimeline({
     sourceMax: number;
   } | null>(null);
 
-  // Touch drag-to-reorder (drop the clip at the nearest slot).
-  const reorderRef = useRef<{
+  // Touch drag-to-reorder: the clip follows the finger and lands on drop.
+  const [gripPreview, setGripPreview] = useState<{ id: string; dx: number } | null>(null);
+  const gripState = useRef<{
     id: string;
     centers: number[];
-    lastTarget: number;
     stripLeft: number;
     scrollLeft: number;
   } | null>(null);
-  const onReorderDown = (e: React.PointerEvent<HTMLButtonElement>, clipId: string) => {
+
+  const gripHandlers = usePointerDrag({
+    threshold: 6,
+    onDrag: (info) => {
+      const state = gripState.current;
+      if (!state) return;
+      setGripPreview({ id: state.id, dx: info.dx });
+    },
+    onEnd: (info) => {
+      const state = gripState.current;
+      gripState.current = null;
+      setGripPreview(null);
+      if (!state || !info.moved || state.centers.length === 0) return;
+      const contentX = info.clientX - state.stripLeft + state.scrollLeft;
+      let target = 0;
+      for (const center of state.centers) {
+        if (contentX > center) target += 1;
+      }
+      reorderClip(state.id, target);
+    },
+  });
+
+  const beginReorder = (e: React.PointerEvent<HTMLButtonElement>, clipId: string) => {
     const el = scrollRef.current;
     if (!el) return;
-    e.currentTarget.setPointerCapture(e.pointerId);
-    // Snapshot the other clips' centres so the target can't oscillate mid-drag.
+    // Snapshot the other clips' centres so the drop target can't oscillate.
     let x = el.clientWidth * 0.5;
     const centers: number[] = [];
     for (let i = 0; i < sequence.length; i++) {
@@ -510,32 +532,13 @@ function MobileTimeline({
       if (clip.id !== clipId) centers.push(x + width / 2);
       x += width + GAP;
     }
-    reorderRef.current = {
+    gripState.current = {
       id: clipId,
       centers,
-      lastTarget: -1,
       stripLeft: el.getBoundingClientRect().left,
       scrollLeft: el.scrollLeft,
     };
-  };
-  const onReorderMove = (e: React.PointerEvent<HTMLButtonElement>) => {
-    const d = reorderRef.current;
-    if (!d || d.centers.length === 0) return;
-    const contentX = e.clientX - d.stripLeft + d.scrollLeft;
-    let target = 0;
-    for (const center of d.centers) {
-      if (contentX > center) target += 1;
-    }
-    if (target !== d.lastTarget) {
-      d.lastTarget = target;
-      reorderClip(d.id, target);
-    }
-  };
-  const onReorderUp = (e: React.PointerEvent<HTMLButtonElement>) => {
-    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-      e.currentTarget.releasePointerCapture(e.pointerId);
-    }
-    reorderRef.current = null;
+    gripHandlers.onPointerDown(e);
   };
 
   const onTrimDown = (
@@ -604,8 +607,14 @@ function MobileTimeline({
           return (
             <div
               key={clip.id}
-              className="relative h-16 shrink-0"
-              style={{ width: `${Math.min(220, Math.max(84, length * 26))}px` }}
+              className={cn("relative h-16 shrink-0", gripPreview?.id === clip.id && "z-30")}
+              style={{
+                width: `${Math.min(220, Math.max(84, length * 26))}px`,
+                transform:
+                  gripPreview?.id === clip.id
+                    ? `translateX(${gripPreview.dx}px)`
+                    : undefined,
+              }}
             >
               <button
                 type="button"
@@ -628,10 +637,10 @@ function MobileTimeline({
               <button
                 type="button"
                 aria-label="Drag to reorder clip"
-                onPointerDown={(e) => onReorderDown(e, clip.id)}
-                onPointerMove={onReorderMove}
-                onPointerUp={onReorderUp}
-                onPointerCancel={onReorderUp}
+                onPointerDown={(e) => beginReorder(e, clip.id)}
+                onPointerMove={gripHandlers.onPointerMove}
+                onPointerUp={gripHandlers.onPointerUp}
+                onPointerCancel={gripHandlers.onPointerCancel}
                 onClick={(event) => event.stopPropagation()}
                 className="absolute left-2.5 top-1 z-20 flex h-6 w-6 touch-none items-center justify-center rounded bg-black/60 text-zinc-300"
               >
