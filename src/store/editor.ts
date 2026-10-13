@@ -488,6 +488,8 @@ type EditorState = {
   assetsLoading: boolean;
   /** Trim applied once a selected clip's metadata loads. */
   pendingTrim: { trimStart: number; trimEnd: number } | null;
+  /** Source-time to seek to once the clip's metadata loads (timeline scrub). */
+  pendingSeek: number | null;
   /** Spoken language used for AI caption transcription. */
   captionLanguage: CaptionLanguageId;
 
@@ -556,6 +558,8 @@ type EditorState = {
   removeAsset: (assetId: string) => void;
   /** Loads a sequence clip into the preview/editor. */
   selectClip: (clipId: string) => void;
+  /** Scrubs to a source time inside a clip (used by the mobile filmstrip). */
+  scrubTo: (clipId: string, sourceTime: number) => void;
   /** Removes a clip from the sequence. */
   removeClip: (clipId: string) => void;
   /** Splits the active clip into two clips at the current playhead. */
@@ -771,6 +775,7 @@ export const useEditorStore = create<EditorState>()(
   activeClipId: null,
   assetsLoading: false,
   pendingTrim: null,
+  pendingSeek: null,
   captionLanguage: "auto",
 
   duration: 0,
@@ -884,15 +889,29 @@ export const useEditorStore = create<EditorState>()(
       const trimEnd = pending
         ? Math.min(Math.max(pending.trimEnd, trimStart + 0.1), value)
         : value;
+      // A timeline scrub queues a source time to land on once metadata loads.
+      const pendingSeek = get().pendingSeek;
+      const seekTo =
+        pendingSeek !== null
+          ? Math.min(Math.max(pendingSeek, trimStart), trimEnd)
+          : 0;
       set({
         duration: value,
         trimStart,
         trimEnd,
-        currentTime: 0,
+        currentTime: seekTo,
         pendingTrim: null,
+        pendingSeek: null,
         overlays: clampOverlaysToDuration(get().overlays, value),
         speedPoints,
       });
+      if (seekTo > 0) {
+        try {
+          el.currentTime = seekTo;
+        } catch {
+          // Element not seekable yet; the next frame will settle.
+        }
+      }
       const activeId = get().activeClipId;
       if (activeId) get().setClipTrim(activeId, { trimStart, trimEnd });
     };
@@ -1060,6 +1079,7 @@ export const useEditorStore = create<EditorState>()(
             trimStart: firstClip.trimStart,
             trimEnd: firstClip.trimEnd,
           },
+          pendingSeek: null,
           chromaKey: firstClip.chromaKey ?? DEFAULT_CHROMA_KEY,
         });
         get().loadVideoBlob(asset.blob, asset.name);
@@ -1117,6 +1137,7 @@ export const useEditorStore = create<EditorState>()(
       set({
         activeClipId: firstClip.id,
         pendingTrim: null,
+        pendingSeek: null,
         chromaKey: DEFAULT_CHROMA_KEY,
       });
       get().loadVideoBlob(firstAsset.blob, firstAsset.name);
@@ -1164,6 +1185,33 @@ export const useEditorStore = create<EditorState>()(
     set({
       activeClipId: clipId,
       pendingTrim: { trimStart: clip.trimStart, trimEnd: clip.trimEnd },
+      pendingSeek: null,
+      chromaKey: clip.chromaKey ?? DEFAULT_CHROMA_KEY,
+    });
+    get().loadVideoBlob(asset.blob, asset.name);
+  },
+
+  scrubTo: (clipId, sourceTime) => {
+    const clip = get().sequence.find((item) => item.id === clipId);
+    if (!clip) return;
+    const time = Math.min(Math.max(sourceTime, clip.trimStart), clip.trimEnd);
+    const active = get().activeClipId;
+    const el = get().videoEl;
+
+    // Same clip: seek directly when the element is ready, otherwise queue it.
+    if (clipId === active) {
+      if (el && el.readyState >= 1) get().seek(time);
+      else set({ pendingSeek: time });
+      return;
+    }
+
+    // Different clip: swap the source and land on `time` once it loads.
+    const asset = get().assets.find((item) => item.id === clip.assetId);
+    if (!asset) return;
+    set({
+      activeClipId: clipId,
+      pendingTrim: { trimStart: clip.trimStart, trimEnd: clip.trimEnd },
+      pendingSeek: time,
       chromaKey: clip.chromaKey ?? DEFAULT_CHROMA_KEY,
     });
     get().loadVideoBlob(asset.blob, asset.name);
@@ -1378,6 +1426,7 @@ export const useEditorStore = create<EditorState>()(
       activeClipId: null,
       assetsLoading: false,
       pendingTrim: null,
+      pendingSeek: null,
       captionLanguage: "auto",
       duration: 0,
       currentTime: 0,

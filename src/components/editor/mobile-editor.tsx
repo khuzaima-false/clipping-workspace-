@@ -400,6 +400,7 @@ function MobileTimeline({
     assets.find((asset) => asset.id === assetId)?.name ?? "Clip";
   const removeClip = useEditorStore((state) => state.removeClip);
   const moveClip = useEditorStore((state) => state.moveClip);
+  const scrubTo = useEditorStore((state) => state.scrubTo);
   const activeClipId = useEditorStore((state) => state.activeClipId);
   const duration = useEditorStore((state) => state.duration);
   const setClipTrim = useEditorStore((state) => state.setClipTrim);
@@ -408,6 +409,46 @@ function MobileTimeline({
 
   // Filmstrip scale (px per second) used to convert drag distance to time.
   const PPS = 26;
+  const GAP = 6; // matches `gap-1.5`
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const scrubRaf = useRef(0);
+
+  /**
+   * Sliding the filmstrip scrubs the timeline: the fixed centre playhead maps to
+   * a clip + source time, which drives the preview frame.
+   */
+  const handleStripScroll = () => {
+    if (scrubRaf.current) return;
+    scrubRaf.current = requestAnimationFrame(() => {
+      scrubRaf.current = 0;
+      const el = scrollRef.current;
+      if (!el || sequence.length === 0) return;
+      // Padding is 50% of the strip width, so scrollLeft 0 centres clip #1's start.
+      const pad = el.clientWidth * 0.5;
+      const centerX = el.scrollLeft + el.clientWidth / 2;
+      let x = pad;
+      for (let i = 0; i < sequence.length; i++) {
+        const clip = sequence[i];
+        const dur = Math.max(0.1, clip.trimEnd - clip.trimStart);
+        const width = Math.min(220, Math.max(84, dur * PPS));
+        const isLast = i === sequence.length - 1;
+        if (centerX <= x + width || isLast) {
+          const frac = Math.min(1, Math.max(0, (centerX - x) / width));
+          scrubTo(clip.id, clip.trimStart + frac * dur);
+          return;
+        }
+        x += width + GAP;
+      }
+    });
+  };
+
+  useEffect(
+    () => () => {
+      if (scrubRaf.current) cancelAnimationFrame(scrubRaf.current);
+    },
+    []
+  );
+
   const trimDragRef = useRef<{
     clipId: string;
     side: "in" | "out";
@@ -490,7 +531,11 @@ function MobileTimeline({
         <span className="absolute -top-1 left-1/2 h-2 w-2 -translate-x-1/2 rounded-full bg-fuchsia-400" />
       </div>
 
-      <div className="flex items-stretch gap-1.5 overflow-x-auto px-[45%] py-2">
+      <div
+        ref={scrollRef}
+        onScroll={handleStripScroll}
+        className="flex items-stretch gap-1.5 overflow-x-auto px-[50%] py-2"
+      >
         {sequence.length === 0 && (
           <button
             type="button"
