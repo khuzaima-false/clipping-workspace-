@@ -2161,12 +2161,22 @@ function PremiereTimeline() {
   // Absolute timeline positions for V1 clips (respects dragged positions).
   const videoBlocks = computeClipStarts(sequence);
 
+  // The preview plays ONE source element at a time, and overlays / effects /
+  // audio / `currentTime` are all expressed in that active clip's source time.
+  // Map that source time onto the global timeline so the playhead and every
+  // other block line up with the V1 clip that is actually playing.
+  const activeBlock =
+    videoBlocks.find((block) => block.clip.id === activeClipId) ?? null;
+  const sourceToTimeline = (time: number) =>
+    activeBlock ? activeBlock.start + (time - activeBlock.clip.trimStart) : time;
+  const timelineLeft = (time: number) => Math.max(0, sourceToTimeline(time));
+
   const timelineDuration = Math.max(
     duration || 0,
     ...videoBlocks.map((block) => block.start + block.dur),
-    ...overlays.map((overlay) => overlay.endTime),
-    ...activeEffects.map((effect) => effect.startTime + effect.duration),
-    ...audioTracks.map((track) => track.startTime + track.duration),
+    ...overlays.map((overlay) => timelineLeft(overlay.endTime)),
+    ...activeEffects.map((effect) => timelineLeft(effect.startTime) + effect.duration),
+    ...audioTracks.map((track) => timelineLeft(track.startTime) + track.duration),
     5
   );
 
@@ -2598,7 +2608,7 @@ function PremiereTimeline() {
                 <div
                   key={fx.id}
                   className={cn("group absolute inset-y-1.5 cursor-grab overflow-hidden px-1.5 active:cursor-grabbing", adjustChip)}
-                  style={{ left: `${fx.startTime * pps}px`, width: `${Math.max(20, fx.duration * pps)}px` }}
+                  style={{ left: `${timelineLeft(fx.startTime) * pps}px`, width: `${Math.max(20, fx.duration * pps)}px` }}
                   title={`Effect: ${fx.type}`}
                   onPointerDown={(e) => beginBodyDrag(e, "effect", fx.id, fx.startTime)}
                   onPointerMove={moveBodyDrag}
@@ -2641,7 +2651,7 @@ function PremiereTimeline() {
                 <div
                   key={o.id}
                   className="group absolute inset-y-1.5"
-                  style={{ left: `${o.startTime * pps}px`, width: `${Math.max(24, (o.endTime - o.startTime) * pps)}px` }}
+                  style={{ left: `${timelineLeft(o.startTime) * pps}px`, width: `${Math.max(24, (o.endTime - o.startTime) * pps)}px` }}
                 >
                   <button
                     type="button"
@@ -2764,7 +2774,7 @@ function PremiereTimeline() {
                   <div
                     key={track.id}
                     className={cn("group absolute inset-y-1.5 flex cursor-grab items-center gap-1 overflow-hidden px-1.5 active:cursor-grabbing", audioChip)}
-                    style={{ left: `${track.startTime * pps}px`, width: `${Math.max(28, track.duration * pps)}px` }}
+                    style={{ left: `${timelineLeft(track.startTime) * pps}px`, width: `${Math.max(28, track.duration * pps)}px` }}
                     title={track.name}
                     onPointerDown={(e) => beginBodyDrag(e, "audio", track.id, track.startTime)}
                     onPointerMove={moveBodyDrag}
@@ -2806,7 +2816,7 @@ function PremiereTimeline() {
             ))}
 
             {/* Playhead */}
-            <div className="pointer-events-none absolute inset-y-0 z-20 w-px bg-fuchsia-400" style={{ left: `${currentTime * pps}px` }}>
+            <div className="pointer-events-none absolute inset-y-0 z-20 w-px bg-fuchsia-400" style={{ left: `${timelineLeft(currentTime) * pps}px` }}>
               <span className="absolute -top-0 left-1/2 h-2.5 w-2.5 -translate-x-1/2 rounded-sm bg-fuchsia-400" />
             </div>
           </div>

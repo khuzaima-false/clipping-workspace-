@@ -403,6 +403,8 @@ function MobileTimeline({
   const scrubTo = useEditorStore((state) => state.scrubTo);
   const activeClipId = useEditorStore((state) => state.activeClipId);
   const duration = useEditorStore((state) => state.duration);
+  const playing = useEditorStore((state) => state.playing);
+  const currentTime = useEditorStore((state) => state.currentTime);
   const setClipTrim = useEditorStore((state) => state.setClipTrim);
   const setTrimStart = useEditorStore((state) => state.setTrimStart);
   const setTrimEnd = useEditorStore((state) => state.setTrimEnd);
@@ -448,6 +450,27 @@ function MobileTimeline({
     },
     []
   );
+
+  // While playing, keep the active frame under the fixed centre playhead so the
+  // pink bar always matches what the preview shows (never blank space).
+  useEffect(() => {
+    if (!playing) return;
+    const el = scrollRef.current;
+    if (!el || sequence.length === 0) return;
+    const index = sequence.findIndex((clip) => clip.id === activeClipId);
+    if (index < 0) return;
+    const clip = sequence[index];
+    const dur = Math.max(0.1, clip.trimEnd - clip.trimStart);
+    const width = Math.min(220, Math.max(84, dur * PPS));
+    let x = el.clientWidth * 0.5;
+    for (let i = 0; i < index; i++) {
+      const d = Math.max(0.1, sequence[i].trimEnd - sequence[i].trimStart);
+      x += Math.min(220, Math.max(84, d * PPS)) + GAP;
+    }
+    const frac = Math.min(1, Math.max(0, (currentTime - clip.trimStart) / dur));
+    const target = x + frac * width - el.clientWidth / 2;
+    if (Math.abs(el.scrollLeft - target) > 1) el.scrollLeft = target;
+  }, [playing, currentTime, activeClipId, sequence]);
 
   const trimDragRef = useRef<{
     clipId: string;
