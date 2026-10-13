@@ -1,28 +1,49 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import {
+  Activity,
   ArrowLeftRight,
   ArrowRight,
   AudioLines,
   Captions,
+  CaseSensitive,
   Check,
   Coins,
   Crop,
   Diamond,
+  Download,
+  Film,
   Gauge,
   Globe,
+  HardDrive,
+  History,
+  ImagePlus,
+  Layers,
+  ListChecks,
+  Maximize2,
   Mic,
   Monitor,
   MonitorPlay,
+  Move,
+  Music,
+  Palette,
   Pipette,
+  ScanFace,
+  Scissors,
   Send,
   ShieldCheck,
+  Shirt,
+  SlidersHorizontal,
   Smile,
   Smartphone,
   Sparkles,
+  Timer,
   TrendingUp,
+  Type,
   Users,
+  Waves,
   Zap,
+  type LucideIcon,
 } from "lucide-react";
 import { Logo } from "@/components/ui/logo";
 import { HeroPreview } from "@/components/marketing/hero-preview";
@@ -47,59 +68,217 @@ const FOUNDING_DAILY = BASE_DAILY_CREDITS + FOUNDING_CREDIT_BONUS;
 const STANDARD_MAX =
   BASE_DAILY_CREDITS + REFERRAL_CREDIT_BONUS * MAX_REFERRALS;
 
-/** The 10 real, 100% client-side power tools live in the editor. */
-const FEATURES = [
+/**
+ * Every tool below is a real, shipped, 100% client-side feature of the editor.
+ * They're grouped so the full studio stays scannable.
+ */
+const FEATURE_GROUPS: {
+  id: string;
+  label: string;
+  items: { icon: LucideIcon; title: string; body: string }[];
+}[] = [
   {
-    icon: Pipette,
-    title: "Chroma Key (Green Screen)",
-    body: "Knock out green or blue backdrops with an eyedropper, tolerance and edge-feather controls — computed frame-by-frame on the canvas.",
+    id: "timeline",
+    label: "Timeline & Editing",
+    items: [
+      {
+        icon: Film,
+        title: "Multi-Clip Media Library",
+        body: "Import many videos into one project and merge them into a single export.",
+      },
+      {
+        icon: Scissors,
+        title: "Dual Trim, Split & Reorder",
+        body: "In/out handles on every block, split at the playhead, duplicate and reorder clips.",
+      },
+      {
+        icon: Move,
+        title: "Free Clip Positioning",
+        body: "Drag clips anywhere with magnetic snapping to the playhead and neighbouring edges.",
+      },
+      {
+        icon: History,
+        title: "500-Step Undo / Redo",
+        body: "A deep edit history shared by desktop shortcuts and mobile buttons.",
+      },
+      {
+        icon: HardDrive,
+        title: "Offline Project Storage",
+        body: "Projects, media, overlays and audio persist in IndexedDB — reload without re-importing.",
+      },
+      {
+        icon: Timer,
+        title: "Frame Stepping & Timecode",
+        body: "Scrub, step frame-by-frame and read SMPTE timecode while you edit.",
+      },
+    ],
   },
   {
-    icon: Diamond,
-    title: "Keyframe Animation Engine",
-    body: "Animate scale, position, opacity and rotation with keyframes. The renderer linearly interpolates between them for smooth motion.",
+    id: "colour",
+    label: "Colour, Keying & Effects",
+    items: [
+      {
+        icon: SlidersHorizontal,
+        title: "Full Colour Grading",
+        body: "Exposure, brightness, contrast, saturation, temperature, tint and blur.",
+      },
+      {
+        icon: Palette,
+        title: "Cinematic Presets & Wheels",
+        body: "Teal & Orange, Noir, Cyberpunk and Golden Hour — plus master/shadow/midtone/highlight wheels.",
+      },
+      {
+        icon: Activity,
+        title: "Live Luma Scopes",
+        body: "A real-time luminance histogram of the current frame.",
+      },
+      {
+        icon: Pipette,
+        title: "Chroma Key (Green Screen)",
+        body: "Eyedropper, tolerance and edge-feather controls, computed frame-by-frame on the canvas.",
+      },
+      {
+        icon: Sparkles,
+        title: "Motion Effects Pack",
+        body: "Zoom in/out, camera shake, flash and blur-vignette, timed to the timeline.",
+      },
+      {
+        icon: Maximize2,
+        title: "HD / Crisp Rendering",
+        body: "High-quality canvas scaling for sharp previews and exports.",
+      },
+    ],
   },
   {
-    icon: AudioLines,
-    title: "Multi-Track Audio Mixer & SFX",
-    body: "Per-track volume, mute/solo and fade in/out with live waveforms — plus seven royalty-free effects synthesized with Web Audio.",
+    id: "captions",
+    label: "Captions, Text & Motion",
+    items: [
+      {
+        icon: Captions,
+        title: "On-Device Auto-Captions",
+        body: "Whisper-powered transcription in many languages — no server, no upload.",
+      },
+      {
+        icon: CaseSensitive,
+        title: "Social Caption Styles",
+        body: "Karaoke word-highlight, animated bounce and neon-glow boxes.",
+      },
+      {
+        icon: Type,
+        title: "Script & Dictation to Captions",
+        body: "Paste a script or dictate with browser speech recognition to generate timed subtitles.",
+      },
+      {
+        icon: Diamond,
+        title: "Keyframe Animation Engine",
+        body: "Animate scale, position, opacity and rotation with interpolation between keyframes.",
+      },
+      {
+        icon: Sparkles,
+        title: "Rich Text Overlays",
+        body: "Fonts, colours, alignment, rotation, opacity, padding and simple masks.",
+      },
+      {
+        icon: Layers,
+        title: "Layers & Backdrop Blur",
+        body: "Stack text, image and sticker layers with per-layer opacity, masks and blur.",
+      },
+    ],
   },
   {
-    icon: Captions,
-    title: "Auto-Captions & Social Styles",
-    body: "On-device transcription with word-level karaoke, bounce and neon-glow-box styles — or turn a typed script into timed subtitles.",
+    id: "overlays",
+    label: "Overlays & Templates",
+    items: [
+      {
+        icon: Smile,
+        title: "Stickers, Memes & Emoji",
+        body: "Tap to drop emoji and graphics onto the V2 overlay track.",
+      },
+      {
+        icon: Shirt,
+        title: "Jersey & Poster Studio",
+        body: "Design cricket jerseys and match-day posters, then send them to the timeline.",
+      },
+      {
+        icon: ScanFace,
+        title: "Background Removal",
+        body: "Cut the background out of an image or a video frame — entirely client-side.",
+      },
+      {
+        icon: ImagePlus,
+        title: "Image & Logo Overlays",
+        body: "Add PNGs, logos and stickers as resizable, rotatable overlay layers.",
+      },
+      {
+        icon: ArrowLeftRight,
+        title: "SVG Graphics Pack",
+        body: "Badges, arrows, subscribe buttons and lower-thirds generated as crisp SVG.",
+      },
+    ],
   },
   {
-    icon: Gauge,
-    title: "Speed Ramping & Velocity Curves",
-    body: "Normal, Montage, Bullet, Hero Ramp and Jump Cut presets reshape playback and export timing with smooth accelerations.",
+    id: "audio",
+    label: "Audio",
+    items: [
+      {
+        icon: AudioLines,
+        title: "Multi-Track Audio Mixer",
+        body: "Per-track volume, mute/solo and fade in/out across the A1–A2 tracks.",
+      },
+      {
+        icon: Waves,
+        title: "Waveform Previews",
+        body: "Instant waveform shapes for every imported or recorded clip.",
+      },
+      {
+        icon: Music,
+        title: "Royalty-Free Sound Effects",
+        body: "Whoosh, pop, shutter, glitch, riser, bell and applause — synthesized with Web Audio.",
+      },
+      {
+        icon: Mic,
+        title: "Voiceover Recorder",
+        body: "Record a live voiceover straight onto A2 with a real-time level meter.",
+      },
+    ],
   },
   {
-    icon: ArrowLeftRight,
-    title: "Video Transitions Library",
-    body: "Cross dissolve, dip to black, whip pan, glitch cut and zoom — blended frame-by-frame across every clip boundary.",
-  },
-  {
-    icon: Smile,
-    title: "Stickers, Memes & Emoji",
-    body: "Badges, arrows, subscribe buttons, lower-thirds and emoji stickers, generated as crisp SVG overlays you drop on the V2 track.",
-  },
-  {
-    icon: Crop,
-    title: "Framing & Aspect Presets",
-    body: "One-tap TikTok/Reels, YouTube, Square and Cinematic framing with automatic blurred or letterboxed background fill.",
-  },
-  {
-    icon: Mic,
-    title: "Voiceover & Audio Recorder",
-    body: "Record a live voiceover straight onto the A2 track with a real-time level meter and an instant waveform preview.",
-  },
-  {
-    icon: MonitorPlay,
-    title: "Screen & Webcam Recorder",
-    body: "Capture your screen or camera inside the studio and send the recording straight to the media bin for the timeline.",
+    id: "capture",
+    label: "Framing, Capture & Export",
+    items: [
+      {
+        icon: Crop,
+        title: "Framing & Aspect Presets",
+        body: "TikTok/Reels, YouTube, Square and Cinematic with automatic blurred or letterboxed fill.",
+      },
+      {
+        icon: MonitorPlay,
+        title: "Screen & Webcam Recorder",
+        body: "Capture your screen or camera inside the studio and send it to the media bin.",
+      },
+      {
+        icon: Download,
+        title: "Native 1080p Export",
+        body: "WebCodecs MP4 encoding with a real-time MediaRecorder fallback.",
+      },
+      {
+        icon: ListChecks,
+        title: "Batch Export Queue",
+        body: "Queue several clips and export them one after another.",
+      },
+      {
+        icon: ShieldCheck,
+        title: "100% Private & Offline",
+        body: "Nothing is uploaded — every effect runs on your own device.",
+      },
+    ],
   },
 ];
+
+const TOTAL_TOOLS = FEATURE_GROUPS.reduce(
+  (sum, group) => sum + group.items.length,
+  0
+);
 
 /** One engine, two purpose-built interfaces. */
 const INTERFACES = [
@@ -132,7 +311,7 @@ const INTERFACES = [
 ];
 
 const STATS = [
-  { value: "10", label: "Pro editing tools built in" },
+  { value: String(TOTAL_TOOLS), label: "Pro editing tools built in" },
   { value: "100%", label: "Client-side — nothing is uploaded" },
   { value: "0", label: "Server round-trips while editing" },
   { value: "Free", label: "Full studio, no card required" },
@@ -146,7 +325,7 @@ const TIERS = [
     dailyCredits: BASE_DAILY_CREDITS,
     features: [
       `${BASE_DAILY_CREDITS} daily export credits`,
-      "All 10 editing tools included",
+      `All ${TOTAL_TOOLS} editing tools included`,
       "On-device auto-captions & styles",
       "9:16, 16:9, 1:1 & 21:9 exports",
     ],
@@ -219,7 +398,7 @@ export default function LandingPage() {
         <div className="animate-fade-up">
           <span className="inline-flex items-center gap-2 rounded-full border border-violet-500/30 bg-violet-500/10 px-3 py-1 text-xs font-medium text-violet-200">
             <Sparkles className="h-3.5 w-3.5" aria-hidden />
-            100% free · Runs entirely in your browser
+            {TOTAL_TOOLS} tools · 100% free · runs entirely in your browser
           </span>
 
           <h1 className="mt-6 text-4xl font-bold leading-[1.05] tracking-tight text-white sm:text-5xl lg:text-6xl">
@@ -328,43 +507,56 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Feature grid: 10 real client-side power tools */}
+      {/* Feature grid: the full client-side toolbox */}
       <section id="features" className="mx-auto max-w-6xl px-4 py-20 sm:px-6">
         <div className="max-w-2xl">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-violet-400">
-            10 power tools · zero uploads
+            {TOTAL_TOOLS} pro tools · zero uploads
           </p>
           <h2 className="mt-3 text-3xl font-bold tracking-tight text-white sm:text-4xl">
-            Every tool runs locally in your browser
+            The entire studio runs locally in your browser
           </h2>
           <p className="mt-4 text-zinc-400">
-            From chroma key and keyframes to transitions, captions and audio
-            mixing — the whole studio is free and processes your footage on your
-            own device.
+            Editing, colour, captions, motion, overlays, audio, capture and
+            export — a complete client-side pipeline with no subscriptions,
+            installs or uploads.
           </p>
         </div>
 
-        <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {FEATURES.map((feature) => {
-            const Icon = feature.icon;
-            return (
-              <div
-                key={feature.title}
-                className="glass-card group rounded-2xl p-6 transition-transform duration-300 hover:-translate-y-1"
-              >
-                <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-violet-600/25 to-blue-600/20 text-violet-300 ring-1 ring-inset ring-violet-500/25">
-                  <Icon className="h-5 w-5" aria-hidden />
-                </span>
-                <h3 className="mt-4 text-lg font-semibold text-white">
-                  {feature.title}
-                </h3>
-                <p className="mt-2 text-sm leading-6 text-zinc-400">
-                  {feature.body}
-                </p>
-              </div>
-            );
-          })}
-        </div>
+        {FEATURE_GROUPS.map((group) => (
+          <div key={group.id} className="mt-14">
+            <div className="flex items-center gap-3">
+              <h3 className="shrink-0 text-sm font-semibold uppercase tracking-[0.18em] text-violet-300">
+                {group.label}
+              </h3>
+              <span className="h-px flex-1 bg-gradient-to-r from-violet-500/40 to-transparent" />
+              <span className="shrink-0 text-[11px] text-zinc-600">
+                {group.items.length} tools
+              </span>
+            </div>
+            <div className="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+              {group.items.map((feature) => {
+                const Icon = feature.icon;
+                return (
+                  <div
+                    key={feature.title}
+                    className="glass-card group rounded-2xl p-6 transition-transform duration-300 hover:-translate-y-1"
+                  >
+                    <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-violet-600/25 to-blue-600/20 text-violet-300 ring-1 ring-inset ring-violet-500/25">
+                      <Icon className="h-5 w-5" aria-hidden />
+                    </span>
+                    <h4 className="mt-4 text-base font-semibold text-white">
+                      {feature.title}
+                    </h4>
+                    <p className="mt-2 text-sm leading-6 text-zinc-400">
+                      {feature.body}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
       </section>
 
       {/* Pricing / credit tiers */}
@@ -467,7 +659,7 @@ export default function LandingPage() {
                 <ArrowRight className="h-4 w-4" aria-hidden />
               </Link>
               <Link
-                href="/projects"
+                href="/editor"
                 className="inline-flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900/60 px-6 py-3.5 text-sm font-semibold text-zinc-200 transition-colors hover:border-zinc-600 hover:text-white"
               >
                 <Send className="h-4 w-4" aria-hidden />
@@ -503,7 +695,7 @@ export default function LandingPage() {
           <FooterCol
             title="Studio"
             links={[
-              { label: "10 Tools", href: "#features" },
+              { label: `${TOTAL_TOOLS} Tools`, href: "#features" },
               { label: "Dual Interface", href: "#studio" },
               { label: "Pricing", href: "#pricing" },
             ]}

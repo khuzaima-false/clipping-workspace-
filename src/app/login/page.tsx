@@ -25,7 +25,7 @@ export default function LoginPage() {
       </main>
 
       <footer className="relative px-6 pb-6 text-center text-xs text-zinc-600">
-        AI video clipper · Shorts, Reels &amp; TikToks
+        Free in-browser video studio · 100% client-side
       </footer>
     </div>
   );

@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, Coins, Download, Gift } from "lucide-react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
@@ -35,6 +35,7 @@ function fileNameFor(title: string, extension: string): string {
 function EditorView() {
   const searchParams = useSearchParams();
   const pathname = usePathname();
+  const router = useRouter();
 
   // Static export can't serve arbitrary /editor/<id> paths, so the active
   // project id travels in the query string (`/editor?id=<uuid>`). A pathname
@@ -71,6 +72,15 @@ function EditorView() {
     let cancelled = false;
 
     async function load() {
+      // Opening /editor without an id (e.g. the landing "Launch Studio" CTA) is
+      // not a valid uuid lookup — the redirect effect below resolves the newest
+      // project. Clear any stale project from a previous id here.
+      if (!projectId) {
+        setProject(null);
+        setError(null);
+        return;
+      }
+
       setLoading(true);
       setError(null);
       try {
@@ -105,6 +115,43 @@ function EditorView() {
       cancelled = true;
     };
   }, [projectId]);
+
+  // No project id: jump straight into the most recent project so the landing
+  // CTA opens real work — or fall through to the empty state when none exists.
+  useEffect(() => {
+    if (projectId) return;
+    let cancelled = false;
+
+    async function openLatest() {
+      try {
+        const supabase = createClient();
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user) {
+          if (!cancelled) setLoading(false);
+          return;
+        }
+        const { data } = await supabase
+          .from("projects")
+          .select("id")
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (cancelled) return;
+        if (data?.id) router.replace(`/editor?id=${data.id}`);
+        else setLoading(false);
+      } catch {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    void openLatest();
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, router]);
 
   // Load the project's media library + clip sequence from IndexedDB.
   useEffect(() => {
