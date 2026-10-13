@@ -49,6 +49,10 @@ export type SceneConfig = {
    */
   colorAdjustments?: ColorAdjustments;
   /**
+   * Use high-quality (crisp) canvas scaling. Defaults to `true`.
+   */
+  crisp?: boolean;
+  /**
    * Timed visual effects (zoom, shake, flash, vignette) composited over the
    * frame. Applied when `sceneTime` falls inside an effect's window.
    */
@@ -195,10 +199,11 @@ export function buildCanvasFilter(
   adjustments: ColorAdjustments,
   extraBlur = 0
 ): string {
-  const { brightness, contrast, saturation, hue, tint, blur } = adjustments;
+  const { brightness, exposure, contrast, saturation, hue, tint, blur } = adjustments;
   const totalBlur = blur + extraBlur;
   if (
     brightness === 0 &&
+    exposure === 0 &&
     contrast === 0 &&
     saturation === 0 &&
     hue === 0 &&
@@ -208,7 +213,8 @@ export function buildCanvasFilter(
     return "none";
   }
   const parts = [
-    `brightness(${Math.max(0, 100 + brightness)}%)`,
+    // Exposure and brightness both lift luminance (exposure weighted heavier).
+    `brightness(${Math.max(0, 100 + brightness + exposure * 1.5)}%)`,
     `contrast(${Math.max(0, 100 + contrast)}%)`,
     `saturate(${Math.max(0, 100 + saturation)}%)`,
   ];
@@ -250,6 +256,9 @@ export function drawScene(
   }
 
   if (video && video.videoWidth > 0 && video.videoHeight > 0) {
+    // High-quality scaling keeps the frame sharp when up/down-scaled.
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = config.crisp === false ? "low" : "high";
     const filter = buildCanvasFilter(
       config.colorAdjustments ?? DEFAULT_COLOR_ADJUSTMENTS,
       fx?.blur ?? 0
@@ -356,6 +365,8 @@ function drawOverlay(
   ctx.save();
   ctx.font = `${overlay.fontSize}px ${overlay.fontFamily}`;
   ctx.textBaseline = "middle";
+  const baseAlpha = Math.min(1, Math.max(0, (overlay.opacity ?? 100) / 100));
+  if (baseAlpha < 1) ctx.globalAlpha = baseAlpha;
 
   const maxTextW = Math.max(40, width * 0.9 - overlay.padding * 2);
   const textWords = text.split(/\s+/).filter(Boolean);
@@ -391,6 +402,13 @@ function drawOverlay(
   const boxY = centerY - boxH / 2;
   // Keep the box on-canvas even at extreme anchor positions.
   boxX = Math.min(Math.max(boxX, 0), Math.max(0, width - boxW));
+
+  // Simple mask: clip the overlay to its text box.
+  if (overlay.mask) {
+    ctx.beginPath();
+    roundedRect(ctx, boxX - 6, boxY - 6, boxW + 12, boxH + 12, overlay.radius + 6);
+    ctx.clip();
+  }
 
   // Rotate the whole block around its center.
   if (overlay.rotation) {
@@ -568,7 +586,7 @@ function drawWord(
 ): void {
   if (alpha <= 0) return;
   ctx.save();
-  if (alpha < 1) ctx.globalAlpha = alpha;
+  if (alpha < 1) ctx.globalAlpha *= alpha;
   ctx.translate(x + width / 2, baselineY);
   if (scale !== 1) ctx.scale(scale, scale);
   ctx.textAlign = "left";

@@ -16,11 +16,13 @@ import {
   Pause,
   Play,
   Plus,
+  Redo2,
   Repeat,
   Scissors,
   SlidersHorizontal,
   Sparkles,
   Trash2,
+  Undo2,
   Unlock,
   Wand2,
   ZoomIn,
@@ -48,12 +50,12 @@ const EFFECT_CARDS: { type: VideoEffectType; label: string; Icon: typeof Wand2 }
   { type: "blur-vignette", label: "Blur Vignette", Icon: EyeOff },
 ];
 
-const LUMETRI_PRESETS: { id: string; label: string; patch: Record<string, number> }[] = [
+const CINEMATIC_PRESETS: { id: string; label: string; patch: Record<string, number> }[] = [
   { id: "none", label: "Neutral", patch: { brightness: 0, contrast: 0, saturation: 0, hue: 0, tint: 0, blur: 0 } },
-  { id: "vivid", label: "Vivid", patch: { contrast: 14, saturation: 32, tint: 0 } },
-  { id: "warm", label: "Warm", patch: { saturation: 10, hue: 12 } },
-  { id: "cool", label: "Cool", patch: { saturation: 8, hue: -16, tint: -5 } },
-  { id: "film", label: "Film", patch: { contrast: 8, saturation: -18, tint: 6 } },
+  { id: "tealorange", label: "Teal & Orange", patch: { saturation: 22, contrast: 16, hue: 6, tint: 10 } },
+  { id: "noir", label: "Moody Noir", patch: { saturation: -70, contrast: 30, brightness: -6 } },
+  { id: "cyberpunk", label: "Cyberpunk", patch: { saturation: 48, contrast: 26, hue: -55, tint: 36 } },
+  { id: "golden", label: "Golden Hour", patch: { saturation: 18, contrast: 8, brightness: 6, hue: 14, tint: 8 } },
 ];
 
 function formatTimecode(seconds: number, fps: number): string {
@@ -485,6 +487,31 @@ function ProjectBinPanel({ onRequireCredits }: { onRequireCredits?: () => void }
                     />
                   </label>
                 ))}
+
+                <label className="block">
+                  <span className="flex items-center justify-between text-[10px] text-zinc-500">
+                    <span>Opacity</span>
+                    <span className="tabular-nums">{Math.round(selected.opacity)}%</span>
+                  </span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    step={1}
+                    value={selected.opacity}
+                    onChange={(e) => patchSelected({ opacity: Number(e.target.value) })}
+                    className="mt-0.5 w-full accent-violet-500"
+                  />
+                </label>
+                <label className="flex items-center gap-2 text-[10px] text-zinc-400">
+                  <input
+                    type="checkbox"
+                    checked={selected.mask}
+                    onChange={(e) => patchSelected({ mask: e.target.checked })}
+                    className="accent-violet-500"
+                  />
+                  Mask (clip to text box)
+                </label>
               </>
             )}
 
@@ -829,6 +856,10 @@ function ProgramPreview() {
   const hasVideo = useEditorStore((s) => s.videoEl !== null);
   const aspect = useEditorStore((s) => s.aspect);
   const setAspect = useEditorStore((s) => s.setAspect);
+  const hdRendering = useEditorStore((s) => s.hdRendering);
+  const setHdRendering = useEditorStore((s) => s.setHdRendering);
+  const undo = useEditorStore((s) => s.undo);
+  const redo = useEditorStore((s) => s.redo);
   const setPlaying = useEditorStore((s) => s.setPlaying);
   const seek = useEditorStore((s) => s.seek);
   const setTrimStart = useEditorStore((s) => s.setTrimStart);
@@ -883,6 +914,7 @@ function ProgramPreview() {
           captionStyle: state.captionStyle,
           colorAdjustments: state.colorAdjustments,
           activeEffects: state.activeEffects,
+          crisp: state.hdRendering,
           sceneTime: video ? video.currentTime : state.currentTime,
         },
         { placeholder: true }
@@ -922,6 +954,20 @@ function ProgramPreview() {
         <span className="text-[10px] tabular-nums text-zinc-500">
           {res.width}×{res.height} · {fps}fps
         </span>
+        <button
+          type="button"
+          onClick={() => setHdRendering(!hdRendering)}
+          aria-pressed={hdRendering}
+          title="High-quality (crisp) scaling"
+          className={cn(
+            "shrink-0 rounded-md px-2 py-1 text-[10px] font-semibold transition-colors",
+            hdRendering
+              ? "bg-violet-600/20 text-violet-200 ring-1 ring-inset ring-violet-500/40"
+              : "border border-zinc-800 bg-zinc-950/60 text-zinc-500"
+          )}
+        >
+          HD
+        </button>
       </div>
 
       <div className="flex min-h-0 flex-1 items-center justify-center bg-black p-3">
@@ -950,6 +996,24 @@ function ProgramPreview() {
           </span>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
+          <button
+            type="button"
+            onClick={undo}
+            aria-label="Undo"
+            title="Undo (Ctrl+Z)"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-950/60 text-zinc-300 transition-colors hover:border-zinc-600"
+          >
+            <Undo2 className="h-3.5 w-3.5" aria-hidden />
+          </button>
+          <button
+            type="button"
+            onClick={redo}
+            aria-label="Redo"
+            title="Redo (Ctrl+Y)"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-950/60 text-zinc-300 transition-colors hover:border-zinc-600"
+          >
+            <Redo2 className="h-3.5 w-3.5" aria-hidden />
+          </button>
           <button
             type="button"
             onClick={() => setPlaying(!playing)}
@@ -1007,6 +1071,20 @@ function LumetriPanel() {
     midtones: { x: 0, y: 0 },
     highlights: { x: 0, y: 0 },
   });
+  const [presetId, setPresetId] = useState("none");
+  const [presetIntensity, setPresetIntensity] = useState(100);
+
+  const applyPreset = (id: string, intensity: number) => {
+    const preset = CINEMATIC_PRESETS.find((item) => item.id === id);
+    if (!preset) return;
+    const k = intensity / 100;
+    const patch: Record<string, number> = {};
+    for (const [key, value] of Object.entries(preset.patch)) {
+      patch[key] = Math.round(value * k);
+    }
+    resetColorAdjustments();
+    setColorAdjustment(patch);
+  };
 
   // Fold the wheels into the render's hue/tint colour model.
   useEffect(() => {
@@ -1072,11 +1150,12 @@ function LumetriPanel() {
   }, []);
 
   const sliders = [
-    ["Exposure", "brightness", -100, 100, "%"],
-    ["Contrast", "contrast", -100, 100, "%"],
-    ["Saturation", "saturation", -100, 100, "%"],
-    ["Temperature", "hue", -180, 180, "°"],
-    ["Tint", "tint", -100, 100, ""],
+    ["Exposure", "exposure", -100, 100],
+    ["Brightness", "brightness", -100, 100],
+    ["Contrast", "contrast", -100, 100],
+    ["Saturation", "saturation", -100, 100],
+    ["Temperature", "hue", -180, 180],
+    ["Tint", "tint", -100, 100],
   ] as const;
 
   return (
@@ -1095,41 +1174,78 @@ function LumetriPanel() {
           </div>
         </div>
 
-        {sliders.map(([label, key, min, max, suffix]) => (
-          <label key={key} className="block">
-            <span className="flex items-center justify-between text-[10px] text-zinc-500">
-              <span>{label}</span>
-              <span className="tabular-nums">
-                {Math.round(adjustments[key])}
-                {suffix}
-              </span>
-            </span>
+        {sliders.map(([label, key, min, max]) => (
+          <div key={key} className="flex items-center gap-2">
+            <div className="min-w-0 flex-1">
+              <span className="block text-[10px] text-zinc-500">{label}</span>
+              <input
+                type="range"
+                min={min}
+                max={max}
+                step={1}
+                value={adjustments[key]}
+                onChange={(e) => setColorAdjustment({ [key]: Number(e.target.value) })}
+                aria-label={label}
+                className="w-full accent-violet-500"
+              />
+            </div>
             <input
-              type="range"
+              type="number"
               min={min}
               max={max}
               step={1}
-              value={adjustments[key]}
+              value={Math.round(adjustments[key])}
               onChange={(e) => setColorAdjustment({ [key]: Number(e.target.value) })}
+              aria-label={`${label} value`}
+              className="w-14 shrink-0 rounded-md border border-zinc-800 bg-zinc-950 px-1.5 py-1 text-right text-[11px] tabular-nums text-zinc-100 focus:border-violet-500 focus:outline-none"
+            />
+          </div>
+        ))}
+
+        <div className="space-y-2 pt-1">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+            Cinematic Presets
+          </p>
+          <div className="grid grid-cols-2 gap-1.5">
+            {CINEMATIC_PRESETS.map((preset) => (
+              <button
+                key={preset.id}
+                type="button"
+                onClick={() => {
+                  setPresetId(preset.id);
+                  applyPreset(preset.id, presetIntensity);
+                }}
+                aria-pressed={presetId === preset.id}
+                className={cn(
+                  "rounded-lg border px-2 py-1.5 text-[11px] transition-colors",
+                  presetId === preset.id
+                    ? "border-violet-500 bg-violet-600/15 text-violet-200"
+                    : "border-zinc-800 bg-zinc-950/60 text-zinc-300 hover:border-zinc-600"
+                )}
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
+          <label className="block">
+            <span className="flex items-center justify-between text-[10px] text-zinc-500">
+              <span>Intensity</span>
+              <span className="tabular-nums">{presetIntensity}%</span>
+            </span>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              step={1}
+              value={presetIntensity}
+              onChange={(e) => {
+                const value = Number(e.target.value);
+                setPresetIntensity(value);
+                if (presetId !== "none") applyPreset(presetId, value);
+              }}
               className="mt-0.5 w-full accent-violet-500"
             />
           </label>
-        ))}
-
-        <div className="flex flex-wrap gap-1.5 pt-1">
-          {LUMETRI_PRESETS.map((preset) => (
-            <button
-              key={preset.id}
-              type="button"
-              onClick={() => {
-                resetColorAdjustments();
-                if (preset.id !== "none") setColorAdjustment(preset.patch);
-              }}
-              className="rounded-lg border border-zinc-800 bg-zinc-950/60 px-2.5 py-1 text-[11px] text-zinc-300 hover:border-zinc-600"
-            >
-              {preset.label}
-            </button>
-          ))}
         </div>
 
         <div className="pt-1">
@@ -1146,7 +1262,7 @@ function LumetriPanel() {
 /* ------------------------------------------------------------------ */
 /* Bottom: multi-track Premiere timeline                                */
 /* ------------------------------------------------------------------ */
-type TrackKey = "V2" | "V1" | "A1" | "A2";
+type TrackKey = "V3" | "V2" | "V1" | "A1" | "A2";
 
 function PremiereTimeline() {
   const assets = useEditorStore((s) => s.assets);
@@ -1170,6 +1286,7 @@ function PremiereTimeline() {
 
   const [pps, setPps] = useState(48);
   const [toggles, setToggles] = useState<Record<TrackKey, { m: boolean; s: boolean; lock: boolean; eye: boolean }>>({
+    V3: { m: false, s: false, lock: false, eye: true },
     V2: { m: false, s: false, lock: false, eye: true },
     V1: { m: false, s: false, lock: false, eye: true },
     A1: { m: false, s: false, lock: false, eye: true },
@@ -1319,7 +1436,7 @@ function PremiereTimeline() {
         {/* Track headers column */}
         <div className="flex shrink-0 flex-col">
           <div className="h-6 w-24 border-b border-r border-zinc-800 bg-zinc-900/60" />
-          {(["V2", "V1", "A1", "A2"] as TrackKey[]).map((keyName) => (
+          {(["V3", "V2", "V1", "A1", "A2"] as TrackKey[]).map((keyName) => (
             <TrackHeader key={keyName} keyName={keyName} />
           ))}
         </div>
@@ -1343,7 +1460,21 @@ function PremiereTimeline() {
               })}
             </div>
 
-            {/* V2 — adjustment / effect layers (pink) */}
+            {/* V3 — adjustment / effect layers (pink) */}
+            <div className="relative h-12 border-b border-zinc-800 bg-zinc-950/40">
+              {activeEffects.map((fx) => (
+                <div
+                  key={fx.id}
+                  className={cn("absolute inset-y-1.5 overflow-hidden px-1.5", adjustChip)}
+                  style={{ left: `${fx.startTime * pps}px`, width: `${Math.max(20, fx.duration * pps)}px` }}
+                  title={`Effect: ${fx.type}`}
+                >
+                  <span className="block truncate capitalize">{fx.type}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* V2 — text / overlay layers (pink) */}
             <div className="relative h-12 border-b border-zinc-800 bg-zinc-950/40">
               {overlays.map((o) => (
                 <button
@@ -1355,16 +1486,6 @@ function PremiereTimeline() {
                 >
                   <span className="block truncate">{o.text || "Text"}</span>
                 </button>
-              ))}
-              {activeEffects.map((fx) => (
-                <div
-                  key={fx.id}
-                  className={cn("absolute top-1.5 h-4 overflow-hidden px-1.5", adjustChip)}
-                  style={{ left: `${fx.startTime * pps}px`, width: `${Math.max(20, fx.duration * pps)}px` }}
-                  title={`Effect: ${fx.type}`}
-                >
-                  <span className="block truncate capitalize">{fx.type}</span>
-                </div>
               ))}
             </div>
 
@@ -1460,6 +1581,36 @@ export function DesktopEditor({
 }: {
   onRequireCredits?: () => void;
 }) {
+  // Desktop-only keyboard shortcuts for undo/redo.
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (!(event.ctrlKey || event.metaKey)) return;
+      if (!window.matchMedia("(min-width: 768px)").matches) return;
+      const target = event.target as HTMLElement | null;
+      if (target) {
+        const tag = target.tagName;
+        if (
+          tag === "INPUT" ||
+          tag === "TEXTAREA" ||
+          tag === "SELECT" ||
+          target.isContentEditable
+        ) {
+          return;
+        }
+      }
+      const key = event.key.toLowerCase();
+      if (key === "z" && !event.shiftKey) {
+        event.preventDefault();
+        useEditorStore.getState().undo();
+      } else if (key === "y" || (key === "z" && event.shiftKey)) {
+        event.preventDefault();
+        useEditorStore.getState().redo();
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
       <div className="grid min-h-0 gap-3 lg:grid-cols-[280px_minmax(0,1fr)_300px] xl:grid-cols-[320px_minmax(0,1fr)_340px]" style={{ height: "min(58vh, 600px)", minHeight: 380 }}>

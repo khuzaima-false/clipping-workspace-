@@ -105,6 +105,8 @@ export function buildAutoCaptions(
       radius: 0,
       alignment: "center",
       rotation: 0,
+      opacity: 100,
+      mask: false,
       startTime: start,
       endTime: end,
       words: group,

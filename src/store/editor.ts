@@ -1,4 +1,6 @@
 import { create } from "zustand";
+import { subscribeWithSelector } from "zustand/middleware";
+import { shallow } from "zustand/shallow";
 import {
   loadProjectMedia,
   loadVideoSource,
@@ -56,6 +58,8 @@ export const DEFAULT_FPS = 30;
 export type ColorAdjustments = {
   /** -100..100 (%) */
   brightness: number;
+  /** -100..100 (%) overall exposure, stacked on brightness. */
+  exposure: number;
   /** -100..100 (%) */
   contrast: number;
   /** -100..100 (%) */
@@ -70,6 +74,7 @@ export type ColorAdjustments = {
 
 export const DEFAULT_COLOR_ADJUSTMENTS: ColorAdjustments = {
   brightness: 0,
+  exposure: 0,
   contrast: 0,
   saturation: 0,
   hue: 0,
@@ -121,6 +126,10 @@ export type TextOverlay = {
   alignment: OverlayAlign;
   /** Rotation around the overlay's center, degrees. */
   rotation: number;
+  /** Layer opacity, 0..100. */
+  opacity: number;
+  /** Clip the overlay to its text box (simple mask). */
+  mask: boolean;
   /** Seconds from the start of the video when this overlay appears. */
   startTime: number;
   /** Seconds from the start of the video when this overlay disappears. */
@@ -302,11 +311,30 @@ function createOverlay(duration: number): TextOverlay {
     radius: 16,
     alignment: "center",
     rotation: 0,
+    opacity: 100,
+    mask: false,
     startTime: 0,
     // Default to the first five seconds, or the whole clip when shorter.
     endTime: duration > 0 ? Math.min(5, duration) : 5,
   };
 }
+
+/** A snapshot of everything undo/redo can restore. */
+export type EditSnapshot = {
+  sequence: TimelineClip[];
+  overlays: TextOverlay[];
+  trimStart: number;
+  trimEnd: number;
+  colorAdjustments: ColorAdjustments;
+  activeEffects: VideoEffect[];
+  aspect: AspectRatio;
+  speedPoints: SpeedPoint[];
+  speedPreset: SpeedPreset;
+  captionStyle: CaptionStyle;
+  fit: VideoFit;
+  offsetX: number;
+  offsetY: number;
+};
 
 type EditorState = {
   /** Current preview/export video element (owned by the store, not React). */
@@ -364,6 +392,8 @@ type EditorState = {
 
   /** Frame rate used for frame stepping and export. */
   fps: number;
+  /** Use high-quality canvas scaling (crisp) for preview and export. */
+  hdRendering: boolean;
   /** Colour grading applied to the video frame. */
   colorAdjustments: ColorAdjustments;
   /** External audio tracks / sound effects layered on the timeline. */
@@ -407,12 +437,12 @@ type EditorState = {
     patch: { trimStart?: number; trimEnd?: number }
   ) => void;
   /** Restores an undo/redo snapshot of the editable timeline state. */
-  restoreEdit: (snapshot: {
-    sequence: TimelineClip[];
-    overlays: TextOverlay[];
-    trimStart: number;
-    trimEnd: number;
-  }) => void;
+  restoreEdit: (snapshot: EditSnapshot) => void;
+  /** Undo/redo stacks for the editing session (capped for safety). */
+  history: EditSnapshot[];
+  future: EditSnapshot[];
+  undo: () => void;
+  redo: () => void;
   resetEditor: () => void;
   seek: (time: number) => void;
   /** Moves the playhead by `delta` frames (negative steps backwards). */
@@ -423,6 +453,8 @@ type EditorState = {
   setTrimEnd: (time: number) => void;
   resetTrim: () => void;
   setAspect: (aspect: AspectRatio) => void;
+  /** Toggle high-quality (crisp) canvas scaling. */
+  setHdRendering: (enabled: boolean) => void;
   setFit: (fit: VideoFit) => void;
   setOffset: (x: number, y: number) => void;
   addOverlay: () => void;
@@ -490,7 +522,30 @@ function persistProjectMedia(
   });
 }
 
-export const useEditorStore = create<EditorState>((set, get) => ({
+/** Deep-ish snapshot of the editable state (arrays/objects are immutable in the store). */
+function snapshotOf(state: EditorState): EditSnapshot {
+  return {
+    sequence: state.sequence,
+    overlays: state.overlays,
+    trimStart: state.trimStart,
+    trimEnd: state.trimEnd,
+    colorAdjustments: state.colorAdjustments,
+    activeEffects: state.activeEffects,
+    aspect: state.aspect,
+    speedPoints: state.speedPoints,
+    speedPreset: state.speedPreset,
+    captionStyle: state.captionStyle,
+    fit: state.fit,
+    offsetX: state.offsetX,
+    offsetY: state.offsetY,
+  };
+}
+
+/** Suppresses history capture while an undo/redo is being applied. */
+let historyPaused = false;
+
+export const useEditorStore = create<EditorState>()(
+  subscribeWithSelector((set, get) => ({
   videoEl: null,
   videoUrl: null,
   videoFile: null,
@@ -530,6 +585,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   transcriptionError: null,
 
   fps: DEFAULT_FPS,
+  hdRendering: true,
+  history: [],
+  future: [],
   colorAdjustments: DEFAULT_COLOR_ADJUSTMENTS,
   audioTracks: [],
   audioTrackError: null,
@@ -873,7 +931,38 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       overlays: snapshot.overlays,
       trimStart: snapshot.trimStart,
       trimEnd: snapshot.trimEnd,
+      colorAdjustments: snapshot.colorAdjustments,
+      activeEffects: snapshot.activeEffects,
+      aspect: snapshot.aspect,
+      speedPoints: snapshot.speedPoints,
+      speedPreset: snapshot.speedPreset,
+      captionStyle: snapshot.captionStyle,
+      fit: snapshot.fit,
+      offsetX: snapshot.offsetX,
+      offsetY: snapshot.offsetY,
     }),
+
+  undo: () => {
+    const { history, future } = get();
+    if (history.length === 0) return;
+    const previous = history[history.length - 1];
+    const current = snapshotOf(get());
+    historyPaused = true;
+    set({ history: history.slice(0, -1), future: [...future, current] });
+    get().restoreEdit(previous);
+    historyPaused = false;
+  },
+
+  redo: () => {
+    const { history, future } = get();
+    if (future.length === 0) return;
+    const next = future[future.length - 1];
+    const current = snapshotOf(get());
+    historyPaused = true;
+    set({ future: future.slice(0, -1), history: [...history, current] });
+    get().restoreEdit(next);
+    historyPaused = false;
+  },
 
   splitActiveClip: () => {
     const { activeClipId, sequence, currentTime } = get();
@@ -966,6 +1055,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       transcribingStatus: "",
       transcriptionError: null,
       fps: DEFAULT_FPS,
+      hdRendering: true,
+      history: [],
+      future: [],
       colorAdjustments: DEFAULT_COLOR_ADJUSTMENTS,
       audioTracks: [],
       audioTrackError: null,
@@ -1036,6 +1128,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   setAspect: (aspect) => set({ aspect }),
+
+  setHdRendering: (enabled) => set({ hdRendering: enabled }),
 
   setFit: (fit) => set({ fit, offsetX: fit === "contain" ? 0 : get().offsetX, offsetY: fit === "contain" ? 0 : get().offsetY }),
 
@@ -1313,4 +1407,37 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     }),
 
   clearEffects: () => set({ activeEffects: [] }),
-}));
+  })),
+);
+
+/**
+ * Auto-capture an undo snapshot whenever any editable field changes. The
+ * selector shape mirrors {@link EditSnapshot}, so `previous` is exactly the
+ * state to restore on undo.
+ */
+useEditorStore.subscribe(
+  (state) => ({
+    sequence: state.sequence,
+    overlays: state.overlays,
+    trimStart: state.trimStart,
+    trimEnd: state.trimEnd,
+    colorAdjustments: state.colorAdjustments,
+    activeEffects: state.activeEffects,
+    aspect: state.aspect,
+    speedPoints: state.speedPoints,
+    speedPreset: state.speedPreset,
+    captionStyle: state.captionStyle,
+    fit: state.fit,
+    offsetX: state.offsetX,
+    offsetY: state.offsetY,
+  }),
+  (_current, previous) => {
+    if (historyPaused) return;
+    useEditorStore.setState((state) => {
+      const history = [...state.history, previous as EditSnapshot];
+      if (history.length > 500) history.shift();
+      return { history, future: [] };
+    });
+  },
+  { equalityFn: shallow }
+);

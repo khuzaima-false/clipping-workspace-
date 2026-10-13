@@ -188,6 +188,7 @@ function EditorView() {
       captionStyle: state.captionStyle,
       colorAdjustments: state.colorAdjustments,
       activeEffects: state.activeEffects,
+      crisp: state.hdRendering,
     };
 
     // Multi-clip: build a decoder per sequence clip so the exporter can merge

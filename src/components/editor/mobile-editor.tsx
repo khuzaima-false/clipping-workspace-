@@ -4,6 +4,8 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import {
   Captions,
+  ChevronDown,
+  ChevronUp,
   Clapperboard,
   Copy,
   Crop,
@@ -31,20 +33,12 @@ import { ASPECT_RESOLUTIONS, drawScene } from "@/lib/render";
 import {
   useEditorStore,
   type AspectRatio,
-  type TextOverlay,
   type VideoEffectType,
 } from "@/store/editor";
-import type { TimelineClip } from "@/lib/video-storage";
 import { CAPTIONS_CREDIT_COST } from "@/lib/credits";
 import { CAPTION_LANGUAGES } from "@/lib/transcribe";
 import { cn } from "@/lib/utils";
 
-type EditSnapshot = {
-  sequence: TimelineClip[];
-  overlays: TextOverlay[];
-  trimStart: number;
-  trimEnd: number;
-};
 
 function formatTime(seconds: number): string {
   const safe = Number.isFinite(seconds) && seconds > 0 ? seconds : 0;
@@ -72,6 +66,63 @@ const FILTERS: { id: string; label: string; swatch: string; patch: Record<string
 ];
 
 const SPEED_PRESETS = ["none", "montage", "hero", "bullet"] as const;
+
+/** One-click cinematic looks (mobile cards + desktop Lumetri presets). */
+const CINEMATIC_PRESETS: {
+  id: string;
+  label: string;
+  note: string;
+  swatch: string;
+  patch: Record<string, number>;
+}[] = [
+  { id: "tealorange", label: "Teal & Orange", note: "Blockbuster", swatch: "linear-gradient(135deg,#0ea5e9,#f97316)", patch: { saturation: 22, contrast: 16, hue: 6, tint: 10 } },
+  { id: "noir", label: "Moody Noir", note: "Dramatic", swatch: "linear-gradient(135deg,#111827,#6b7280)", patch: { saturation: -70, contrast: 30, brightness: -6 } },
+  { id: "cyberpunk", label: "Cyberpunk", note: "Neon", swatch: "linear-gradient(135deg,#d946ef,#22d3ee)", patch: { saturation: 48, contrast: 26, hue: -55, tint: 36 } },
+  { id: "golden", label: "Golden Hour", note: "Warm", swatch: "linear-gradient(135deg,#f59e0b,#fde68a)", patch: { saturation: 18, contrast: 8, brightness: 6, hue: 14, tint: 8 } },
+];
+
+/** Touch sliders for lighting + colour grading. */
+function AdjustPanel() {
+  const adjustments = useEditorStore((s) => s.colorAdjustments);
+  const setColorAdjustment = useEditorStore((s) => s.setColorAdjustment);
+  const resetColorAdjustments = useEditorStore((s) => s.resetColorAdjustments);
+  const rows = [
+    ["Brightness", "brightness", -100, 100],
+    ["Exposure", "exposure", -100, 100],
+    ["Contrast", "contrast", -100, 100],
+    ["Saturation", "saturation", -100, 100],
+  ] as const;
+  return (
+    <div className="space-y-4">
+      {rows.map(([label, key, min, max]) => (
+        <label key={key} className="block">
+          <span className="flex items-center justify-between text-[11px] text-zinc-400">
+            <span>{label}</span>
+            <span className="tabular-nums text-zinc-500">
+              {Math.round(adjustments[key])}
+            </span>
+          </span>
+          <input
+            type="range"
+            min={min}
+            max={max}
+            step={1}
+            value={adjustments[key]}
+            onChange={(e) => setColorAdjustment({ [key]: Number(e.target.value) })}
+            className="mt-1 w-full accent-violet-500"
+          />
+        </label>
+      ))}
+      <button
+        type="button"
+        onClick={resetColorAdjustments}
+        className="w-full rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-2 text-xs text-zinc-300 transition-colors hover:border-zinc-600"
+      >
+        Reset adjustments
+      </button>
+    </div>
+  );
+}
 
 const ASPECTS: AspectRatio[] = ["9:16", "16:9", "1:1"];
 
@@ -142,6 +193,35 @@ function FilterGallery() {
   );
 }
 
+/** One-click cinematic preset cards. */
+function CinePresetGallery() {
+  const resetColorAdjustments = useEditorStore((s) => s.resetColorAdjustments);
+  const setColorAdjustment = useEditorStore((s) => s.setColorAdjustment);
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      {CINEMATIC_PRESETS.map((preset) => (
+        <button
+          key={preset.id}
+          type="button"
+          onClick={() => {
+            resetColorAdjustments();
+            setColorAdjustment(preset.patch);
+          }}
+          className="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950/60 text-left transition-colors hover:border-zinc-600"
+        >
+          <span className="block h-16 w-full" style={{ background: preset.swatch }} />
+          <span className="block px-2 py-1.5">
+            <span className="block text-[11px] font-medium text-zinc-100">
+              {preset.label}
+            </span>
+            <span className="block text-[10px] text-zinc-500">{preset.note}</span>
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 const subscribeNoop = () => () => {};
 const getClientMounted = () => true;
 const getServerMounted = () => false;
@@ -202,6 +282,7 @@ function MobilePreview({ wrapRef }: { wrapRef: React.RefObject<HTMLDivElement | 
           captionStyle: state.captionStyle,
           colorAdjustments: state.colorAdjustments,
           activeEffects: state.activeEffects,
+          crisp: state.hdRendering,
           sceneTime: video ? video.currentTime : state.currentTime,
         },
         { placeholder: true }
@@ -368,6 +449,8 @@ function MobileTimeline({
 type SheetId =
   | "effects"
   | "filters"
+  | "presets"
+  | "adjust"
   | "speed"
   | "volume"
   | "trim"
@@ -393,7 +476,6 @@ export function MobileEditor() {
   const overlays = useEditorStore((s) => s.overlays);
   const trimStart = useEditorStore((s) => s.trimStart);
   const trimEnd = useEditorStore((s) => s.trimEnd);
-  const restoreEdit = useEditorStore((s) => s.restoreEdit);
 
   const selectClip = useEditorStore((s) => s.selectClip);
   const splitActiveClip = useEditorStore((s) => s.splitActiveClip);
@@ -401,6 +483,9 @@ export function MobileEditor() {
   const removeClip = useEditorStore((s) => s.removeClip);
   const selectedId = useEditorStore((s) => s.selectedId);
   const updateOverlay = useEditorStore((s) => s.updateOverlay);
+  const moveClip = useEditorStore((s) => s.moveClip);
+  const hdRendering = useEditorStore((s) => s.hdRendering);
+  const setHdRendering = useEditorStore((s) => s.setHdRendering);
   const setTrimStart = useEditorStore((s) => s.setTrimStart);
   const setTrimEnd = useEditorStore((s) => s.setTrimEnd);
   const resetTrim = useEditorStore((s) => s.resetTrim);
@@ -426,55 +511,9 @@ export function MobileEditor() {
     (s) => s.overlays.filter((overlay) => overlay.auto).length
   );
 
-  // ---- undo / redo history (timeline + overlays) ----
-  const historyRef = useRef<EditSnapshot[]>([]);
-  const futureRef = useRef<EditSnapshot[]>([]);
-  const lastRef = useRef<EditSnapshot | null>(null);
-  const skipRef = useRef(false);
-
-  useEffect(() => {
-    const current: EditSnapshot = { sequence, overlays, trimStart, trimEnd };
-    if (skipRef.current) {
-      skipRef.current = false;
-      lastRef.current = current;
-      return;
-    }
-    if (lastRef.current === null) {
-      lastRef.current = current;
-      return;
-    }
-    const prev = lastRef.current;
-    if (
-      prev.sequence === sequence &&
-      prev.overlays === overlays &&
-      prev.trimStart === trimStart &&
-      prev.trimEnd === trimEnd
-    ) {
-      return;
-    }
-    historyRef.current.push(prev);
-    if (historyRef.current.length > 50) historyRef.current.shift();
-    futureRef.current = [];
-    lastRef.current = current;
-  }, [sequence, overlays, trimStart, trimEnd]);
-
-  const applySnapshot = (snapshot: EditSnapshot) => {
-    skipRef.current = true;
-    lastRef.current = snapshot;
-    restoreEdit(snapshot);
-  };
-  const undo = () => {
-    const prev = historyRef.current.pop();
-    if (!prev) return;
-    if (lastRef.current) futureRef.current.push(lastRef.current);
-    applySnapshot(prev);
-  };
-  const redo = () => {
-    const next = futureRef.current.pop();
-    if (!next) return;
-    if (lastRef.current) historyRef.current.push(lastRef.current);
-    applySnapshot(next);
-  };
+  // ---- undo / redo (shared store history) ----
+  const undo = useEditorStore((s) => s.undo);
+  const redo = useEditorStore((s) => s.redo);
 
   const clipSelected = Boolean(
     selectedClipId && sequence.some((clip) => clip.id === selectedClipId)
@@ -488,7 +527,7 @@ export function MobileEditor() {
   const openSheet = (id: SheetId) => setSheet(id);
 
   const toolbarBtn =
-    "flex flex-1 flex-col items-center gap-1 rounded-xl px-1 py-2 text-[10px] font-medium text-zinc-400 transition-colors hover:bg-zinc-900 hover:text-zinc-100";
+    "flex min-w-[3.5rem] flex-1 flex-col items-center gap-1 rounded-xl px-1 py-2 text-[10px] font-medium text-zinc-400 transition-colors hover:bg-zinc-900 hover:text-zinc-100";
   const chipBtn =
     "inline-flex items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-2 text-xs text-zinc-300";
   const primaryBtn =
@@ -536,9 +575,24 @@ export function MobileEditor() {
             {playing ? <Pause className="h-4 w-4" aria-hidden /> : <Play className="h-4 w-4 translate-x-px" aria-hidden />}
           </button>
 
-          <span className="rounded-full bg-zinc-900 px-2.5 py-1 text-[11px] tabular-nums text-zinc-300 ring-1 ring-inset ring-zinc-800">
-            {formatTime(currentTime)} / {formatTime(duration)}
-          </span>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setHdRendering(!hdRendering)}
+              aria-pressed={hdRendering}
+              className={cn(
+                "rounded-lg px-2 py-1 text-[10px] font-semibold ring-1 ring-inset transition-colors",
+                hdRendering
+                  ? "bg-violet-600/20 text-violet-200 ring-violet-500/40"
+                  : "text-zinc-500 ring-zinc-800"
+              )}
+            >
+              HD
+            </button>
+            <span className="rounded-full bg-zinc-900 px-2.5 py-1 text-[11px] tabular-nums text-zinc-300 ring-1 ring-inset ring-zinc-800">
+              {formatTime(currentTime)} / {formatTime(duration)}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -560,6 +614,20 @@ export function MobileEditor() {
             <button type="button" onClick={duplicateActiveClip} className={quickBtn}>
               <Copy className="h-3.5 w-3.5" aria-hidden /> Duplicate
             </button>
+            <button
+              type="button"
+              onClick={() => selectedClipId && moveClip(selectedClipId, -1)}
+              className={quickBtn}
+            >
+              <ChevronUp className="h-3.5 w-3.5" aria-hidden /> Forward
+            </button>
+            <button
+              type="button"
+              onClick={() => selectedClipId && moveClip(selectedClipId, 1)}
+              className={quickBtn}
+            >
+              <ChevronDown className="h-3.5 w-3.5" aria-hidden /> Backward
+            </button>
             <button type="button" onClick={() => openSheet("speed")} className={quickBtn}>
               <Gauge className="h-3.5 w-3.5" aria-hidden /> Speed
             </button>
@@ -580,7 +648,7 @@ export function MobileEditor() {
       {/* Pinned bottom action dock */}
       <div className="sticky bottom-0 left-0 right-0 z-30 w-full shrink-0 border-t border-zinc-800 bg-zinc-950/95 px-2 py-2 backdrop-blur-md">
         {clipSelected ? (
-          <div className="flex items-stretch gap-1">
+          <div className="flex items-stretch gap-1 overflow-x-auto">
             <button type="button" onClick={splitActiveClip} className={toolbarBtn}>
               <Scissors className="h-5 w-5" aria-hidden /> Split
             </button>
@@ -608,7 +676,7 @@ export function MobileEditor() {
             </button>
           </div>
         ) : (
-          <div className="flex items-stretch gap-1">
+          <div className="flex items-stretch gap-1 overflow-x-auto">
             <button type="button" onClick={() => openSheet("trim")} className={toolbarBtn}>
               <Scissors className="h-5 w-5" aria-hidden /> Edit
             </button>
@@ -621,8 +689,11 @@ export function MobileEditor() {
             <button type="button" onClick={() => openSheet("effects")} className={toolbarBtn}>
               <Wand2 className="h-5 w-5" aria-hidden /> Effects
             </button>
-            <button type="button" onClick={() => openSheet("text")} className={toolbarBtn}>
-              <Layers className="h-5 w-5" aria-hidden /> Overlay
+            <button type="button" onClick={() => openSheet("adjust")} className={toolbarBtn}>
+              <SlidersHorizontal className="h-5 w-5" aria-hidden /> Adjust
+            </button>
+            <button type="button" onClick={() => openSheet("presets")} className={toolbarBtn}>
+              <Sparkles className="h-5 w-5" aria-hidden /> Presets
             </button>
             <button type="button" onClick={() => openSheet("captions")} className={toolbarBtn}>
               <Captions className="h-5 w-5" aria-hidden /> Captions
@@ -680,6 +751,14 @@ export function MobileEditor() {
 
       <Sheet open={sheet === "filters"} title="Filters" onClose={() => setSheet(null)}>
         <FilterGallery />
+      </Sheet>
+
+      <Sheet open={sheet === "presets"} title="Cinematic Presets" onClose={() => setSheet(null)}>
+        <CinePresetGallery />
+      </Sheet>
+
+      <Sheet open={sheet === "adjust"} title="Lighting & Color" onClose={() => setSheet(null)}>
+        <AdjustPanel />
       </Sheet>
 
       <Sheet open={sheet === "speed"} title="Speed" onClose={() => setSheet(null)}>
