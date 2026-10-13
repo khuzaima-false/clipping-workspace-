@@ -354,6 +354,61 @@ function MobileTimeline({
   const nameFor = (assetId: string) =>
     assets.find((asset) => asset.id === assetId)?.name ?? "Clip";
   const removeClip = useEditorStore((state) => state.removeClip);
+  const activeClipId = useEditorStore((state) => state.activeClipId);
+  const duration = useEditorStore((state) => state.duration);
+  const setClipTrim = useEditorStore((state) => state.setClipTrim);
+  const setTrimStart = useEditorStore((state) => state.setTrimStart);
+  const setTrimEnd = useEditorStore((state) => state.setTrimEnd);
+
+  // Filmstrip scale (px per second) used to convert drag distance to time.
+  const PPS = 26;
+  const trimDragRef = useRef<{
+    clipId: string;
+    side: "in" | "out";
+    startX: number;
+    trimStart: number;
+    trimEnd: number;
+    sourceMax: number;
+  } | null>(null);
+
+  const onTrimDown = (
+    e: React.PointerEvent<HTMLButtonElement>,
+    clip: { id: string; trimStart: number; trimEnd: number },
+    side: "in" | "out"
+  ) => {
+    e.stopPropagation();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const sourceMax =
+      clip.id === activeClipId && duration > 0 ? duration : clip.trimEnd;
+    trimDragRef.current = {
+      clipId: clip.id,
+      side,
+      startX: e.clientX,
+      trimStart: clip.trimStart,
+      trimEnd: clip.trimEnd,
+      sourceMax,
+    };
+  };
+  const onTrimMove = (e: React.PointerEvent<HTMLButtonElement>) => {
+    const d = trimDragRef.current;
+    if (!d) return;
+    const delta = (e.clientX - d.startX) / PPS;
+    if (d.side === "in") {
+      const next = Math.min(Math.max(d.trimStart + delta, 0), d.trimEnd - 0.2);
+      if (d.clipId === activeClipId) setTrimStart(next);
+      else setClipTrim(d.clipId, { trimStart: next });
+    } else {
+      const next = Math.max(
+        Math.min(d.trimEnd + delta, d.sourceMax),
+        d.trimStart + 0.2
+      );
+      if (d.clipId === activeClipId) setTrimEnd(next);
+      else setClipTrim(d.clipId, { trimEnd: next });
+    }
+  };
+  const onTrimUp = () => {
+    trimDragRef.current = null;
+  };
 
   return (
     <div className="relative mt-3 w-full max-w-full min-w-0 overflow-hidden select-none">
@@ -398,6 +453,23 @@ function MobileTimeline({
                   {length.toFixed(1)}s
                 </span>
               </button>
+              {/* CapCut-style trim handles */}
+              <button
+                type="button"
+                aria-label="Trim clip start"
+                onPointerDown={(e) => onTrimDown(e, clip, "in")}
+                onPointerMove={onTrimMove}
+                onPointerUp={onTrimUp}
+                className="absolute inset-y-0 left-0 z-10 w-2.5 cursor-ew-resize rounded-l-lg bg-white/35 transition-colors hover:bg-white/70 active:bg-white/80"
+              />
+              <button
+                type="button"
+                aria-label="Trim clip end"
+                onPointerDown={(e) => onTrimDown(e, clip, "out")}
+                onPointerMove={onTrimMove}
+                onPointerUp={onTrimUp}
+                className="absolute inset-y-0 right-0 z-10 w-2.5 cursor-ew-resize rounded-r-lg bg-white/35 transition-colors hover:bg-white/70 active:bg-white/80"
+              />
               <button
                 type="button"
                 aria-label="Remove clip"
@@ -405,7 +477,7 @@ function MobileTimeline({
                   event.stopPropagation();
                   removeClip(clip.id);
                 }}
-                className="absolute right-0.5 top-0.5 z-10 flex h-4 w-4 items-center justify-center rounded bg-black/70 text-zinc-300 transition-colors hover:text-red-400"
+                className="absolute right-3 top-0.5 z-20 flex h-4 w-4 items-center justify-center rounded bg-black/70 text-zinc-300 transition-colors hover:text-red-400"
               >
                 <X className="h-3 w-3" aria-hidden />
               </button>
