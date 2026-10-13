@@ -1328,6 +1328,9 @@ function PremiereTimeline() {
   const removeAudioTrack = useEditorStore((s) => s.removeAudioTrack);
   const removeOverlay = useEditorStore((s) => s.removeOverlay);
   const removeEffect = useEditorStore((s) => s.removeEffect);
+  const setOverlayStartTime = useEditorStore((s) => s.setOverlayStartTime);
+  const setOverlayEndTime = useEditorStore((s) => s.setOverlayEndTime);
+  const updateEffect = useEditorStore((s) => s.updateEffect);
 
   const [pps, setPps] = useState(48);
   const [toggles, setToggles] = useState<Record<TrackKey, { m: boolean; s: boolean; lock: boolean; eye: boolean }>>({
@@ -1408,6 +1411,81 @@ function PremiereTimeline() {
   };
   const onTrimUp = () => {
     trimDragRef.current = null;
+  };
+
+  const overlayDragRef = useRef<{
+    id: string;
+    side: "in" | "out";
+    startX: number;
+    startTime: number;
+    endTime: number;
+  } | null>(null);
+  const onOverlayTrimDown = (
+    e: React.PointerEvent<HTMLButtonElement>,
+    overlay: { id: string; startTime: number; endTime: number },
+    side: "in" | "out"
+  ) => {
+    e.stopPropagation();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    overlayDragRef.current = {
+      id: overlay.id,
+      side,
+      startX: e.clientX,
+      startTime: overlay.startTime,
+      endTime: overlay.endTime,
+    };
+  };
+  const onOverlayTrimMove = (e: React.PointerEvent<HTMLButtonElement>) => {
+    const d = overlayDragRef.current;
+    if (!d) return;
+    const delta = (e.clientX - d.startX) / pps;
+    if (d.side === "in") {
+      setOverlayStartTime(d.id, Math.max(0, Math.min(d.startTime + delta, d.endTime - 0.2)));
+    } else {
+      setOverlayEndTime(d.id, Math.max(d.startTime + 0.2, d.endTime + delta));
+    }
+  };
+  const onOverlayTrimUp = () => {
+    overlayDragRef.current = null;
+  };
+
+  const effectDragRef = useRef<{
+    id: string;
+    side: "in" | "out";
+    startX: number;
+    startTime: number;
+    duration: number;
+  } | null>(null);
+  const onEffectTrimDown = (
+    e: React.PointerEvent<HTMLButtonElement>,
+    effect: { id: string; startTime: number; duration: number },
+    side: "in" | "out"
+  ) => {
+    e.stopPropagation();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    effectDragRef.current = {
+      id: effect.id,
+      side,
+      startX: e.clientX,
+      startTime: effect.startTime,
+      duration: effect.duration,
+    };
+  };
+  const onEffectTrimMove = (e: React.PointerEvent<HTMLButtonElement>) => {
+    const d = effectDragRef.current;
+    if (!d) return;
+    const delta = (e.clientX - d.startX) / pps;
+    if (d.side === "in") {
+      updateEffect(d.id, {
+        startTime: Math.max(0, d.startTime + delta),
+        duration: Math.max(0.1, d.duration - delta),
+      });
+    } else {
+      updateEffect(d.id, { duration: Math.max(0.1, d.duration + delta) });
+    }
+  };
+  const onEffectTrimUp = () => {
+    effectDragRef.current = null;
   };
 
   const seekFromClientX = (clientX: number) => {
@@ -1517,6 +1595,22 @@ function PremiereTimeline() {
                   <span className="block truncate capitalize">{fx.type}</span>
                   <button
                     type="button"
+                    aria-label="Trim effect start"
+                    onPointerDown={(e) => onEffectTrimDown(e, fx, "in")}
+                    onPointerMove={onEffectTrimMove}
+                    onPointerUp={onEffectTrimUp}
+                    className="absolute inset-y-0 left-0 z-10 w-1.5 cursor-ew-resize rounded-l-md bg-white/25 transition-colors hover:bg-white/60"
+                  />
+                  <button
+                    type="button"
+                    aria-label="Trim effect end"
+                    onPointerDown={(e) => onEffectTrimDown(e, fx, "out")}
+                    onPointerMove={onEffectTrimMove}
+                    onPointerUp={onEffectTrimUp}
+                    className="absolute inset-y-0 right-0 z-10 w-1.5 cursor-ew-resize rounded-r-md bg-white/25 transition-colors hover:bg-white/60"
+                  />
+                  <button
+                    type="button"
                     aria-label="Delete effect"
                     onClick={() => removeEffect(fx.id)}
                     className="absolute right-0.5 top-0.5 z-10 flex h-4 w-4 items-center justify-center rounded bg-black/75 text-zinc-100 opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100"
@@ -1544,6 +1638,22 @@ function PremiereTimeline() {
                       {o.text || (o.imageSrc ? "Image" : "Text")}
                     </span>
                   </button>
+                  <button
+                    type="button"
+                    aria-label="Trim overlay start"
+                    onPointerDown={(e) => onOverlayTrimDown(e, o, "in")}
+                    onPointerMove={onOverlayTrimMove}
+                    onPointerUp={onOverlayTrimUp}
+                    className="absolute inset-y-0 left-0 z-10 w-1.5 cursor-ew-resize rounded-l-md bg-white/25 transition-colors hover:bg-white/60"
+                  />
+                  <button
+                    type="button"
+                    aria-label="Trim overlay end"
+                    onPointerDown={(e) => onOverlayTrimDown(e, o, "out")}
+                    onPointerMove={onOverlayTrimMove}
+                    onPointerUp={onOverlayTrimUp}
+                    className="absolute inset-y-0 right-0 z-10 w-1.5 cursor-ew-resize rounded-r-md bg-white/25 transition-colors hover:bg-white/60"
+                  />
                   <button
                     type="button"
                     aria-label="Delete overlay"
