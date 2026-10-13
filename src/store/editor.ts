@@ -143,6 +143,10 @@ export type TextOverlay = {
   auto?: boolean;
   /** Per-overlay animation; falls back to the global caption style. */
   animation?: CaptionAnimation;
+  /** Bitmap overlay (PNG data URL); when set, the overlay renders as an image. */
+  imageSrc?: string;
+  /** Blur (px) applied behind an image overlay. */
+  bgBlur?: number;
 };
 
 /** A keyframe on the speed (velocity) curve. `time` is in source-video seconds. */
@@ -458,6 +462,8 @@ type EditorState = {
   setFit: (fit: VideoFit) => void;
   setOffset: (x: number, y: number) => void;
   addOverlay: () => void;
+  /** Adds a bitmap (PNG data URL) overlay layer (renders on V2). */
+  addImageOverlay: (src: string, duration?: number) => void;
   updateOverlay: (id: string, patch: Partial<Omit<TextOverlay, "id">>) => void;
   setOverlayStartTime: (id: string, time: number) => void;
   setOverlayEndTime: (id: string, time: number) => void;
@@ -1141,6 +1147,15 @@ export const useEditorStore = create<EditorState>()(
 
   addOverlay: () => {
     const overlay = createOverlay(get().duration);
+    set({ overlays: [...get().overlays, overlay], selectedId: overlay.id });
+  },
+
+  addImageOverlay: (src, duration = 0) => {
+    const overlay: TextOverlay = {
+      ...createOverlay(duration),
+      text: "",
+      imageSrc: src,
+    };
     set({ overlays: [...get().overlays, overlay], selectedId: overlay.id });
   },
 

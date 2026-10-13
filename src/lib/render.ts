@@ -351,6 +351,52 @@ function drawPlaceholder(
 type LayoutWord = { text: string; width: number; wordIndex: number };
 type LayoutLine = { words: LayoutWord[]; width: number };
 
+/** Cache of decoded overlay bitmaps (keyed by data URL). */
+const overlayImageCache = new Map<string, HTMLImageElement>();
+
+function getOverlayImage(src: string): HTMLImageElement | null {
+  let image = overlayImageCache.get(src);
+  if (!image) {
+    image = new Image();
+    image.src = src;
+    overlayImageCache.set(src, image);
+  }
+  return image.complete && image.naturalWidth > 0 ? image : null;
+}
+
+/** Draws a bitmap overlay (poster/jersey graphic) with opacity, blur and rotation. */
+function drawImageOverlay(
+  ctx: CanvasRenderingContext2D,
+  overlay: TextOverlay,
+  width: number,
+  height: number
+): void {
+  if (!overlay.imageSrc) return;
+  const image = getOverlayImage(overlay.imageSrc);
+  if (!image) return;
+
+  const maxW = width * 0.8;
+  const scale = Math.min(1, maxW / image.naturalWidth);
+  const w = image.naturalWidth * scale;
+  const h = image.naturalHeight * scale;
+  const cx = (overlay.x / 100) * width;
+  const cy = (overlay.y / 100) * height;
+
+  ctx.save();
+  const alpha = Math.min(1, Math.max(0, (overlay.opacity ?? 100) / 100));
+  if (alpha < 1) ctx.globalAlpha = alpha;
+  if (overlay.bgBlur && overlay.bgBlur > 0) {
+    ctx.filter = `blur(${overlay.bgBlur}px)`;
+  }
+  if (overlay.rotation) {
+    ctx.translate(cx, cy);
+    ctx.rotate((overlay.rotation * Math.PI) / 180);
+    ctx.translate(-cx, -cy);
+  }
+  ctx.drawImage(image, cx - w / 2, cy - h / 2, w, h);
+  ctx.restore();
+}
+
 function drawOverlay(
   ctx: CanvasRenderingContext2D,
   overlay: TextOverlay,
@@ -359,6 +405,10 @@ function drawOverlay(
   sceneTime: number,
   style: CaptionStyle
 ): void {
+  if (overlay.imageSrc) {
+    drawImageOverlay(ctx, overlay, width, height);
+    return;
+  }
   const text = overlay.text.trim();
   if (!text) return;
 

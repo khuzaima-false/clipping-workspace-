@@ -309,6 +309,83 @@ function EditorView() {
     }
   };
 
+  // Batch export: encode + download each selected clip sequentially.
+  const handleBatchExport = async (clipIds: string[]) => {
+    const store = useEditorStore.getState();
+    const res = ASPECT_RESOLUTIONS[store.aspect];
+    for (const clipId of clipIds) {
+      const clip = store.sequence.find((c) => c.id === clipId);
+      const asset = clip
+        ? store.assets.find((a) => a.id === clip.assetId)
+        : undefined;
+      if (!clip || !asset) continue;
+
+      const url = URL.createObjectURL(asset.blob);
+      const el = document.createElement("video");
+      el.preload = "auto";
+      el.playsInline = true;
+      el.src = url;
+
+      try {
+        await new Promise<void>((resolve) => {
+          if (el.readyState >= 1) resolve();
+          else el.addEventListener("loadedmetadata", () => resolve(), { once: true });
+        });
+        const trimStart = clip.trimStart;
+        const trimEnd =
+          clip.trimEnd > clip.trimStart
+            ? clip.trimEnd
+            : Number.isFinite(el.duration)
+              ? el.duration
+              : 0;
+        if (trimEnd <= trimStart) continue;
+
+        const file =
+          asset.blob instanceof File
+            ? asset.blob
+            : new File([asset.blob], asset.name, {
+                type: asset.blob.type || "video/mp4",
+              });
+
+        const result = await exportVideo({
+          video: el,
+          renderFrame: (ctx, time, frameVideo) =>
+            drawScene(ctx, frameVideo, {
+              width: res.width,
+              height: res.height,
+              fit: store.fit,
+              offsetX: store.offsetX,
+              offsetY: store.offsetY,
+              overlays: [],
+              captionStyle: store.captionStyle,
+              colorAdjustments: store.colorAdjustments,
+              activeEffects: [],
+              crisp: store.hdRendering,
+              sceneTime: time,
+            }),
+          width: res.width,
+          height: res.height,
+          trimStart,
+          trimEnd,
+          fps: EXPORT_FPS,
+          file,
+          speedPoints: [],
+          authorize: async () =>
+            (await useWorkspaceStore.getState().consumeCredits(EXPORT_CREDIT_COST)).ok,
+          onProgress: () => {},
+        });
+        downloadFile(
+          result.blob,
+          fileNameFor(asset.name.replace(/\.[^.]+$/, ""), result.extension)
+        );
+      } catch {
+        // Skip failed items and continue the queue.
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    }
+  };
+
   const resolution = ASPECT_RESOLUTIONS[aspect];
   const exporting = exportRun?.status === "running";
 
@@ -392,7 +469,10 @@ function EditorView() {
         <>
           {/* Desktop: Premiere-style 4-panel workspace */}
           <div className="hidden md:flex md:min-h-0 md:flex-1 md:flex-col">
-            <DesktopEditor onRequireCredits={() => setReferralOpen(true)} />
+            <DesktopEditor
+              onRequireCredits={() => setReferralOpen(true)}
+              onBatchExport={(ids) => void handleBatchExport(ids)}
+            />
           </div>
 
           {/* Mobile CapCut-style timeline editor */}

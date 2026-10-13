@@ -40,6 +40,11 @@ import {
 import { CAPTIONS_CREDIT_COST } from "@/lib/credits";
 import { CAPTION_LANGUAGES, type CaptionLanguageId } from "@/lib/transcribe";
 import { useWorkspaceStore } from "@/store/workspace";
+import {
+  AiStudioSection,
+  BatchTools,
+  StudioPanel,
+} from "@/components/editor/studio-modules";
 import { cn } from "@/lib/utils";
 
 const EFFECT_CARDS: { type: VideoEffectType; label: string; Icon: typeof Wand2 }[] = [
@@ -152,9 +157,15 @@ function ColorWheel({
 /* ------------------------------------------------------------------ */
 /* Top-left: Project bin + Inspector                                    */
 /* ------------------------------------------------------------------ */
-function ProjectBinPanel({ onRequireCredits }: { onRequireCredits?: () => void }) {
+function ProjectBinPanel({
+  onRequireCredits,
+  onBatchExport,
+}: {
+  onRequireCredits?: () => void;
+  onBatchExport?: (clipIds: string[]) => void;
+}) {
   const [tab, setTab] = useState<
-    "media" | "effects" | "properties" | "clip" | "captions"
+    "media" | "effects" | "properties" | "clip" | "captions" | "studio"
   >("media");
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -208,6 +219,7 @@ function ProjectBinPanel({ onRequireCredits }: { onRequireCredits?: () => void }
   const setCaptionStyle = useEditorStore((s) => s.setCaptionStyle);
   const consumeCredits = useWorkspaceStore((s) => s.consumeCredits);
   const [captionError, setCaptionError] = useState<string | null>(null);
+  const [selectedClips, setSelectedClips] = useState<string[]>([]);
 
   const handleAutoCaptions = async () => {
     if (transcribing) return;
@@ -241,6 +253,7 @@ function ProjectBinPanel({ onRequireCredits }: { onRequireCredits?: () => void }
             ["properties", "Props"],
             ["clip", "Clip"],
             ["captions", "Captions"],
+            ["studio", "Studio"],
           ] as const
         ).map(([id, label]) => (
           <button
@@ -281,6 +294,11 @@ function ProjectBinPanel({ onRequireCredits }: { onRequireCredits?: () => void }
                 e.target.value = "";
               }}
             />
+            <BatchTools
+              selectedIds={selectedClips}
+              onClear={() => setSelectedClips([])}
+              onBatchExport={onBatchExport}
+            />
             {sequence.length === 0 ? (
               <p className="text-[11px] leading-4 text-zinc-500">
                 No media yet — import clips to build your sequence.
@@ -289,6 +307,19 @@ function ProjectBinPanel({ onRequireCredits }: { onRequireCredits?: () => void }
               <ul className="space-y-1.5">
                 {sequence.map((clip, index) => (
                   <li key={clip.id} className="flex items-center gap-1">
+                    <input
+                      type="checkbox"
+                      checked={selectedClips.includes(clip.id)}
+                      onChange={(e) =>
+                        setSelectedClips((prev) =>
+                          e.target.checked
+                            ? [...prev, clip.id]
+                            : prev.filter((id) => id !== clip.id)
+                        )
+                      }
+                      aria-label={`Select ${nameFor(clip.assetId)}`}
+                      className="h-3.5 w-3.5 shrink-0 accent-violet-500"
+                    />
                     <button
                       type="button"
                       onClick={() => selectClip(clip.id)}
@@ -514,6 +545,8 @@ function ProjectBinPanel({ onRequireCredits }: { onRequireCredits?: () => void }
                 </label>
               </>
             )}
+
+            <AiStudioSection selected={selected} />
 
             {/* Global caption animation + style (applies to AI captions) */}
             <div className="space-y-2 border-t border-zinc-800 pt-3">
@@ -834,6 +867,16 @@ function ProjectBinPanel({ onRequireCredits }: { onRequireCredits?: () => void }
                 ))}
               </ul>
             )}
+          </div>
+        )}
+
+        {tab === "studio" && (
+          <div className="space-y-3">
+            <p className="text-[10px] leading-4 text-zinc-500">
+              Design a cricket jersey or match-day poster, then send it to the
+              timeline as a V2 overlay.
+            </p>
+            <StudioPanel />
           </div>
         )}
       </div>
@@ -1578,8 +1621,10 @@ function PremiereTimeline() {
 /* ------------------------------------------------------------------ */
 export function DesktopEditor({
   onRequireCredits,
+  onBatchExport,
 }: {
   onRequireCredits?: () => void;
+  onBatchExport?: (clipIds: string[]) => void;
 }) {
   // Desktop-only keyboard shortcuts for undo/redo.
   useEffect(() => {
@@ -1614,7 +1659,7 @@ export function DesktopEditor({
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
       <div className="grid min-h-0 gap-3 lg:grid-cols-[280px_minmax(0,1fr)_300px] xl:grid-cols-[320px_minmax(0,1fr)_340px]" style={{ height: "min(58vh, 600px)", minHeight: 380 }}>
-        <ProjectBinPanel onRequireCredits={onRequireCredits} />
+        <ProjectBinPanel onRequireCredits={onRequireCredits} onBatchExport={onBatchExport} />
         <ProgramPreview />
         <LumetriPanel />
       </div>
