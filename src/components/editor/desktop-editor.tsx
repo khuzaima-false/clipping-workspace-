@@ -1702,20 +1702,34 @@ function ProgramPreview() {
       if (canvas.height !== height) canvas.height = height;
 
       const video = state.videoEl;
-      if (video && !video.paused && !video.ended) {
-        // Follow the velocity curve so preview matches the export ramp.
-        const rate = speedAt(state.speedPoints, video.currentTime);
-        if (Math.abs(video.playbackRate - rate) > 0.01) video.playbackRate = rate;
-        const now = performance.now();
-        if (now - lastSync >= 100) {
-          lastSync = now;
-          if (Math.abs(video.currentTime - useEditorStore.getState().currentTime) > 0.01) {
-            useEditorStore.setState({ currentTime: video.currentTime });
+      if (video) {
+        if (!video.paused && !video.ended) {
+          // Follow the velocity curve so preview matches the export ramp.
+          const rate = speedAt(state.speedPoints, video.currentTime);
+          if (Math.abs(video.playbackRate - rate) > 0.01) video.playbackRate = rate;
+          const now = performance.now();
+          if (now - lastSync >= 100) {
+            lastSync = now;
+            if (Math.abs(video.currentTime - useEditorStore.getState().currentTime) > 0.01) {
+              useEditorStore.setState({ currentTime: video.currentTime });
+            }
           }
         }
-        if (state.duration > 0 && video.currentTime >= state.trimEnd - 0.02) {
-          if (loopRef.current) video.currentTime = state.trimStart;
-          else state.setPlaying(false);
+
+        // Clip boundary — roll into the next clip, loop the last one, or stop.
+        const reachedEnd =
+          state.duration > 0 &&
+          (video.ended || video.currentTime >= state.trimEnd - 0.02);
+        if (reachedEnd && state.playing) {
+          const advanced = state.advanceClip(loopRef.current);
+          if (!advanced) {
+            if (loopRef.current) {
+              video.currentTime = state.trimStart;
+              if (video.ended) void video.play().catch(() => {});
+            } else {
+              state.setPlaying(false);
+            }
+          }
         }
       }
 
@@ -2390,6 +2404,9 @@ function PremiereTimeline() {
     id: string;
     startX: number;
     moved: boolean;
+    /** Centres of the *other* clips, snapshotted at drag start (stable target). */
+    centers: number[];
+    lastTarget: number;
   } | null>(null);
 
   const onClipDragDown = (
@@ -2398,30 +2415,39 @@ function PremiereTimeline() {
   ) => {
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
-    clipReorderRef.current = { id: clipId, startX: event.clientX, moved: false };
+    clipReorderRef.current = {
+      id: clipId,
+      startX: event.clientX,
+      moved: false,
+      centers: videoBlocks
+        .filter((block) => block.clip.id !== clipId)
+        .map((block) => block.start + block.dur / 2),
+      lastTarget: -1,
+    };
   };
 
   const onClipDragMove = (event: React.PointerEvent<HTMLButtonElement>) => {
     const drag = clipReorderRef.current;
     if (!drag) return;
     const dx = event.clientX - drag.startX;
-    if (!drag.moved && Math.abs(dx) < 6) return;
+    if (!drag.moved && Math.abs(dx) < 8) return;
     drag.moved = true;
 
     const lane = laneRef.current;
-    if (!lane || videoBlocks.length < 2) return;
+    if (!lane || drag.centers.length === 0) return;
     const rect = lane.getBoundingClientRect();
     const pointerTime = (event.clientX - rect.left) / pps;
 
-    // Insertion index = how many *other* clips have their centre left of the
-    // pointer. videoBlocks is in current play order, so this maps directly.
+    // Insertion index = how many other clips sit left of the pointer. The
+    // snapshot keeps this monotonic so the clip can't flicker between slots.
     let target = 0;
-    for (const block of videoBlocks) {
-      if (block.clip.id === drag.id) continue;
-      if (pointerTime > block.start + block.dur / 2) target += 1;
+    for (const center of drag.centers) {
+      if (pointerTime > center) target += 1;
     }
-    const from = videoBlocks.findIndex((block) => block.clip.id === drag.id);
-    if (from >= 0 && target !== from) reorderClip(drag.id, target);
+    if (target !== drag.lastTarget) {
+      drag.lastTarget = target;
+      reorderClip(drag.id, target);
+    }
   };
 
   const onClipDragUp = (event: React.PointerEvent<HTMLButtonElement>) => {

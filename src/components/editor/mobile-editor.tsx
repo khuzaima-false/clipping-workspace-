@@ -279,23 +279,30 @@ function MobilePreview({ wrapRef }: { wrapRef: React.RefObject<HTMLDivElement | 
       if (canvas.height !== height) canvas.height = height;
 
       const video = state.videoEl;
-      if (video && !video.paused && !video.ended) {
-        // Follow the velocity curve so preview matches the export ramp.
-        const rate = speedAt(state.speedPoints, video.currentTime);
-        if (Math.abs(video.playbackRate - rate) > 0.01) video.playbackRate = rate;
-        const now = performance.now();
-        if (now - lastClockSync >= 100) {
-          lastClockSync = now;
-          if (Math.abs(video.currentTime - useEditorStore.getState().currentTime) > 0.01) {
-            useEditorStore.setState({ currentTime: video.currentTime });
+      if (video) {
+        if (!video.paused && !video.ended) {
+          // Follow the velocity curve so preview matches the export ramp.
+          const rate = speedAt(state.speedPoints, video.currentTime);
+          if (Math.abs(video.playbackRate - rate) > 0.01) video.playbackRate = rate;
+          const now = performance.now();
+          if (now - lastClockSync >= 100) {
+            lastClockSync = now;
+            if (Math.abs(video.currentTime - useEditorStore.getState().currentTime) > 0.01) {
+              useEditorStore.setState({ currentTime: video.currentTime });
+            }
           }
         }
-        if (
+
+        // Clip boundary — roll into the next clip, else loop this one.
+        const reachedEnd =
           state.duration > 0 &&
-          state.trimEnd < state.duration - 0.05 &&
-          video.currentTime >= state.trimEnd
-        ) {
-          video.currentTime = state.trimStart;
+          (video.ended || video.currentTime >= state.trimEnd - 0.02);
+        if (reachedEnd && state.playing) {
+          const advanced = state.advanceClip(true);
+          if (!advanced) {
+            video.currentTime = state.trimStart;
+            if (video.ended) void video.play().catch(() => {});
+          }
         }
       }
 
@@ -399,7 +406,7 @@ function MobileTimeline({
   const nameFor = (assetId: string) =>
     assets.find((asset) => asset.id === assetId)?.name ?? "Clip";
   const removeClip = useEditorStore((state) => state.removeClip);
-  const moveClip = useEditorStore((state) => state.moveClip);
+  const reorderClip = useEditorStore((state) => state.reorderClip);
   const scrubTo = useEditorStore((state) => state.scrubTo);
   const activeClipId = useEditorStore((state) => state.activeClipId);
   const duration = useEditorStore((state) => state.duration);
@@ -481,24 +488,47 @@ function MobileTimeline({
     sourceMax: number;
   } | null>(null);
 
-  // Touch drag-to-reorder (swap left/right past a threshold).
-  const REORDER_PX = 36;
-  const reorderRef = useRef<{ id: string; startX: number } | null>(null);
+  // Touch drag-to-reorder (drop the clip at the nearest slot).
+  const reorderRef = useRef<{
+    id: string;
+    centers: number[];
+    lastTarget: number;
+    stripLeft: number;
+    scrollLeft: number;
+  } | null>(null);
   const onReorderDown = (e: React.PointerEvent<HTMLButtonElement>, clipId: string) => {
+    const el = scrollRef.current;
+    if (!el) return;
     e.currentTarget.setPointerCapture(e.pointerId);
-    reorderRef.current = { id: clipId, startX: e.clientX };
+    // Snapshot the other clips' centres so the target can't oscillate mid-drag.
+    let x = el.clientWidth * 0.5;
+    const centers: number[] = [];
+    for (let i = 0; i < sequence.length; i++) {
+      const clip = sequence[i];
+      const dur = Math.max(0.1, clip.trimEnd - clip.trimStart);
+      const width = Math.min(220, Math.max(84, dur * PPS));
+      if (clip.id !== clipId) centers.push(x + width / 2);
+      x += width + GAP;
+    }
+    reorderRef.current = {
+      id: clipId,
+      centers,
+      lastTarget: -1,
+      stripLeft: el.getBoundingClientRect().left,
+      scrollLeft: el.scrollLeft,
+    };
   };
   const onReorderMove = (e: React.PointerEvent<HTMLButtonElement>) => {
     const d = reorderRef.current;
-    if (!d) return;
-    const dx = e.clientX - d.startX;
-    if (Math.abs(dx) < 6) return;
-    if (dx > REORDER_PX) {
-      moveClip(d.id, 1);
-      d.startX = e.clientX;
-    } else if (dx < -REORDER_PX) {
-      moveClip(d.id, -1);
-      d.startX = e.clientX;
+    if (!d || d.centers.length === 0) return;
+    const contentX = e.clientX - d.stripLeft + d.scrollLeft;
+    let target = 0;
+    for (const center of d.centers) {
+      if (contentX > center) target += 1;
+    }
+    if (target !== d.lastTarget) {
+      d.lastTarget = target;
+      reorderClip(d.id, target);
     }
   };
   const onReorderUp = (e: React.PointerEvent<HTMLButtonElement>) => {

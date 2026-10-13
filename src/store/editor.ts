@@ -545,7 +545,11 @@ type EditorState = {
 
   loadVideo: (file: File) => void;
   /** Applies raw video bytes (e.g. restored from IndexedDB) to the editor. */
-  loadVideoBlob: (blob: Blob, name: string) => void;
+  loadVideoBlob: (
+    blob: Blob,
+    name: string,
+    options?: { autoplay?: boolean }
+  ) => void;
   /** Restores the source video persisted for `projectId`, if available. */
   restoreVideo: (projectId: string) => Promise<void>;
   /** Sets the language used for AI caption transcription. */
@@ -560,6 +564,8 @@ type EditorState = {
   selectClip: (clipId: string) => void;
   /** Scrubs to a source time inside a clip (used by the mobile filmstrip). */
   scrubTo: (clipId: string, sourceTime: number) => void;
+  /** Advances to the next clip during playback; false when on the last clip. */
+  advanceClip: (wrap?: boolean) => boolean;
   /** Removes a clip from the sequence. */
   removeClip: (clipId: string) => void;
   /** Splits the active clip into two clips at the current playhead. */
@@ -835,7 +841,8 @@ export const useEditorStore = create<EditorState>()(
     get().loadVideoBlob(file, file.name);
   },
 
-  loadVideoBlob: (blob, name) => {
+  loadVideoBlob: (blob, name, options) => {
+    const autoplay = options?.autoplay ?? false;
     // Release the previous source before swapping in the new one.
     const previous = get();
     releaseVideo(previous.videoEl, previous.videoUrl);
@@ -944,7 +951,9 @@ export const useEditorStore = create<EditorState>()(
 
     el.addEventListener("ended", () => {
       if (get().videoEl !== el) return;
-      set({ playing: false, currentTime: el.currentTime });
+      // Keep `playing` true so the preview loop can advance to the next clip
+      // (or loop / stop) — the loop owns the boundary decision.
+      set({ currentTime: el.currentTime });
     });
 
     el.addEventListener("error", () => {
@@ -967,6 +976,16 @@ export const useEditorStore = create<EditorState>()(
       videoName: name,
       videoMissing: false,
     });
+
+    if (autoplay) {
+      set({ playing: true });
+      el.addEventListener("canplay", () => {
+        if (get().videoEl !== el || !get().playing) return;
+        void el.play().catch(() => {
+          if (get().videoEl === el) set({ playing: false });
+        });
+      });
+    }
   },
 
   restoreVideo: async (projectId) => {
@@ -1225,6 +1244,28 @@ export const useEditorStore = create<EditorState>()(
       chromaKey: clip.chromaKey ?? DEFAULT_CHROMA_KEY,
     });
     get().loadVideoBlob(asset.blob, asset.name);
+  },
+
+  advanceClip: (wrap = false) => {
+    const { sequence, activeClipId } = get();
+    if (sequence.length === 0) return false;
+    const index = sequence.findIndex((clip) => clip.id === activeClipId);
+    let next: TimelineClip | undefined;
+    if (index >= 0 && index + 1 < sequence.length) next = sequence[index + 1];
+    else if (wrap) next = sequence[0];
+    // Single-clip wrap loops in place; the preview loop handles it.
+    if (!next || next.id === activeClipId) return false;
+    const asset = get().assets.find((item) => item.id === next.assetId);
+    if (!asset) return false;
+    set({
+      activeClipId: next.id,
+      pendingTrim: { trimStart: next.trimStart, trimEnd: next.trimEnd },
+      pendingSeek: next.trimStart,
+      chromaKey: next.chromaKey ?? DEFAULT_CHROMA_KEY,
+    });
+    // Autoplay so the sequence keeps rolling from one clip into the next.
+    get().loadVideoBlob(asset.blob, asset.name, { autoplay: true });
+    return true;
   },
 
   removeClip: (clipId) => {
