@@ -14,6 +14,7 @@ import {
   Diamond,
   Film,
   Gauge,
+  GripVertical,
   Layers,
   Maximize2,
   Mic,
@@ -511,23 +512,32 @@ function MobileTimeline({
               <button
                 type="button"
                 onClick={() => onSelectClip(clip.id)}
-                onPointerDown={(e) => onReorderDown(e, clip.id)}
-                onPointerMove={onReorderMove}
-                onPointerUp={onReorderUp}
-                onPointerCancel={onReorderUp}
                 className={cn(
-                  "absolute inset-0 h-full w-full touch-none overflow-hidden rounded-lg border text-left",
+                  "absolute inset-0 h-full w-full overflow-hidden rounded-lg border text-left",
                   active ? "border-fuchsia-400" : "border-zinc-700"
                 )}
               >
                 <span className="absolute inset-0 bg-gradient-to-br from-violet-600/35 via-zinc-800 to-blue-600/25" />
-                <span className="relative block truncate py-1.5 pl-2 pr-6 text-[10px] font-medium text-zinc-100">
+                <span className="relative block truncate py-1.5 pl-11 pr-6 text-[10px] font-medium text-zinc-100">
                   {nameFor(clip.assetId)}
                 </span>
                 {/* Duration handle */}
                 <span className="absolute bottom-1 left-1 rounded bg-black/60 px-1 text-[9px] tabular-nums text-zinc-200">
                   {length.toFixed(1)}s
                 </span>
+              </button>
+              {/* Drag handle — only this surface captures touch so the strip can scroll */}
+              <button
+                type="button"
+                aria-label="Drag to reorder clip"
+                onPointerDown={(e) => onReorderDown(e, clip.id)}
+                onPointerMove={onReorderMove}
+                onPointerUp={onReorderUp}
+                onPointerCancel={onReorderUp}
+                onClick={(event) => event.stopPropagation()}
+                className="absolute left-2.5 top-1 z-20 flex h-6 w-6 touch-none items-center justify-center rounded bg-black/60 text-zinc-300"
+              >
+                <GripVertical className="h-3.5 w-3.5" aria-hidden />
               </button>
               {/* CapCut-style trim handles */}
               <button
