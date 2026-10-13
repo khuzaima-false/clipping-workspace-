@@ -570,6 +570,8 @@ type EditorState = {
   moveClip: (clipId: string, direction: -1 | 1) => void;
   /** Repositions a clip freely along the timeline (seconds). */
   moveClipTo: (clipId: string, timelineStart: number) => void;
+  /** Moves a clip to a new index in the sequence (drag-to-reorder). */
+  reorderClip: (clipId: string, toIndex: number) => void;
   /** Updates a clip's trim range. */
   setClipTrim: (
     clipId: string,
@@ -1028,7 +1030,15 @@ export const useEditorStore = create<EditorState>()(
       }
 
       const assetIds = new Set(assets.map((asset) => asset.id));
-      const sequence = media.sequence.filter((clip) => assetIds.has(clip.assetId));
+      // Re-flow the timeline: the sequence order is the play order, so drop any
+      // stale free-position offsets from older sessions.
+      const sequence = media.sequence
+        .filter((clip) => assetIds.has(clip.assetId))
+        .map((clip) => {
+          const copy = { ...clip };
+          delete copy.timelineStart;
+          return copy;
+        });
       const overlays = (media.overlays as TextOverlay[]).filter(Boolean);
 
       // Rehydrate audio tracks (fetch + decode).
@@ -1270,6 +1280,25 @@ export const useEditorStore = create<EditorState>()(
           : clip
       ),
     });
+    persistProject(get());
+  },
+
+  reorderClip: (clipId, toIndex) => {
+    const sequence = get().sequence.slice();
+    const from = sequence.findIndex((clip) => clip.id === clipId);
+    if (from < 0) return;
+    const [clip] = sequence.splice(from, 1);
+    const clamped = Math.max(0, Math.min(toIndex, sequence.length));
+    if (clamped === from) return;
+    sequence.splice(clamped, 0, clip);
+    // Reordering re-flows the timeline: drop stale free-position offsets so the
+    // array order *is* the play order.
+    const normalized = sequence.map((item) => {
+      const copy = { ...item };
+      delete copy.timelineStart;
+      return copy;
+    });
+    set({ sequence: normalized });
     persistProject(get());
   },
 

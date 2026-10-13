@@ -2140,7 +2140,7 @@ function PremiereTimeline() {
   const setOverlayEndTime = useEditorStore((s) => s.setOverlayEndTime);
   const updateEffect = useEditorStore((s) => s.updateEffect);
   const addAudioTrackFromBlob = useEditorStore((s) => s.addAudioTrackFromBlob);
-  const moveClipTo = useEditorStore((s) => s.moveClipTo);
+  const reorderClip = useEditorStore((s) => s.reorderClip);
   const moveOverlayTo = useEditorStore((s) => s.moveOverlayTo);
   const moveAudioTrackTo = useEditorStore((s) => s.moveAudioTrackTo);
   const moveEffectTo = useEditorStore((s) => s.moveEffectTo);
@@ -2306,10 +2306,10 @@ function PremiereTimeline() {
   };
 
   /* ------------------------------------------------------------------ */
-  /* Free horizontal position dragging (clips, overlays, audio, effects) */
+  /* Free horizontal position dragging (overlays, audio, effects)         */
   /* ------------------------------------------------------------------ */
   type BodyDrag = {
-    kind: "clip" | "overlay" | "audio" | "effect";
+    kind: "overlay" | "audio" | "effect";
     id: string;
     pointerId: number;
     startX: number;
@@ -2361,14 +2361,7 @@ function PremiereTimeline() {
     drag.moved = true;
     const delta = dx / pps;
 
-    if (drag.kind === "clip") {
-      const targets = [0, currentTime];
-      for (const block of videoBlocks) {
-        if (block.clip.id === drag.id) continue;
-        targets.push(block.start, block.start + block.dur);
-      }
-      moveClipTo(drag.id, snapValue(Math.max(0, drag.start + delta), targets));
-    } else if (drag.kind === "overlay") {
+    if (drag.kind === "overlay") {
       const targets = [0, currentTime];
       for (const overlay of overlays) {
         if (overlay.id === drag.id) continue;
@@ -2388,6 +2381,54 @@ function PremiereTimeline() {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
     bodyDragRef.current = null;
+  };
+
+  /* ------------------------------------------------------------------ */
+  /* Drag-to-reorder V1 clips (grab a clip, drop it first / in between)   */
+  /* ------------------------------------------------------------------ */
+  const clipReorderRef = useRef<{
+    id: string;
+    startX: number;
+    moved: boolean;
+  } | null>(null);
+
+  const onClipDragDown = (
+    event: React.PointerEvent<HTMLButtonElement>,
+    clipId: string
+  ) => {
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    clipReorderRef.current = { id: clipId, startX: event.clientX, moved: false };
+  };
+
+  const onClipDragMove = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const drag = clipReorderRef.current;
+    if (!drag) return;
+    const dx = event.clientX - drag.startX;
+    if (!drag.moved && Math.abs(dx) < 6) return;
+    drag.moved = true;
+
+    const lane = laneRef.current;
+    if (!lane || videoBlocks.length < 2) return;
+    const rect = lane.getBoundingClientRect();
+    const pointerTime = (event.clientX - rect.left) / pps;
+
+    // Insertion index = how many *other* clips have their centre left of the
+    // pointer. videoBlocks is in current play order, so this maps directly.
+    let target = 0;
+    for (const block of videoBlocks) {
+      if (block.clip.id === drag.id) continue;
+      if (pointerTime > block.start + block.dur / 2) target += 1;
+    }
+    const from = videoBlocks.findIndex((block) => block.clip.id === drag.id);
+    if (from >= 0 && target !== from) reorderClip(drag.id, target);
+  };
+
+  const onClipDragUp = (event: React.PointerEvent<HTMLButtonElement>) => {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    clipReorderRef.current = null;
   };
 
   // Audio in/out trims (Update trimStart + duration).
@@ -2715,10 +2756,10 @@ function PremiereTimeline() {
                 >
                   <button
                     type="button"
-                    onPointerDown={(e) => beginBodyDrag(e, "clip", clip.id, start)}
-                    onPointerMove={moveBodyDrag}
-                    onPointerUp={endBodyDrag}
-                    onPointerCancel={endBodyDrag}
+                    onPointerDown={(e) => onClipDragDown(e, clip.id)}
+                    onPointerMove={onClipDragMove}
+                    onPointerUp={onClipDragUp}
+                    onPointerCancel={onClipDragUp}
                     onClick={() => selectClip(clip.id)}
                     className={cn(
                       "h-full w-full cursor-grab overflow-hidden px-2 text-left active:cursor-grabbing",

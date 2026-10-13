@@ -1,4 +1,4 @@
-import { createStore, del, get, set } from "idb-keyval";
+import { idbDel, idbGet, idbSet } from "@/lib/idb";
 
 /**
  * Locally-persisted source videos, keyed by project id.
@@ -7,8 +7,6 @@ import { createStore, del, get, set } from "idb-keyval";
  * Supabase, so they live in IndexedDB. This keeps a project's source video on
  * the device across reloads and tab closes without shipping it anywhere.
  */
-const store = createStore("forgevyn-editor", "video-sources");
-
 const keyFor = (projectId: string) => `project:${projectId}`;
 
 export type StoredVideoSource = {
@@ -37,7 +35,7 @@ export async function saveVideoSource(
     size: blob.size,
     updatedAt: Date.now(),
   };
-  await set(keyFor(projectId), record, store);
+  await idbSet("video-sources", keyFor(projectId), record);
 }
 
 /** Reads the stored source video for `projectId`, or `null` if absent. */
@@ -45,7 +43,7 @@ export async function loadVideoSource(
   projectId: string
 ): Promise<StoredVideoSource | null> {
   if (!projectId || !idbAvailable()) return null;
-  const value = await get<StoredVideoSource>(keyFor(projectId), store);
+  const value = await idbGet<StoredVideoSource>("video-sources", keyFor(projectId));
   if (!value || !(value.blob instanceof Blob)) return null;
   return value;
 }
@@ -53,14 +51,13 @@ export async function loadVideoSource(
 /** Removes the stored source video for `projectId`. */
 export async function deleteVideoSource(projectId: string): Promise<void> {
   if (!projectId || !idbAvailable()) return;
-  await del(keyFor(projectId), store);
+  await idbDel("video-sources", keyFor(projectId));
 }
 
 /* -------------------------------------------------------------------------- */
 /* Multi-clip media library (metadata only; blobs live in `media-storage`)      */
 /* -------------------------------------------------------------------------- */
 
-const mediaStore = createStore("forgevyn-editor", "project-media");
 const mediaKeyFor = (projectId: string) => `media:${projectId}`;
 
 /** Persisted metadata for one uploaded asset (binary lives under `mediaId`). */
@@ -154,7 +151,10 @@ export async function loadProjectMedia(
   projectId: string
 ): Promise<ProjectMedia> {
   if (!projectId || !idbAvailable()) return EMPTY_MEDIA;
-  const value = await get<Partial<ProjectMedia>>(mediaKeyFor(projectId), mediaStore);
+  const value = await idbGet<Partial<ProjectMedia>>(
+    "project-media",
+    mediaKeyFor(projectId)
+  );
   if (!value) return EMPTY_MEDIA;
   return {
     assets: Array.isArray(value.assets) ? value.assets : [],
@@ -170,5 +170,5 @@ export async function saveProjectMedia(
   media: ProjectMedia
 ): Promise<void> {
   if (!projectId || !idbAvailable()) return;
-  await set(mediaKeyFor(projectId), media, mediaStore);
+  await idbSet("project-media", mediaKeyFor(projectId), media);
 }
