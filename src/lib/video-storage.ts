@@ -57,21 +57,24 @@ export async function deleteVideoSource(projectId: string): Promise<void> {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Multi-clip media library (multiple videos per project)                      */
+/* Multi-clip media library (metadata only; blobs live in `media-storage`)      */
 /* -------------------------------------------------------------------------- */
 
 const mediaStore = createStore("forgevyn-editor", "project-media");
 const mediaKeyFor = (projectId: string) => `media:${projectId}`;
 
-/** One uploaded video in a project's media library. */
-export type VideoAsset = {
+/** Persisted metadata for one uploaded asset (binary lives under `mediaId`). */
+export type StoredAssetMeta = {
   id: string;
+  mediaId: string;
   name: string;
   type: string;
   size: number;
   updatedAt: number;
-  blob: Blob;
 };
+
+/** In-memory asset: metadata + its decoded Blob. */
+export type VideoAsset = StoredAssetMeta & { blob: Blob };
 
 /** One clip placed on the timeline sequence, referencing a library asset. */
 export type TimelineClip = {
@@ -83,31 +86,50 @@ export type TimelineClip = {
   trimEnd: number;
 };
 
-export type ProjectMedia = {
-  assets: VideoAsset[];
-  /** Ordered clips that make up the exported sequence. */
-  sequence: TimelineClip[];
+/** Persisted metadata for one audio track (binary lives under `mediaId`). */
+export type StoredAudio = {
+  id: string;
+  mediaId: string;
+  name: string;
+  startTime: number;
+  volume: number;
+  trimStart: number;
+  duration: number;
 };
 
-/** Reads a project's media library + timeline sequence (empty when none). */
+export type ProjectMedia = {
+  assets: StoredAssetMeta[];
+  /** Ordered clips that make up the exported sequence. */
+  sequence: TimelineClip[];
+  /** Text/image overlays (typed loosely to avoid a store import cycle). */
+  overlays: unknown[];
+  /** Audio track metadata. */
+  audio: StoredAudio[];
+};
+
+const EMPTY_MEDIA: ProjectMedia = {
+  assets: [],
+  sequence: [],
+  overlays: [],
+  audio: [],
+};
+
+/** Reads a project's persisted media metadata (empty when none). */
 export async function loadProjectMedia(
   projectId: string
 ): Promise<ProjectMedia> {
-  if (!projectId || !idbAvailable()) return { assets: [], sequence: [] };
-  const value = await get<ProjectMedia>(mediaKeyFor(projectId), mediaStore);
-  if (!value) return { assets: [], sequence: [] };
-  const assets = Array.isArray(value.assets)
-    ? value.assets.filter((asset) => asset?.blob instanceof Blob)
-    : [];
-  const sequence = Array.isArray(value.sequence)
-    ? value.sequence.filter((clip) =>
-        assets.some((asset) => asset.id === clip.assetId)
-      )
-    : [];
-  return { assets, sequence };
+  if (!projectId || !idbAvailable()) return EMPTY_MEDIA;
+  const value = await get<Partial<ProjectMedia>>(mediaKeyFor(projectId), mediaStore);
+  if (!value) return EMPTY_MEDIA;
+  return {
+    assets: Array.isArray(value.assets) ? value.assets : [],
+    sequence: Array.isArray(value.sequence) ? value.sequence : [],
+    overlays: Array.isArray(value.overlays) ? value.overlays : [],
+    audio: Array.isArray(value.audio) ? value.audio : [],
+  };
 }
 
-/** Persists a project's media library + timeline sequence. */
+/** Persists a project's media metadata + timeline sequence. */
 export async function saveProjectMedia(
   projectId: string,
   media: ProjectMedia

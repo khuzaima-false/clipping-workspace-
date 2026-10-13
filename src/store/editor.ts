@@ -6,9 +6,17 @@ import {
   loadVideoSource,
   saveProjectMedia,
   saveVideoSource,
+  type StoredAssetMeta,
+  type StoredAudio,
   type TimelineClip,
   type VideoAsset,
 } from "@/lib/video-storage";
+import {
+  deleteMediaFile,
+  getMediaFile,
+  newMediaId,
+  saveMediaFile,
+} from "@/lib/media-storage";
 import type { CaptionLanguageId } from "@/lib/transcribe";
 
 export type AspectRatio = "9:16" | "16:9" | "1:1";
@@ -88,6 +96,8 @@ export const DEFAULT_COLOR_ADJUSTMENTS: ColorAdjustments = {
  */
 export type AudioTrack = {
   id: string;
+  /** Stable id of the persisted source blob in media storage. */
+  mediaId: string;
   name: string;
   /** Object URL for preview playback. */
   url: string;
@@ -516,14 +526,36 @@ function isVideoFile(file: File): boolean {
   );
 }
 
-/** Persists a project's media library + sequence (best-effort). */
-function persistProjectMedia(
-  projectId: string | null,
-  assets: VideoAsset[],
-  sequence: TimelineClip[]
-): void {
-  if (!projectId) return;
-  void saveProjectMedia(projectId, { assets, sequence }).catch(() => {
+/** Serializes the project's media metadata to IndexedDB (best-effort). */
+function persistProject(state: EditorState): void {
+  if (!state.projectId) return;
+  const assetMeta: StoredAssetMeta[] = state.assets.map(
+    ({ id, mediaId, name, type, size, updatedAt }) => ({
+      id,
+      mediaId,
+      name,
+      type,
+      size,
+      updatedAt,
+    })
+  );
+  const audioMeta: StoredAudio[] = state.audioTracks.map(
+    ({ id, mediaId, name, startTime, volume, trimStart, duration }) => ({
+      id,
+      mediaId,
+      name,
+      startTime,
+      volume,
+      trimStart,
+      duration,
+    })
+  );
+  void saveProjectMedia(state.projectId, {
+    assets: assetMeta,
+    sequence: state.sequence,
+    overlays: state.overlays,
+    audio: audioMeta,
+  }).catch(() => {
     // IndexedDB can fail (quota / private mode); the session still works.
   });
 }
@@ -774,15 +806,72 @@ export const useEditorStore = create<EditorState>()(
     try {
       const media = await loadProjectMedia(projectId);
       if (get().projectId !== projectId) return;
-      set({
-        assets: media.assets,
-        sequence: media.sequence,
-        assetsLoading: false,
-      });
 
-      const firstClip = media.sequence[0];
+      // Rehydrate asset blobs from media storage (migrating legacy inline blobs).
+      const assets: VideoAsset[] = [];
+      for (const raw of media.assets as (StoredAssetMeta & { blob?: Blob })[]) {
+        let mediaId = raw.mediaId;
+        let blob: Blob | null = raw.blob ?? null;
+        if (!blob && mediaId) blob = await getMediaFile(mediaId);
+        if (!blob) continue; // binary missing → drop the asset
+        if (!mediaId) {
+          mediaId = newMediaId();
+          try {
+            await saveMediaFile(mediaId, blob);
+          } catch {
+            // ignore
+          }
+        }
+        assets.push({
+          id: raw.id,
+          mediaId,
+          name: raw.name,
+          type: raw.type,
+          size: raw.size,
+          updatedAt: raw.updatedAt,
+          blob,
+        });
+      }
+
+      const assetIds = new Set(assets.map((asset) => asset.id));
+      const sequence = media.sequence.filter((clip) => assetIds.has(clip.assetId));
+      const overlays = (media.overlays as TextOverlay[]).filter(Boolean);
+
+      // Rehydrate audio tracks (fetch + decode).
+      const audioTracks: AudioTrack[] = [];
+      for (const raw of media.audio) {
+        const blob = await getMediaFile(raw.mediaId);
+        if (!blob) continue;
+        const file =
+          blob instanceof File
+            ? blob
+            : new File([blob], raw.name, { type: blob.type || "audio/mpeg" });
+        let buffer: AudioBuffer | null = null;
+        try {
+          const { decodeAudioFile } = await import("@/lib/audio");
+          buffer = (await decodeAudioFile(file))?.buffer ?? null;
+        } catch {
+          buffer = null;
+        }
+        audioTracks.push({
+          id: raw.id,
+          mediaId: raw.mediaId,
+          name: raw.name,
+          url: URL.createObjectURL(blob),
+          file,
+          buffer,
+          startTime: raw.startTime,
+          volume: raw.volume,
+          trimStart: raw.trimStart,
+          duration: raw.duration,
+        });
+      }
+
+      set({ assets, sequence, overlays, audioTracks, assetsLoading: false });
+
+      const firstClip = sequence[0];
       const asset = firstClip
-        ? media.assets.find((item) => item.id === firstClip.assetId)
+        ? assets.find((item) => item.id === firstClip.assetId)
         : undefined;
       if (firstClip && asset) {
         set({
@@ -795,7 +884,7 @@ export const useEditorStore = create<EditorState>()(
         get().loadVideoBlob(asset.blob, asset.name);
         return;
       }
-      if (media.assets.length === 0) set({ videoMissing: true });
+      if (assets.length === 0) set({ videoMissing: true });
     } catch {
       set({ assetsLoading: false, videoMissing: true });
     }
@@ -812,8 +901,15 @@ export const useEditorStore = create<EditorState>()(
     const sequence = [...get().sequence];
     const newClips: TimelineClip[] = [];
     for (const file of list) {
+      const mediaId = newMediaId();
+      try {
+        await saveMediaFile(mediaId, file);
+      } catch {
+        // Storage can fail (quota / private mode); the session still works.
+      }
       const asset: VideoAsset = {
         id: createId("asset"),
+        mediaId,
         name: file.name,
         type: file.type || "video/mp4",
         size: file.size,
@@ -832,7 +928,7 @@ export const useEditorStore = create<EditorState>()(
     }
 
     set({ assets, sequence, videoError: null });
-    persistProjectMedia(get().projectId, assets, sequence);
+    persistProject(get());
 
     const firstClip = newClips[0];
     const firstAsset = assets.find((asset) => asset.id === firstClip.assetId);
@@ -843,10 +939,12 @@ export const useEditorStore = create<EditorState>()(
   },
 
   removeAsset: (assetId) => {
+    const removed = get().assets.find((asset) => asset.id === assetId);
+    if (removed) void deleteMediaFile(removed.mediaId);
     const assets = get().assets.filter((asset) => asset.id !== assetId);
     const sequence = get().sequence.filter((clip) => clip.assetId !== assetId);
     set({ assets, sequence });
-    persistProjectMedia(get().projectId, assets, sequence);
+    persistProject(get());
 
     const activeGone =
       !get().activeClipId ||
@@ -888,7 +986,14 @@ export const useEditorStore = create<EditorState>()(
   removeClip: (clipId) => {
     const sequence = get().sequence.filter((clip) => clip.id !== clipId);
     set({ sequence });
-    persistProjectMedia(get().projectId, get().assets, sequence);
+    // Garbage-collect assets whose clips are all gone (frees media storage).
+    const used = new Set(sequence.map((clip) => clip.assetId));
+    const orphaned = get().assets.filter((asset) => !used.has(asset.id));
+    if (orphaned.length > 0) {
+      for (const asset of orphaned) void deleteMediaFile(asset.mediaId);
+      set({ assets: get().assets.filter((asset) => used.has(asset.id)) });
+    }
+    persistProject(get());
 
     if (get().activeClipId === clipId) {
       const { videoEl, videoUrl } = get();
@@ -920,7 +1025,7 @@ export const useEditorStore = create<EditorState>()(
     const [clip] = sequence.splice(index, 1);
     sequence.splice(target, 0, clip);
     set({ sequence });
-    persistProjectMedia(get().projectId, get().assets, sequence);
+    persistProject(get());
   },
 
   setClipTrim: (clipId, patch) => {
@@ -928,7 +1033,7 @@ export const useEditorStore = create<EditorState>()(
       clip.id === clipId ? { ...clip, ...patch } : clip
     );
     set({ sequence });
-    persistProjectMedia(get().projectId, get().assets, sequence);
+    persistProject(get());
   },
 
   restoreEdit: (snapshot) =>
@@ -1000,7 +1105,7 @@ export const useEditorStore = create<EditorState>()(
       trimStart: second.trimStart,
       trimEnd: second.trimEnd,
     });
-    persistProjectMedia(get().projectId, get().assets, next);
+    persistProject(get());
   },
 
   duplicateActiveClip: () => {
@@ -1021,7 +1126,7 @@ export const useEditorStore = create<EditorState>()(
       ...sequence.slice(index + 1),
     ];
     set({ sequence: next, activeClipId: copy.id });
-    persistProjectMedia(get().projectId, get().assets, next);
+    persistProject(get());
   },
 
   resetEditor: () => {
@@ -1301,10 +1406,17 @@ export const useEditorStore = create<EditorState>()(
     try {
       const { decodeAudioFile } = await import("@/lib/audio");
       for (const file of list) {
+        const mediaId = newMediaId();
+        try {
+          await saveMediaFile(mediaId, file);
+        } catch {
+          // ignore
+        }
         const url = URL.createObjectURL(file);
         const decoded = await decodeAudioFile(file);
         const track: AudioTrack = {
           id: createId("audio"),
+          mediaId,
           name: file.name,
           url,
           file,
@@ -1342,7 +1454,10 @@ export const useEditorStore = create<EditorState>()(
 
   removeAudioTrack: (id) => {
     const track = get().audioTracks.find((item) => item.id === id);
-    if (track) URL.revokeObjectURL(track.url);
+    if (track) {
+      URL.revokeObjectURL(track.url);
+      void deleteMediaFile(track.mediaId);
+    }
     set({ audioTracks: get().audioTracks.filter((item) => item.id !== id) });
   },
 
@@ -1453,6 +1568,24 @@ useEditorStore.subscribe(
       if (history.length > 500) history.shift();
       return { history, future: [] };
     });
+  },
+  { equalityFn: shallow }
+);
+
+/**
+ * Persist the project's media metadata whenever assets / sequence / overlays /
+ * audio change. `projectId` is intentionally excluded so loading a project
+ * (which sets `projectId` before the data arrives) can never wipe storage.
+ */
+useEditorStore.subscribe(
+  (state) => ({
+    assets: state.assets,
+    sequence: state.sequence,
+    overlays: state.overlays,
+    audioTracks: state.audioTracks,
+  }),
+  () => {
+    persistProject(useEditorStore.getState());
   },
   { equalityFn: shallow }
 );
