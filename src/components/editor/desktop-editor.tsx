@@ -1326,6 +1326,8 @@ function PremiereTimeline() {
   const setTrimEnd = useEditorStore((s) => s.setTrimEnd);
   const removeClip = useEditorStore((s) => s.removeClip);
   const removeAudioTrack = useEditorStore((s) => s.removeAudioTrack);
+  const removeOverlay = useEditorStore((s) => s.removeOverlay);
+  const removeEffect = useEditorStore((s) => s.removeEffect);
 
   const [pps, setPps] = useState(48);
   const [toggles, setToggles] = useState<Record<TrackKey, { m: boolean; s: boolean; lock: boolean; eye: boolean }>>({
@@ -1508,11 +1510,19 @@ function PremiereTimeline() {
               {activeEffects.map((fx) => (
                 <div
                   key={fx.id}
-                  className={cn("absolute inset-y-1.5 overflow-hidden px-1.5", adjustChip)}
+                  className={cn("group absolute inset-y-1.5 overflow-hidden px-1.5", adjustChip)}
                   style={{ left: `${fx.startTime * pps}px`, width: `${Math.max(20, fx.duration * pps)}px` }}
                   title={`Effect: ${fx.type}`}
                 >
                   <span className="block truncate capitalize">{fx.type}</span>
+                  <button
+                    type="button"
+                    aria-label="Delete effect"
+                    onClick={() => removeEffect(fx.id)}
+                    className="absolute right-0.5 top-0.5 z-10 flex h-4 w-4 items-center justify-center rounded bg-black/75 text-zinc-100 opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100"
+                  >
+                    <Trash2 className="h-3 w-3" aria-hidden />
+                  </button>
                 </div>
               ))}
             </div>
@@ -1520,15 +1530,32 @@ function PremiereTimeline() {
             {/* V2 — text / overlay layers (pink) */}
             <div className="relative h-12 border-b border-zinc-800 bg-zinc-950/40">
               {overlays.map((o) => (
-                <button
+                <div
                   key={o.id}
-                  type="button"
-                  onClick={() => selectOverlay(o.id)}
-                  className={cn("absolute inset-y-1.5 overflow-hidden px-1.5 text-left", adjustChip, o.id === selectedId && "ring-2 ring-white/70")}
+                  className="group absolute inset-y-1.5"
                   style={{ left: `${o.startTime * pps}px`, width: `${Math.max(24, (o.endTime - o.startTime) * pps)}px` }}
                 >
-                  <span className="block truncate">{o.text || "Text"}</span>
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => selectOverlay(o.id)}
+                    className={cn("h-full w-full overflow-hidden px-1.5 text-left", adjustChip, o.id === selectedId && "ring-2 ring-white/70")}
+                  >
+                    <span className="block truncate">
+                      {o.text || (o.imageSrc ? "Image" : "Text")}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Delete overlay"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeOverlay(o.id);
+                    }}
+                    className="absolute right-0.5 top-0.5 z-10 flex h-4 w-4 items-center justify-center rounded bg-black/75 text-zinc-100 opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100"
+                  >
+                    <Trash2 className="h-3 w-3" aria-hidden />
+                  </button>
+                </div>
               ))}
             </div>
 
