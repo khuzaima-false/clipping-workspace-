@@ -245,7 +245,7 @@ function ProjectBinPanel({
 
   return (
     <section className="glass-card flex min-h-0 flex-col overflow-hidden rounded-2xl">
-      <div className="flex border-b border-zinc-800">
+      <div className="flex flex-wrap border-b border-zinc-800">
         {(
           [
             ["media", "Media"],
@@ -262,7 +262,7 @@ function ProjectBinPanel({
             onClick={() => setTab(id)}
             aria-pressed={tab === id}
             className={cn(
-              "flex-1 px-2 py-2 text-[11px] font-medium transition-colors",
+              "shrink-0 whitespace-nowrap px-2.5 py-2 text-[11px] font-medium transition-colors",
               tab === id
                 ? "bg-violet-600/15 text-violet-200"
                 : "text-zinc-400 hover:text-zinc-100"
