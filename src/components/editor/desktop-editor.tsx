@@ -2128,7 +2128,7 @@ function PremiereTimeline() {
   const fps = useEditorStore((s) => s.fps);
   const selectClip = useEditorStore((s) => s.selectClip);
   const selectOverlay = useEditorStore((s) => s.selectOverlay);
-  const seek = useEditorStore((s) => s.seek);
+  const scrubTo = useEditorStore((s) => s.scrubTo);
   const setClipTrim = useEditorStore((s) => s.setClipTrim);
   const setTrimStart = useEditorStore((s) => s.setTrimStart);
   const setTrimEnd = useEditorStore((s) => s.setTrimEnd);
@@ -2426,7 +2426,16 @@ function PremiereTimeline() {
     if (!lane) return;
     const rect = lane.getBoundingClientRect();
     const time = (clientX - rect.left) / pps;
-    seek(Math.min(Math.max(time, 0), timelineDuration));
+    const clamped = Math.min(Math.max(time, 0), timelineDuration);
+    // Map the global timeline position to the clip + source time underneath it,
+    // so scrubbing across clip boundaries loads the right frame (not just the
+    // active clip's clamped end).
+    const target =
+      videoBlocks.find((block) => clamped < block.start + block.dur) ??
+      videoBlocks[videoBlocks.length - 1];
+    if (!target) return;
+    const local = Math.min(Math.max(clamped - target.start, 0), target.dur);
+    scrubTo(target.clip.id, target.clip.trimStart + local);
   };
 
   const onScrubPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
