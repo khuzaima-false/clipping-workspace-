@@ -2,6 +2,7 @@ import { ArrayBufferTarget, Muxer } from "mp4-muxer";
 import { MIX_SAMPLE_RATE, mixTimelineAudio, type AudioMixTrack } from "@/lib/audio";
 import { computeSourceFrameTimes, isSpeedRamped, speedAt } from "@/lib/render";
 import type { SpeedPoint } from "@/store/editor";
+import type { TransitionType } from "@/lib/video-storage";
 
 /**
  * In-browser 1080p export engine.
@@ -32,6 +33,18 @@ export type ExportSegment = {
   trimEnd: number;
   /** Source file for this clip's own audio, if any. */
   file: File | null;
+  /** Transition blended into this clip from the previous one. */
+  transition?: { type: TransitionType; duration: number };
+};
+
+/** Transition context handed to `renderFrame` for blended frames. */
+export type ExportTransitionFrame = {
+  type: TransitionType;
+  /** 0..1 across the transition window. */
+  progress: number;
+  /** The outgoing clip's video element (already seeked to `fromTime`). */
+  fromVideo: HTMLVideoElement;
+  fromTime: number;
 };
 
 export type ExportVideoOptions = {
@@ -39,12 +52,13 @@ export type ExportVideoOptions = {
   /**
    * Draws the frame for the given timeline time (seconds). `video` is the
    * element whose frame the exporter has just seeked — for a sequence that is
-   * the current segment's element.
+   * the current segment's element. `transition` is set on blended frames.
    */
   renderFrame: (
     ctx: CanvasRenderingContext2D,
     time: number,
-    video: HTMLVideoElement
+    video: HTMLVideoElement,
+    transition?: ExportTransitionFrame
   ) => void;
   width: number;
   height: number;
@@ -331,21 +345,66 @@ async function exportWithWebCodecs(
   };
 
   // Build the per-output-frame plan (which segment, and the source time).
-  const plan: { segment: ExportSegment; sourceTime: number }[] = [];
+  // Transitions overlap the outgoing clip's tail with the incoming clip's head.
+  type PlanItem = {
+    segment: ExportSegment;
+    sourceTime: number;
+    transition?: {
+      type: TransitionType;
+      progress: number;
+      from: ExportSegment;
+      fromTime: number;
+    };
+  };
+  const plan: PlanItem[] = [];
   if (!multi) {
     const sourceTimes = computeSourceFrameTimes(speedPoints, trimStart, trimEnd, fps);
     for (const sourceTime of sourceTimes) {
       plan.push({ segment: segments[0], sourceTime });
     }
   } else {
-    for (const segment of segments) {
+    const transitionDuration = (segment: ExportSegment | undefined): number => {
+      if (!segment?.transition) return 0;
+      const span = segmentEnd(segment) - segment.trimStart;
+      return Math.max(0, Math.min(segment.transition.duration, span / 2));
+    };
+
+    for (let i = 0; i < segments.length; i++) {
+      const segment = segments[i];
+      const start = segment.trimStart;
       const end = segmentEnd(segment);
-      const span = Math.max(1 / fps, end - segment.trimStart);
+      const dIn = i > 0 ? transitionDuration(segment) : 0;
+      const dOut = i < segments.length - 1 ? transitionDuration(segments[i + 1]) : 0;
+
+      // Transition-in window: blend the previous clip's tail into this head.
+      if (i > 0 && dIn > 0 && segment.transition) {
+        const previous = segments[i - 1];
+        const previousEnd = segmentEnd(previous);
+        const count = Math.max(1, Math.round(dIn * fps));
+        for (let f = 0; f < count; f++) {
+          const t = (f + 1) / (count + 1);
+          plan.push({
+            segment,
+            sourceTime: Math.min(end, start + t * dIn),
+            transition: {
+              type: segment.transition.type,
+              progress: t,
+              from: previous,
+              fromTime: Math.max(previous.trimStart, previousEnd - dIn + t * dIn),
+            },
+          });
+        }
+      }
+
+      // Body frames (excludes any transition overlap on either edge).
+      const bodyStart = start + dIn;
+      const bodyEnd = Math.max(bodyStart + 1 / fps, end - dOut);
+      const span = Math.max(1 / fps, bodyEnd - bodyStart);
       const count = Math.max(1, Math.round(span * fps));
-      for (let i = 0; i < count; i++) {
+      for (let f = 0; f < count; f++) {
         plan.push({
           segment,
-          sourceTime: Math.min(segment.trimStart + i / fps, end),
+          sourceTime: Math.min(bodyEnd, bodyStart + f / fps),
         });
       }
     }
@@ -425,11 +484,21 @@ async function exportWithWebCodecs(
 
     for (let i = 0; i < totalFrames; i++) {
       throwIfAborted(signal);
-      const { segment, sourceTime } = plan[i];
+      const { segment, sourceTime, transition } = plan[i];
       const sourceVideo = segment.video;
       await seekTo(sourceVideo, sourceTime);
+      let transitionFrame: ExportTransitionFrame | undefined;
+      if (transition) {
+        await seekTo(transition.from.video, transition.fromTime);
+        transitionFrame = {
+          type: transition.type,
+          progress: transition.progress,
+          fromVideo: transition.from.video,
+          fromTime: transition.fromTime,
+        };
+      }
       throwIfAborted(signal);
-      renderFrame(ctx, sourceTime, sourceVideo);
+      renderFrame(ctx, sourceTime, sourceVideo, transitionFrame);
 
       const frame = new VideoFrame(ctx.canvas, {
         timestamp: Math.round((i / fps) * 1e6),

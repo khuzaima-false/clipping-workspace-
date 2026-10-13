@@ -8,18 +8,20 @@ const SITE_URL = (
 ).replace(/\/+$/, "");
 
 const SITE_NAME = "Forgevyn Clipping";
-const TITLE = "Forgevyn | AI Video Clipper & Short-Form Video Generator";
+const TITLE = "Forgevyn | Free Professional In-Browser Video Studio";
 const DESCRIPTION =
-  "Turn long videos into viral short clips with AI captions, multi-clip timeline, and dynamic auto-framing.";
+  "A free, professional in-browser video studio: multi-track editing, chroma key, keyframe animations, transitions, captions and audio mixing — 100% client-side with zero server lag.";
 const KEYWORDS = [
-  "AI video clipping tool",
-  "long video to short clips",
-  "AI short form editor",
-  "YouTube Shorts maker",
-  "TikTok clip generator",
-  "auto AI subtitles",
-  "podcast to clips",
-  "OpusClip alternative",
+  "free online video editor",
+  "in-browser video studio",
+  "browser video editor",
+  "multi-track video editor",
+  "chroma key green screen",
+  "keyframe animation editor",
+  "video transitions",
+  "auto captions generator",
+  "video editor no upload",
+  "CapCut alternative web",
 ];
 
 /** Shared social card so OpenGraph and Twitter stay in sync. */
@@ -27,7 +29,7 @@ const OG_IMAGE = {
   url: "/og-image.png",
   width: 1200,
   height: 630,
-  alt: "Forgevyn — AI video clipper for TikTok, YouTube Shorts, and Instagram Reels",
+  alt: "Forgevyn — free professional in-browser video studio",
 };
 
 const geistSans = localFont({

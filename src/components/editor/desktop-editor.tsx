@@ -1,19 +1,26 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   AlignCenter,
   AlignLeft,
   AlignRight,
+  ArrowLeftRight,
+  AudioLines,
+  Camera,
   Captions,
+  Diamond,
   Eye,
   EyeOff,
   Film,
   LoaderCircle,
   Lock,
+  Mic,
+  MonitorPlay,
   Music,
   Pause,
+  Pipette,
   Play,
   Plus,
   Redo2,
@@ -21,22 +28,43 @@ import {
   Scissors,
   SlidersHorizontal,
   Sparkles,
+  Square,
   Trash2,
   Undo2,
   Unlock,
+  Volume2,
+  VolumeX,
   Wand2,
+  Zap,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
-import { ASPECT_RESOLUTIONS, drawScene } from "@/lib/render";
+import { ASPECT_RESOLUTIONS, drawScene, speedAt } from "@/lib/render";
 import {
   FONT_FAMILIES,
+  TRANSITION_PRESETS,
+  computeClipStarts,
   useEditorStore,
+  type AspectRatio,
   type CaptionAnimation,
   type OverlayAlign,
+  type SpeedPreset,
   type TextOverlay,
   type VideoEffectType,
 } from "@/store/editor";
+import { useOverlayCanvasDrag } from "@/components/editor/use-overlay-drag";
+import { audioPreview } from "@/lib/audio-preview";
+import { SOUND_EFFECTS, type SoundEffectId } from "@/lib/sfx";
+import { createDictation, isDictationSupported } from "@/lib/dictation";
+import { STICKER_CATEGORIES, STICKERS, stickerImageSrc, type StickerCategory } from "@/lib/stickers";
+import { Waveform } from "@/components/editor/waveform";
+import {
+  createLevelMeter,
+  isCaptureSupported,
+  startCapture,
+  type ActiveCapture,
+  type CaptureKind,
+} from "@/lib/recorder";
 import { CAPTIONS_CREDIT_COST } from "@/lib/credits";
 import { CAPTION_LANGUAGES, type CaptionLanguageId } from "@/lib/transcribe";
 import { useWorkspaceStore } from "@/store/workspace";
@@ -61,6 +89,22 @@ const CINEMATIC_PRESETS: { id: string; label: string; patch: Record<string, numb
   { id: "noir", label: "Moody Noir", patch: { saturation: -70, contrast: 30, brightness: -6 } },
   { id: "cyberpunk", label: "Cyberpunk", patch: { saturation: 48, contrast: 26, hue: -55, tint: 36 } },
   { id: "golden", label: "Golden Hour", patch: { saturation: 18, contrast: 8, brightness: 6, hue: 14, tint: 8 } },
+];
+
+/** Platform framing presets — aspect ratio + automatic canvas fill. */
+const FRAMING_PRESETS: { id: AspectRatio; label: string; note: string }[] = [
+  { id: "9:16", label: "TikTok / Reels", note: "9:16 vertical" },
+  { id: "16:9", label: "YouTube", note: "16:9 landscape" },
+  { id: "1:1", label: "Square", note: "1:1 feed" },
+  { id: "21:9", label: "Cinematic", note: "21:9 anamorphic" },
+];
+
+const SPEED_PRESET_CARDS: { id: SpeedPreset; label: string; note: string }[] = [
+  { id: "none", label: "Normal", note: "1× constant" },
+  { id: "montage", label: "Montage", note: "punchy in/out" },
+  { id: "bullet", label: "Bullet", note: "slow-mo beat" },
+  { id: "hero", label: "Hero Ramp", note: "slow build" },
+  { id: "jumpCut", label: "Jump Cut", note: "fast spikes" },
 ];
 
 function formatTimecode(seconds: number, fps: number): string {
@@ -155,6 +199,112 @@ function ColorWheel({
 }
 
 /* ------------------------------------------------------------------ */
+/* Screen & webcam recorder (desktop only)                             */
+/* ------------------------------------------------------------------ */
+function ScreenCamRecorder() {
+  const addVideoAssets = useEditorStore((s) => s.addVideoAssets);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const captureRef = useRef<ActiveCapture | null>(null);
+  const [recording, setRecording] = useState<CaptureKind | null>(null);
+  const [seconds, setSeconds] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!recording) return;
+    const id = window.setInterval(() => setSeconds((value) => value + 1), 1000);
+    return () => window.clearInterval(id);
+  }, [recording]);
+
+  const stop = async () => {
+    const active = captureRef.current;
+    captureRef.current = null;
+    setRecording(null);
+    if (videoRef.current) videoRef.current.srcObject = null;
+    if (!active) return;
+    try {
+      const blob = await active.stop();
+      if (blob && blob.size > 0) {
+        const extension = blob.type.includes("mp4") ? "mp4" : "webm";
+        const file = new File([blob], `recording-${Date.now()}.${extension}`, {
+          type: blob.type || "video/webm",
+        });
+        await addVideoAssets([file]);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Recording failed.");
+    }
+  };
+
+  const start = async (kind: CaptureKind) => {
+    setError(null);
+    setSeconds(0);
+    try {
+      const active = await startCapture(kind);
+      captureRef.current = active;
+      setRecording(kind);
+      if (videoRef.current && kind !== "voice") {
+        videoRef.current.srcObject = active.stream;
+        void videoRef.current.play().catch(() => {});
+      }
+      void active.ended.then(() => {
+        if (captureRef.current === active) void stop();
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not start capture.");
+    }
+  };
+
+  useEffect(() => () => captureRef.current?.cancel(), []);
+
+  const supported = isCaptureSupported("screen") || isCaptureSupported("webcam");
+
+  return (
+    <div className="space-y-3">
+      <p className="text-[10px] leading-4 text-zinc-500">
+        Record your screen or webcam and drop the result straight into the media
+        bin — ready for the timeline.
+      </p>
+      {!supported && (
+        <p className="text-[10px] text-amber-300">
+          Screen / camera capture isn&apos;t supported in this browser.
+        </p>
+      )}
+      <div className="overflow-hidden rounded-xl border border-zinc-800 bg-black">
+        <video ref={videoRef} muted playsInline className="aspect-video w-full object-contain" />
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          disabled={!!recording || !isCaptureSupported("screen")}
+          onClick={() => void start("screen")}
+          className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-950/60 px-2 py-2 text-[11px] text-zinc-200 hover:border-zinc-600 disabled:opacity-40"
+        >
+          <MonitorPlay className="h-3.5 w-3.5 text-violet-400" aria-hidden /> Record screen
+        </button>
+        <button
+          type="button"
+          disabled={!!recording || !isCaptureSupported("webcam")}
+          onClick={() => void start("webcam")}
+          className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-950/60 px-2 py-2 text-[11px] text-zinc-200 hover:border-zinc-600 disabled:opacity-40"
+        >
+          <Camera className="h-3.5 w-3.5 text-fuchsia-400" aria-hidden /> Record cam
+        </button>
+      </div>
+      {recording && (
+        <button
+          type="button"
+          onClick={() => void stop()}
+          className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-red-600 px-3 py-2 text-[11px] font-semibold text-white"
+        >
+          <Square className="h-3.5 w-3.5" aria-hidden /> Stop recording · {seconds}s
+        </button>
+      )}
+      {error && <p className="text-[10px] text-red-400">{error}</p>}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /* Top-left: Project bin + Inspector                                    */
 /* ------------------------------------------------------------------ */
 function ProjectBinPanel({
@@ -165,7 +315,17 @@ function ProjectBinPanel({
   onBatchExport?: (clipIds: string[]) => void;
 }) {
   const [tab, setTab] = useState<
-    "media" | "effects" | "properties" | "clip" | "captions" | "studio"
+    | "media"
+    | "effects"
+    | "properties"
+    | "clip"
+    | "speed"
+    | "captions"
+    | "audio"
+    | "stickers"
+    | "transitions"
+    | "record"
+    | "studio"
   >("media");
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -217,6 +377,38 @@ function ProjectBinPanel({
   const selectOverlay = useEditorStore((s) => s.selectOverlay);
   const captionStyle = useEditorStore((s) => s.captionStyle);
   const setCaptionStyle = useEditorStore((s) => s.setCaptionStyle);
+  const applyCaptionPreset = useEditorStore((s) => s.applyCaptionPreset);
+  const generateCaptionsFromScript = useEditorStore((s) => s.generateCaptionsFromScript);
+  const chromaKey = useEditorStore((s) => s.chromaKey);
+  const setChromaKey = useEditorStore((s) => s.setChromaKey);
+  const resetChromaKey = useEditorStore((s) => s.resetChromaKey);
+  const setEyedropper = useEditorStore((s) => s.setEyedropper);
+  const eyedropper = useEditorStore((s) => s.eyedropper);
+  const overlayKeyframes = selected?.keyframes ?? [];
+  const addOverlayKeyframe = useEditorStore((s) => s.addOverlayKeyframe);
+  const removeOverlayKeyframe = useEditorStore((s) => s.removeOverlayKeyframe);
+  const clearOverlayKeyframes = useEditorStore((s) => s.clearOverlayKeyframes);
+  const audioTracks = useEditorStore((s) => s.audioTracks);
+  const updateAudioTrack = useEditorStore((s) => s.updateAudioTrack);
+  const removeAudioTrack = useEditorStore((s) => s.removeAudioTrack);
+  const addSoundEffect = useEditorStore((s) => s.addSoundEffect);
+  const addAudioFiles = useEditorStore((s) => s.addAudioFiles);
+  const speedPreset = useEditorStore((s) => s.speedPreset);
+  const setSpeedPreset = useEditorStore((s) => s.setSpeedPreset);
+  const setSpeedPoints = useEditorStore((s) => s.setSpeedPoints);
+  const speedPoints = useEditorStore((s) => s.speedPoints);
+  const setClipTransition = useEditorStore((s) => s.setClipTransition);
+  const addTextSticker = useEditorStore((s) => s.addTextSticker);
+  const addStickerImage = useEditorStore((s) => s.addStickerImage);
+  const aspect = useEditorStore((s) => s.aspect);
+  const setAspect = useEditorStore((s) => s.setAspect);
+  const canvasFill = useEditorStore((s) => s.canvasFill);
+  const setCanvasFill = useEditorStore((s) => s.setCanvasFill);
+  const [stickerCategory, setStickerCategory] = useState<StickerCategory>("emoji");
+  const [script, setScript] = useState("");
+  const [dictating, setDictating] = useState(false);
+  const dictationRef = useRef<ReturnType<typeof createDictation> | null>(null);
+  const dictationSupported = useMemo(() => isDictationSupported(), []);
   const consumeCredits = useWorkspaceStore((s) => s.consumeCredits);
   const [captionError, setCaptionError] = useState<string | null>(null);
   const [selectedClips, setSelectedClips] = useState<string[]>([]);
@@ -252,7 +444,12 @@ function ProjectBinPanel({
             ["effects", "Effects"],
             ["properties", "Props"],
             ["clip", "Clip"],
+            ["speed", "Speed"],
             ["captions", "Captions"],
+            ["audio", "Audio"],
+            ["stickers", "Stickers"],
+            ["transitions", "Transitions"],
+            ["record", "Record"],
             ["studio", "Studio"],
           ] as const
         ).map(([id, label]) => (
@@ -546,6 +743,61 @@ function ProjectBinPanel({
               </>
             )}
 
+            {selected && (
+              <div className="space-y-2 border-t border-zinc-800 pt-3">
+                <div className="flex items-center justify-between">
+                  <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                    <Diamond className="h-3 w-3" aria-hidden /> Keyframes
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => addOverlayKeyframe(selected.id)}
+                    className="inline-flex items-center gap-1 rounded-md border border-zinc-800 bg-zinc-950/60 px-2 py-1 text-[10px] text-zinc-200 hover:border-zinc-600"
+                  >
+                    <Plus className="h-3 w-3" aria-hidden /> Add @ playhead
+                  </button>
+                </div>
+                {overlayKeyframes.length === 0 ? (
+                  <p className="text-[10px] leading-4 text-zinc-500">
+                    Add keyframes at the playhead to animate scale, position,
+                    opacity and rotation — the renderer LERPs between them.
+                  </p>
+                ) : (
+                  <>
+                    <ul className="space-y-1">
+                      {overlayKeyframes.map((frame) => (
+                        <li
+                          key={frame.id}
+                          className="flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-950/60 px-2 py-1 text-[10px] text-zinc-300"
+                        >
+                          <Diamond className="h-3 w-3 text-amber-300" aria-hidden />
+                          <span className="flex-1 tabular-nums">
+                            {frame.time.toFixed(2)}s
+                          </span>
+                          <span className="text-zinc-500">×{frame.scale.toFixed(2)}</span>
+                          <button
+                            type="button"
+                            aria-label="Delete keyframe"
+                            onClick={() => removeOverlayKeyframe(selected.id, frame.id)}
+                            className="rounded p-0.5 text-zinc-500 hover:text-red-400"
+                          >
+                            <Trash2 className="h-3 w-3" aria-hidden />
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                    <button
+                      type="button"
+                      onClick={() => clearOverlayKeyframes(selected.id)}
+                      className="text-[10px] text-zinc-500 hover:text-red-400"
+                    >
+                      Clear all keyframes
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+
             <AiStudioSection selected={selected} />
 
             {/* Global caption animation + style (applies to AI captions) */}
@@ -608,6 +860,88 @@ function ProjectBinPanel({
 
         {tab === "clip" && (
           <div className="space-y-4">
+            {/* Chroma key / green screen cutout */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                  Chroma Key / Cutout
+                </p>
+                <label className="flex items-center gap-1.5 text-[10px] text-zinc-400">
+                  <input
+                    type="checkbox"
+                    checked={chromaKey.enabled}
+                    onChange={(e) => setChromaKey({ enabled: e.target.checked })}
+                    className="accent-violet-500"
+                  />
+                  On
+                </label>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="color"
+                  value={chromaKey.color}
+                  onChange={(e) => setChromaKey({ color: e.target.value, enabled: true })}
+                  aria-label="Key color"
+                  className="h-8 w-12 shrink-0 rounded border border-zinc-800 bg-zinc-950"
+                />
+                <button
+                  type="button"
+                  onClick={() => setEyedropper(!eyedropper)}
+                  aria-pressed={eyedropper}
+                  className={cn(
+                    "inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-2 py-1.5 text-[11px] transition-colors",
+                    eyedropper
+                      ? "border-violet-500 bg-violet-600/15 text-violet-200"
+                      : "border-zinc-800 bg-zinc-950/60 text-zinc-300 hover:border-zinc-600"
+                  )}
+                >
+                  <Pipette className="h-3.5 w-3.5" aria-hidden />
+                  {eyedropper ? "Click the monitor…" : "Eyedropper"}
+                </button>
+              </div>
+              <label className="block">
+                <span className="flex items-center justify-between text-[10px] text-zinc-500">
+                  <span>Tolerance</span>
+                  <span className="tabular-nums">{Math.round(chromaKey.tolerance)}%</span>
+                </span>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={chromaKey.tolerance}
+                  onChange={(e) =>
+                    setChromaKey({ tolerance: Number(e.target.value), enabled: true })
+                  }
+                  className="mt-0.5 w-full accent-violet-500"
+                />
+              </label>
+              <label className="block">
+                <span className="flex items-center justify-between text-[10px] text-zinc-500">
+                  <span>Edge feather</span>
+                  <span className="tabular-nums">{Math.round(chromaKey.feather)}%</span>
+                </span>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={chromaKey.feather}
+                  onChange={(e) =>
+                    setChromaKey({ feather: Number(e.target.value), enabled: true })
+                  }
+                  className="mt-0.5 w-full accent-violet-500"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={resetChromaKey}
+                className="w-full rounded-lg border border-zinc-800 bg-zinc-950/60 px-2 py-2 text-[11px] text-zinc-300 hover:border-zinc-600"
+              >
+                Reset chroma key
+              </button>
+            </div>
+
             {/* Trim — remove the start/end of the clip */}
             <div className="space-y-2">
               <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
@@ -743,6 +1077,49 @@ function ProjectBinPanel({
                 Reset framing
               </button>
             </div>
+
+            {/* Platform framing presets + canvas fill */}
+            <div className="space-y-2 border-t border-zinc-800 pt-3">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                Platform framing
+              </p>
+              <div className="grid grid-cols-2 gap-1.5">
+                {FRAMING_PRESETS.map((preset) => (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => {
+                      setAspect(preset.id);
+                      setFit("contain");
+                    }}
+                    aria-pressed={aspect === preset.id}
+                    className={cn(
+                      "rounded-lg border px-2 py-2 text-left text-[11px] transition-colors",
+                      aspect === preset.id
+                        ? "border-violet-500 bg-violet-600/15 text-violet-200"
+                        : "border-zinc-800 bg-zinc-950/60 text-zinc-300 hover:border-zinc-600"
+                    )}
+                  >
+                    <span className="block font-medium">{preset.label}</span>
+                    <span className="block text-[10px] text-zinc-500">{preset.note}</span>
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={() => setCanvasFill(canvasFill === "blur" ? "black" : "blur")}
+                aria-pressed={canvasFill === "blur"}
+                className={cn(
+                  "inline-flex w-full items-center justify-center gap-1.5 rounded-lg border px-2 py-2 text-[11px] transition-colors",
+                  canvasFill === "blur"
+                    ? "border-violet-500 bg-violet-600/15 text-violet-200"
+                    : "border-zinc-800 bg-zinc-950/60 text-zinc-300 hover:border-zinc-600"
+                )}
+              >
+                <Sparkles className="h-3.5 w-3.5" aria-hidden />
+                {canvasFill === "blur" ? "Blurred background fill" : "Black letterbox fill"}
+              </button>
+            </div>
           </div>
         )}
 
@@ -822,6 +1199,93 @@ function ProjectBinPanel({
               </div>
             )}
 
+            {/* Social caption styles + on-device script generator */}
+            <div className="space-y-2 border-t border-zinc-800 pt-3">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                Caption styles
+              </p>
+              <div className="grid grid-cols-3 gap-1.5">
+                {(
+                  [
+                    ["karaoke", "Karaoke"],
+                    ["bounce", "Bounce"],
+                    ["neonBox", "Neon Box"],
+                  ] as const
+                ).map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => applyCaptionPreset(id)}
+                    aria-pressed={captionStyle.preset === id}
+                    className={cn(
+                      "rounded-lg border px-1.5 py-2 text-[10px] transition-colors",
+                      captionStyle.preset === id
+                        ? "border-violet-500 bg-violet-600/15 text-violet-200"
+                        : "border-zinc-800 bg-zinc-950/60 text-zinc-300 hover:border-zinc-600"
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              <label className="block">
+                <span className="mb-1 block text-[10px] font-medium text-zinc-400">
+                  Script → captions (on-device)
+                </span>
+                <textarea
+                  value={script}
+                  onChange={(e) => setScript(e.target.value)}
+                  rows={3}
+                  placeholder="Type or paste your script…"
+                  className="w-full resize-none rounded-lg border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-[11px] text-zinc-100 focus:border-violet-500 focus:outline-none"
+                />
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => void generateCaptionsFromScript(script)}
+                  disabled={!script.trim()}
+                  className="rounded-lg border border-zinc-800 bg-zinc-950/60 px-2 py-2 text-[11px] text-zinc-200 hover:border-zinc-600 disabled:opacity-40"
+                >
+                  Generate captions
+                </button>
+                <button
+                  type="button"
+                  disabled={!dictationSupported}
+                  title={
+                    dictationSupported
+                      ? "Dictate your script (browser speech recognition)"
+                      : "Speech recognition isn't available in this browser"
+                  }
+                  onClick={() => {
+                    if (dictating) {
+                      dictationRef.current?.stop();
+                      setDictating(false);
+                      return;
+                    }
+                    const session = createDictation(
+                      (chunk) => setScript((prev) => `${prev} ${chunk}`.trim()),
+                      () => setDictating(false)
+                    );
+                    if (!session) return;
+                    dictationRef.current = session;
+                    session.start();
+                    setDictating(true);
+                  }}
+                  className={cn(
+                    "inline-flex items-center justify-center gap-1.5 rounded-lg border px-2 py-2 text-[11px] disabled:opacity-40",
+                    dictating
+                      ? "border-red-500/40 bg-red-500/10 text-red-300"
+                      : "border-zinc-800 bg-zinc-950/60 text-zinc-200 hover:border-zinc-600"
+                  )}
+                >
+                  <Mic className="h-3.5 w-3.5" aria-hidden />
+                  {dictating ? "Stop" : "Dictate"}
+                </button>
+              </div>
+            </div>
+
             <button
               type="button"
               onClick={addOverlay}
@@ -870,6 +1334,310 @@ function ProjectBinPanel({
           </div>
         )}
 
+        {tab === "audio" && (
+          <div className="space-y-3">
+            <p className="text-[10px] leading-4 text-zinc-500">
+              Royalty-free sound effects, synthesized on-device — tap to drop one
+              at the playhead.
+            </p>
+            <div className="grid grid-cols-2 gap-1.5">
+              {SOUND_EFFECTS.map((effect) => (
+                <button
+                  key={effect.id}
+                  type="button"
+                  onClick={() => void addSoundEffect(effect.id as SoundEffectId)}
+                  className="rounded-lg border border-zinc-800 bg-zinc-950/60 px-2 py-2 text-[11px] text-zinc-200 hover:border-zinc-600"
+                >
+                  {effect.label}
+                </button>
+              ))}
+            </div>
+
+            <label className="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-950/60 px-2 py-2 text-[11px] text-zinc-200 hover:border-zinc-600">
+              <Music className="h-3.5 w-3.5 text-violet-400" aria-hidden /> Import audio
+              <input
+                type="file"
+                accept="audio/*"
+                multiple
+                className="hidden"
+                onChange={(e) => {
+                  if (e.target.files?.length) void addAudioFiles(e.target.files);
+                  e.target.value = "";
+                }}
+              />
+            </label>
+
+            <div className="space-y-2 border-t border-zinc-800 pt-3">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                Mixer
+              </p>
+              {audioTracks.length === 0 ? (
+                <p className="text-[10px] text-zinc-500">No audio tracks yet.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {audioTracks.map((track) => (
+                    <li
+                      key={track.id}
+                      className="space-y-1.5 rounded-lg border border-zinc-800 bg-zinc-950/60 p-2"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <AudioLines className="h-3.5 w-3.5 shrink-0 text-violet-400" aria-hidden />
+                        <span className="min-w-0 flex-1 truncate text-[11px] text-zinc-200">
+                          {track.name}
+                        </span>
+                        <button
+                          type="button"
+                          aria-pressed={track.muted}
+                          aria-label="Mute track"
+                          onClick={() => updateAudioTrack(track.id, { muted: !track.muted })}
+                          className={cn(
+                            "rounded p-1",
+                            track.muted ? "text-amber-300" : "text-zinc-500 hover:text-zinc-200"
+                          )}
+                        >
+                          {track.muted ? (
+                            <VolumeX className="h-3.5 w-3.5" aria-hidden />
+                          ) : (
+                            <Volume2 className="h-3.5 w-3.5" aria-hidden />
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          aria-pressed={track.solo}
+                          aria-label="Solo track"
+                          onClick={() => updateAudioTrack(track.id, { solo: !track.solo })}
+                          className={cn(
+                            "rounded px-1 text-[10px] font-bold",
+                            track.solo ? "text-sky-300" : "text-zinc-500 hover:text-zinc-200"
+                          )}
+                        >
+                          S
+                        </button>
+                        <button
+                          type="button"
+                          aria-label="Remove audio"
+                          onClick={() => removeAudioTrack(track.id)}
+                          className="rounded p-1 text-zinc-500 hover:text-red-400"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                        </button>
+                      </div>
+                      <Waveform buffer={track.buffer} className="h-8 w-full rounded bg-zinc-900/60" />
+                      <label className="block">
+                        <span className="flex items-center justify-between text-[10px] text-zinc-500">
+                          <span>Volume</span>
+                          <span className="tabular-nums">{Math.round(track.volume * 100)}%</span>
+                        </span>
+                        <input
+                          type="range"
+                          min={0}
+                          max={1}
+                          step={0.01}
+                          value={track.volume}
+                          onChange={(e) =>
+                            updateAudioTrack(track.id, { volume: Number(e.target.value) })
+                          }
+                          className="w-full accent-violet-500"
+                        />
+                      </label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <label className="block">
+                          <span className="text-[10px] text-zinc-500">
+                            Fade in · {track.fadeIn.toFixed(1)}s
+                          </span>
+                          <input
+                            type="range"
+                            min={0}
+                            max={Math.max(track.duration, 0.1)}
+                            step={0.1}
+                            value={track.fadeIn}
+                            onChange={(e) =>
+                              updateAudioTrack(track.id, { fadeIn: Number(e.target.value) })
+                            }
+                            className="w-full accent-violet-500"
+                          />
+                        </label>
+                        <label className="block">
+                          <span className="text-[10px] text-zinc-500">
+                            Fade out · {track.fadeOut.toFixed(1)}s
+                          </span>
+                          <input
+                            type="range"
+                            min={0}
+                            max={Math.max(track.duration, 0.1)}
+                            step={0.1}
+                            value={track.fadeOut}
+                            onChange={(e) =>
+                              updateAudioTrack(track.id, { fadeOut: Number(e.target.value) })
+                            }
+                            className="w-full accent-violet-500"
+                          />
+                        </label>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        )}
+
+        {tab === "speed" && (
+          <div className="space-y-3">
+            <p className="text-[10px] leading-4 text-zinc-500">
+              Velocity curves ramp both playback and the export time-mapping.
+            </p>
+            <div className="grid grid-cols-2 gap-1.5">
+              {SPEED_PRESET_CARDS.map((card) => (
+                <button
+                  key={card.id}
+                  type="button"
+                  onClick={() => setSpeedPreset(card.id)}
+                  aria-pressed={speedPreset === card.id}
+                  className={cn(
+                    "rounded-lg border px-2 py-2 text-left text-[11px] transition-colors",
+                    speedPreset === card.id
+                      ? "border-violet-500 bg-violet-600/15 text-violet-200"
+                      : "border-zinc-800 bg-zinc-950/60 text-zinc-300 hover:border-zinc-600"
+                  )}
+                >
+                  <span className="flex items-center gap-1 font-medium">
+                    <Zap className="h-3 w-3 text-violet-400" aria-hidden />
+                    {card.label}
+                  </span>
+                  <span className="block text-[10px] text-zinc-500">{card.note}</span>
+                </button>
+              ))}
+            </div>
+            <div className="space-y-1 border-t border-zinc-800 pt-3">
+              <span className="flex items-center justify-between text-[10px] text-zinc-500">
+                <span>Constant rate</span>
+                <span className="tabular-nums">
+                  {(speedPoints[speedPoints.length - 1]?.speed ?? 1).toFixed(2)}×
+                </span>
+              </span>
+              <input
+                type="range"
+                min={0.25}
+                max={4}
+                step={0.05}
+                value={speedPoints[speedPoints.length - 1]?.speed ?? 1}
+                onChange={(e) => {
+                  const rate = Number(e.target.value);
+                  setSpeedPoints([
+                    { time: 0, speed: rate },
+                    { time: Math.max(duration, 1), speed: rate },
+                  ]);
+                }}
+                className="w-full accent-violet-500"
+              />
+              <p className="text-[10px] text-zinc-500">
+                Active:{" "}
+                <span className="capitalize text-zinc-300">
+                  {speedPreset === "none" ? "normal" : speedPreset}
+                </span>
+              </p>
+            </div>
+          </div>
+        )}
+
+        {tab === "stickers" && (
+          <div className="space-y-3">
+            <p className="text-[10px] leading-4 text-zinc-500">
+              Tap a sticker to drop it on the V2 overlay track at the playhead.
+            </p>
+            <div className="flex flex-wrap gap-1">
+              {STICKER_CATEGORIES.map((category) => (
+                <button
+                  key={category.id}
+                  type="button"
+                  onClick={() => setStickerCategory(category.id)}
+                  aria-pressed={stickerCategory === category.id}
+                  className={cn(
+                    "rounded-md px-2 py-1 text-[10px] transition-colors",
+                    stickerCategory === category.id
+                      ? "bg-violet-600/20 text-violet-200"
+                      : "text-zinc-400 hover:text-zinc-100"
+                  )}
+                >
+                  {category.label}
+                </button>
+              ))}
+            </div>
+            <div className="grid grid-cols-4 gap-1.5">
+              {STICKERS.filter((sticker) => sticker.category === stickerCategory).map(
+                (sticker) => (
+                  <button
+                    key={sticker.id}
+                    type="button"
+                    title={sticker.label}
+                    onClick={() => {
+                      if (sticker.emoji) {
+                        addTextSticker(sticker.emoji, sticker.fontSize ?? 160);
+                        return;
+                      }
+                      const src = stickerImageSrc(sticker);
+                      if (src) addStickerImage(src);
+                    }}
+                    className="flex aspect-square items-center justify-center overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950/60 p-1 hover:border-zinc-600"
+                  >
+                    {sticker.emoji ? (
+                      <span className="text-2xl">{sticker.emoji}</span>
+                    ) : (
+                      <span
+                        className="block h-full w-full [&>svg]:h-full [&>svg]:w-full"
+                        dangerouslySetInnerHTML={{ __html: sticker.svg ?? "" }}
+                      />
+                    )}
+                  </button>
+                )
+              )}
+            </div>
+          </div>
+        )}
+
+        {tab === "transitions" && (
+          <div className="space-y-3">
+            <p className="text-[10px] leading-4 text-zinc-500">
+              Add a transition between the selected clip and the one before it. It
+              renders on the multi-clip export path.
+            </p>
+            {!activeClipId ? (
+              <p className="text-[10px] text-zinc-500">
+                Select a clip on the timeline first.
+              </p>
+            ) : (
+              <div className="grid grid-cols-2 gap-1.5">
+                {TRANSITION_PRESETS.map((preset) => {
+                  const current = sequence.find((clip) => clip.id === activeClipId);
+                  const active = current?.transitionIn?.type === preset.id;
+                  return (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      onClick={() =>
+                        setClipTransition(activeClipId, active ? null : preset.id)
+                      }
+                      aria-pressed={active}
+                      className={cn(
+                        "flex items-center gap-1.5 rounded-lg border px-2 py-2 text-left text-[11px] transition-colors",
+                        active
+                          ? "border-violet-500 bg-violet-600/15 text-violet-200"
+                          : "border-zinc-800 bg-zinc-950/60 text-zinc-300 hover:border-zinc-600"
+                      )}
+                    >
+                      <ArrowLeftRight className="h-3.5 w-3.5 shrink-0 text-violet-400" aria-hidden />
+                      <span className="min-w-0 flex-1 truncate">{preset.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {tab === "record" && <ScreenCamRecorder />}
+
         {tab === "studio" && (
           <div className="space-y-3">
             <p className="text-[10px] leading-4 text-zinc-500">
@@ -889,6 +1657,7 @@ function ProjectBinPanel({
 /* ------------------------------------------------------------------ */
 function ProgramPreview() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const overlayDrag = useOverlayCanvasDrag(canvasRef);
   const loopRef = useRef(true);
   const [loop, setLoop] = useState(true);
 
@@ -901,12 +1670,15 @@ function ProgramPreview() {
   const setAspect = useEditorStore((s) => s.setAspect);
   const hdRendering = useEditorStore((s) => s.hdRendering);
   const setHdRendering = useEditorStore((s) => s.setHdRendering);
+  const canvasFill = useEditorStore((s) => s.canvasFill);
+  const setCanvasFill = useEditorStore((s) => s.setCanvasFill);
   const undo = useEditorStore((s) => s.undo);
   const redo = useEditorStore((s) => s.redo);
   const setPlaying = useEditorStore((s) => s.setPlaying);
   const seek = useEditorStore((s) => s.seek);
   const setTrimStart = useEditorStore((s) => s.setTrimStart);
   const setTrimEnd = useEditorStore((s) => s.setTrimEnd);
+  const eyedropper = useEditorStore((s) => s.eyedropper);
 
   useEffect(() => {
     loopRef.current = loop;
@@ -931,6 +1703,9 @@ function ProgramPreview() {
 
       const video = state.videoEl;
       if (video && !video.paused && !video.ended) {
+        // Follow the velocity curve so preview matches the export ramp.
+        const rate = speedAt(state.speedPoints, video.currentTime);
+        if (Math.abs(video.playbackRate - rate) > 0.01) video.playbackRate = rate;
         const now = performance.now();
         if (now - lastSync >= 100) {
           lastSync = now;
@@ -943,6 +1718,12 @@ function ProgramPreview() {
           else state.setPlaying(false);
         }
       }
+
+      audioPreview.sync(
+        state.audioTracks,
+        video ? video.currentTime : state.currentTime,
+        state.playing
+      );
 
       drawScene(
         ctx,
@@ -959,6 +1740,8 @@ function ProgramPreview() {
           activeEffects: state.activeEffects,
           crisp: state.hdRendering,
           sceneTime: video ? video.currentTime : state.currentTime,
+          clipEnd: state.trimEnd > 0 ? state.trimEnd : undefined,
+          chromaKey: state.chromaKey,
         },
         { placeholder: true }
       );
@@ -977,7 +1760,7 @@ function ProgramPreview() {
         </span>
         {/* Aspect-ratio switcher: 16:9 ↔ 9:16 ↔ 1:1 */}
         <div className="flex items-center gap-1" role="group" aria-label="Aspect ratio">
-          {(["9:16", "16:9", "1:1"] as const).map((option) => (
+          {(["9:16", "16:9", "1:1", "21:9"] as const).map((option) => (
             <button
               key={option}
               type="button"
@@ -1011,10 +1794,35 @@ function ProgramPreview() {
         >
           HD
         </button>
+        <button
+          type="button"
+          onClick={() => setCanvasFill(canvasFill === "blur" ? "black" : "blur")}
+          aria-pressed={canvasFill === "blur"}
+          title="Blurred background fill for mismatched media"
+          className={cn(
+            "shrink-0 rounded-md px-2 py-1 text-[10px] font-semibold transition-colors",
+            canvasFill === "blur"
+              ? "bg-violet-600/20 text-violet-200 ring-1 ring-inset ring-violet-500/40"
+              : "border border-zinc-800 bg-zinc-950/60 text-zinc-500"
+          )}
+        >
+          Blur Fill
+        </button>
       </div>
 
       <div className="flex min-h-0 flex-1 items-center justify-center bg-black p-3">
-        <canvas ref={canvasRef} className="max-h-full max-w-full rounded-lg ring-1 ring-zinc-800" aria-label="Program preview" />
+        <canvas
+          ref={canvasRef}
+          onPointerDown={overlayDrag.onPointerDown}
+          onPointerMove={overlayDrag.onPointerMove}
+          onPointerUp={overlayDrag.onPointerUp}
+          onPointerCancel={overlayDrag.onPointerCancel}
+          className={cn(
+            "max-h-full max-w-full touch-none rounded-lg ring-1 ring-zinc-800",
+            eyedropper ? "cursor-crosshair" : "cursor-move"
+          )}
+          aria-label="Program preview"
+        />
       </div>
 
       {/* Transport */}
@@ -1331,6 +2139,12 @@ function PremiereTimeline() {
   const setOverlayStartTime = useEditorStore((s) => s.setOverlayStartTime);
   const setOverlayEndTime = useEditorStore((s) => s.setOverlayEndTime);
   const updateEffect = useEditorStore((s) => s.updateEffect);
+  const addAudioTrackFromBlob = useEditorStore((s) => s.addAudioTrackFromBlob);
+  const moveClipTo = useEditorStore((s) => s.moveClipTo);
+  const moveOverlayTo = useEditorStore((s) => s.moveOverlayTo);
+  const moveAudioTrackTo = useEditorStore((s) => s.moveAudioTrackTo);
+  const moveEffectTo = useEditorStore((s) => s.moveEffectTo);
+  const updateAudioTrack = useEditorStore((s) => s.updateAudioTrack);
 
   const [pps, setPps] = useState(48);
   const [toggles, setToggles] = useState<Record<TrackKey, { m: boolean; s: boolean; lock: boolean; eye: boolean }>>({
@@ -1344,22 +2158,15 @@ function PremiereTimeline() {
   const nameFor = (assetId: string) =>
     assets.find((a) => a.id === assetId)?.name ?? "Clip";
 
-  // Cumulative timeline positions for V1 clips.
-  const videoBlocks = sequence.reduce<{ clip: (typeof sequence)[number]; start: number; dur: number }[]>(
-    (acc, clip) => {
-      const prev = acc[acc.length - 1];
-      const start = prev ? prev.start + prev.dur : 0;
-      const dur = Math.max(0.1, clip.trimEnd - clip.trimStart);
-      acc.push({ clip, start, dur });
-      return acc;
-    },
-    []
-  );
+  // Absolute timeline positions for V1 clips (respects dragged positions).
+  const videoBlocks = computeClipStarts(sequence);
 
   const timelineDuration = Math.max(
     duration || 0,
-    videoBlocks.reduce((sum, b) => sum + b.dur, 0),
-    ...audioTracks.map((t) => t.startTime + t.duration),
+    ...videoBlocks.map((block) => block.start + block.dur),
+    ...overlays.map((overlay) => overlay.endTime),
+    ...activeEffects.map((effect) => effect.startTime + effect.duration),
+    ...audioTracks.map((track) => track.startTime + track.duration),
     5
   );
 
@@ -1488,6 +2295,132 @@ function PremiereTimeline() {
     effectDragRef.current = null;
   };
 
+  /* ------------------------------------------------------------------ */
+  /* Free horizontal position dragging (clips, overlays, audio, effects) */
+  /* ------------------------------------------------------------------ */
+  type BodyDrag = {
+    kind: "clip" | "overlay" | "audio" | "effect";
+    id: string;
+    pointerId: number;
+    startX: number;
+    start: number;
+    moved: boolean;
+  };
+  const bodyDragRef = useRef<BodyDrag | null>(null);
+
+  const SNAP_PX = 8;
+
+  /** Snaps a time to the nearest target within a few pixels (magnetic feel). */
+  const snapValue = (value: number, targets: number[]) => {
+    const threshold = SNAP_PX / pps;
+    let best = value;
+    let bestDist = threshold;
+    for (const target of targets) {
+      const dist = Math.abs(target - value);
+      if (dist <= bestDist) {
+        best = target;
+        bestDist = dist;
+      }
+    }
+    return best;
+  };
+
+  const beginBodyDrag = (
+    event: React.PointerEvent<HTMLElement>,
+    kind: BodyDrag["kind"],
+    id: string,
+    start: number
+  ) => {
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    bodyDragRef.current = {
+      kind,
+      id,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      start,
+      moved: false,
+    };
+  };
+
+  const moveBodyDrag = (event: React.PointerEvent<HTMLElement>) => {
+    const drag = bodyDragRef.current;
+    if (!drag) return;
+    const dx = event.clientX - drag.startX;
+    if (!drag.moved && Math.abs(dx) < 4) return;
+    drag.moved = true;
+    const delta = dx / pps;
+
+    if (drag.kind === "clip") {
+      const targets = [0, currentTime];
+      for (const block of videoBlocks) {
+        if (block.clip.id === drag.id) continue;
+        targets.push(block.start, block.start + block.dur);
+      }
+      moveClipTo(drag.id, snapValue(Math.max(0, drag.start + delta), targets));
+    } else if (drag.kind === "overlay") {
+      const targets = [0, currentTime];
+      for (const overlay of overlays) {
+        if (overlay.id === drag.id) continue;
+        targets.push(overlay.startTime, overlay.endTime);
+      }
+      moveOverlayTo(drag.id, snapValue(Math.max(0, drag.start + delta), targets));
+    } else if (drag.kind === "audio") {
+      moveAudioTrackTo(drag.id, snapValue(Math.max(0, drag.start + delta), [0, currentTime]));
+    } else {
+      moveEffectTo(drag.id, snapValue(Math.max(0, drag.start + delta), [0, currentTime]));
+    }
+  };
+
+  const endBodyDrag = (event: React.PointerEvent<HTMLElement>) => {
+    const drag = bodyDragRef.current;
+    if (drag && event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    bodyDragRef.current = null;
+  };
+
+  // Audio in/out trims (Update trimStart + duration).
+  const audioTrimRef = useRef<{
+    id: string;
+    side: "in" | "out";
+    startX: number;
+    trimStart: number;
+    duration: number;
+  } | null>(null);
+  const onAudioTrimDown = (
+    event: React.PointerEvent<HTMLButtonElement>,
+    track: { id: string; trimStart: number; duration: number },
+    side: "in" | "out"
+  ) => {
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    audioTrimRef.current = {
+      id: track.id,
+      side,
+      startX: event.clientX,
+      trimStart: track.trimStart,
+      duration: track.duration,
+    };
+  };
+  const onAudioTrimMove = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const drag = audioTrimRef.current;
+    if (!drag) return;
+    const delta = (event.clientX - drag.startX) / pps;
+    if (drag.side === "in") {
+      const nextTrim = Math.max(0, drag.trimStart + delta);
+      updateAudioTrack(drag.id, {
+        trimStart: nextTrim,
+        duration: Math.max(0.1, drag.duration - (nextTrim - drag.trimStart)),
+      });
+    } else {
+      updateAudioTrack(drag.id, { duration: Math.max(0.1, drag.duration + delta) });
+    }
+  };
+  const onAudioTrimUp = () => {
+    audioTrimRef.current = null;
+  };
+
   const seekFromClientX = (clientX: number) => {
     const lane = laneRef.current;
     if (!lane) return;
@@ -1511,6 +2444,56 @@ function PremiereTimeline() {
 
   const audioByLane = (lane: 0 | 1) => audioTracks.filter((_, i) => i % 2 === lane);
 
+  /* ------------------------------------------------------------------ */
+  /* Live voiceover recording (A2)                                       */
+  /* ------------------------------------------------------------------ */
+  const [voiceRecording, setVoiceRecording] = useState(false);
+  const [voiceLevel, setVoiceLevel] = useState(0);
+  const voiceRef = useRef<{
+    capture: ActiveCapture;
+    meter: ReturnType<typeof createLevelMeter>;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!voiceRecording) return;
+    let raf = 0;
+    const tick = () => {
+      setVoiceLevel(voiceRef.current?.meter?.getLevel() ?? 0);
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [voiceRecording]);
+
+  const toggleVoiceover = async () => {
+    if (voiceRecording) {
+      const current = voiceRef.current;
+      voiceRef.current = null;
+      setVoiceRecording(false);
+      setVoiceLevel(0);
+      if (!current) return;
+      try {
+        const blob = await current.capture.stop();
+        current.meter?.close();
+        if (blob && blob.size > 0) {
+          await addAudioTrackFromBlob(blob, `Voiceover ${new Date().toLocaleTimeString()}`);
+        }
+      } catch {
+        // Recording failed; nothing to add.
+      }
+      return;
+    }
+    try {
+      const capture = await startCapture("voice");
+      voiceRef.current = { capture, meter: createLevelMeter(capture.stream) };
+      setVoiceRecording(true);
+    } catch {
+      // Mic permission denied / unavailable.
+    }
+  };
+
+  useEffect(() => () => voiceRef.current?.capture.cancel(), []);
+
   const videoChip = "rounded-md bg-gradient-to-b from-violet-500/80 to-blue-600/70 text-[10px] text-white ring-1 ring-inset ring-white/20";
   const adjustChip = "rounded-md bg-gradient-to-b from-pink-500/80 to-fuchsia-600/70 text-[10px] text-white ring-1 ring-inset ring-white/20";
   const audioChip = "rounded-md bg-gradient-to-b from-teal-500/80 to-emerald-600/70 text-[10px] text-white ring-1 ring-inset ring-white/20";
@@ -1520,16 +2503,33 @@ function PremiereTimeline() {
     const btn =
       "flex h-5 w-5 items-center justify-center rounded text-[9px] font-bold transition-colors";
     return (
-      <div className="flex h-12 w-24 shrink-0 items-center gap-1 border-b border-r border-zinc-800 bg-zinc-900/60 px-1.5">
+      <div className="relative flex h-12 w-24 shrink-0 items-center gap-1 border-b border-r border-zinc-800 bg-zinc-900/60 px-1.5">
         <span className="mr-0.5 w-6 shrink-0 text-[10px] font-semibold text-zinc-300">{keyName}</span>
         <button type="button" aria-label={`Mute ${keyName}`} onClick={() => toggleTrack(keyName, "m")} className={cn(btn, t.m ? "bg-amber-500/30 text-amber-300" : "text-zinc-500 hover:text-zinc-200")}>M</button>
         <button type="button" aria-label={`Solo ${keyName}`} onClick={() => toggleTrack(keyName, "s")} className={cn(btn, t.s ? "bg-sky-500/30 text-sky-300" : "text-zinc-500 hover:text-zinc-200")}>S</button>
         <button type="button" aria-label={`Lock ${keyName}`} onClick={() => toggleTrack(keyName, "lock")} className={cn(btn, "text-zinc-500 hover:text-zinc-200")}>
           {t.lock ? <Lock className="h-3 w-3" aria-hidden /> : <Unlock className="h-3 w-3" aria-hidden />}
         </button>
-        <button type="button" aria-label={`${t.eye ? "Hide" : "Show"} ${keyName}`} onClick={() => toggleTrack(keyName, "eye")} className={cn(btn, "text-zinc-500 hover:text-zinc-200")}>
-          {t.eye ? <Eye className="h-3 w-3" aria-hidden /> : <EyeOff className="h-3 w-3" aria-hidden />}
-        </button>
+        {keyName === "A2" ? (
+          <button
+            type="button"
+            aria-label={voiceRecording ? "Stop voiceover" : "Record voiceover"}
+            title="Record voiceover (microphone)"
+            onClick={() => void toggleVoiceover()}
+            className={cn(btn, voiceRecording ? "bg-red-500/30 text-red-300" : "text-zinc-500 hover:text-zinc-200")}
+          >
+            {voiceRecording ? <Square className="h-3 w-3" aria-hidden /> : <Mic className="h-3 w-3" aria-hidden />}
+          </button>
+        ) : (
+          <button type="button" aria-label={`${t.eye ? "Hide" : "Show"} ${keyName}`} onClick={() => toggleTrack(keyName, "eye")} className={cn(btn, "text-zinc-500 hover:text-zinc-200")}>
+            {t.eye ? <Eye className="h-3 w-3" aria-hidden /> : <EyeOff className="h-3 w-3" aria-hidden />}
+          </button>
+        )}
+        {keyName === "A2" && voiceRecording && (
+          <span className="absolute inset-x-1.5 bottom-0.5 h-0.5 overflow-hidden rounded-full bg-zinc-700">
+            <span className="block h-full bg-red-400" style={{ width: `${Math.round(voiceLevel * 100)}%` }} />
+          </span>
+        )}
       </div>
     );
   };
@@ -1588,9 +2588,13 @@ function PremiereTimeline() {
               {activeEffects.map((fx) => (
                 <div
                   key={fx.id}
-                  className={cn("group absolute inset-y-1.5 overflow-hidden px-1.5", adjustChip)}
+                  className={cn("group absolute inset-y-1.5 cursor-grab overflow-hidden px-1.5 active:cursor-grabbing", adjustChip)}
                   style={{ left: `${fx.startTime * pps}px`, width: `${Math.max(20, fx.duration * pps)}px` }}
                   title={`Effect: ${fx.type}`}
+                  onPointerDown={(e) => beginBodyDrag(e, "effect", fx.id, fx.startTime)}
+                  onPointerMove={moveBodyDrag}
+                  onPointerUp={endBodyDrag}
+                  onPointerCancel={endBodyDrag}
                 >
                   <span className="block truncate capitalize">{fx.type}</span>
                   <button
@@ -1612,6 +2616,7 @@ function PremiereTimeline() {
                   <button
                     type="button"
                     aria-label="Delete effect"
+                    onPointerDown={(e) => e.stopPropagation()}
                     onClick={() => removeEffect(fx.id)}
                     className="absolute right-0.5 top-0.5 z-10 flex h-4 w-4 items-center justify-center rounded bg-black/75 text-zinc-100 opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100"
                   >
@@ -1631,8 +2636,12 @@ function PremiereTimeline() {
                 >
                   <button
                     type="button"
+                    onPointerDown={(e) => beginBodyDrag(e, "overlay", o.id, o.startTime)}
+                    onPointerMove={moveBodyDrag}
+                    onPointerUp={endBodyDrag}
+                    onPointerCancel={endBodyDrag}
                     onClick={() => selectOverlay(o.id)}
-                    className={cn("h-full w-full overflow-hidden px-1.5 text-left", adjustChip, o.id === selectedId && "ring-2 ring-white/70")}
+                    className={cn("h-full w-full cursor-grab overflow-hidden px-1.5 text-left active:cursor-grabbing", adjustChip, o.id === selectedId && "ring-2 ring-white/70")}
                   >
                     <span className="block truncate">
                       {o.text || (o.imageSrc ? "Image" : "Text")}
@@ -1665,6 +2674,14 @@ function PremiereTimeline() {
                   >
                     <Trash2 className="h-3 w-3" aria-hidden />
                   </button>
+                  {(o.keyframes ?? []).map((frame) => (
+                    <span
+                      key={frame.id}
+                      title={`Keyframe @ ${frame.time.toFixed(2)}s`}
+                      className="pointer-events-none absolute top-1/2 z-10 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 bg-amber-300 ring-1 ring-black/50"
+                      style={{ left: `${Math.max(0, (frame.time - o.startTime) * pps)}px` }}
+                    />
+                  ))}
                 </div>
               ))}
             </div>
@@ -1679,9 +2696,13 @@ function PremiereTimeline() {
                 >
                   <button
                     type="button"
+                    onPointerDown={(e) => beginBodyDrag(e, "clip", clip.id, start)}
+                    onPointerMove={moveBodyDrag}
+                    onPointerUp={endBodyDrag}
+                    onPointerCancel={endBodyDrag}
                     onClick={() => selectClip(clip.id)}
                     className={cn(
-                      "h-full w-full overflow-hidden px-2 text-left",
+                      "h-full w-full cursor-grab overflow-hidden px-2 text-left active:cursor-grabbing",
                       videoChip,
                       clip.id === activeClipId && "ring-2 ring-white/70"
                     )}
@@ -1715,6 +2736,14 @@ function PremiereTimeline() {
                   >
                     <Trash2 className="h-3 w-3" aria-hidden />
                   </button>
+                  {clip.transitionIn && (
+                    <span
+                      title={`Transition: ${clip.transitionIn.type}`}
+                      className="pointer-events-none absolute -left-2 top-1/2 z-10 flex h-4 w-4 -translate-y-1/2 items-center justify-center rounded-sm bg-amber-400 text-black shadow"
+                    >
+                      <ArrowLeftRight className="h-2.5 w-2.5" aria-hidden />
+                    </span>
+                  )}
                 </div>
               ))}
             </div>
@@ -1725,15 +2754,38 @@ function PremiereTimeline() {
                 {audioByLane(lane).map((track) => (
                   <div
                     key={track.id}
-                    className={cn("group absolute inset-y-1.5 flex items-center gap-1 overflow-hidden px-1.5", audioChip)}
+                    className={cn("group absolute inset-y-1.5 flex cursor-grab items-center gap-1 overflow-hidden px-1.5 active:cursor-grabbing", audioChip)}
                     style={{ left: `${track.startTime * pps}px`, width: `${Math.max(28, track.duration * pps)}px` }}
                     title={track.name}
+                    onPointerDown={(e) => beginBodyDrag(e, "audio", track.id, track.startTime)}
+                    onPointerMove={moveBodyDrag}
+                    onPointerUp={endBodyDrag}
+                    onPointerCancel={endBodyDrag}
                   >
                     <Music className="h-3 w-3 shrink-0" aria-hidden />
                     <span className="truncate">{track.name}</span>
                     <button
                       type="button"
+                      aria-label="Trim audio start"
+                      onPointerDown={(e) => onAudioTrimDown(e, track, "in")}
+                      onPointerMove={onAudioTrimMove}
+                      onPointerUp={onAudioTrimUp}
+                      onPointerCancel={onAudioTrimUp}
+                      className="absolute inset-y-0 left-0 z-10 w-1.5 cursor-ew-resize rounded-l-md bg-white/25 transition-colors hover:bg-white/60"
+                    />
+                    <button
+                      type="button"
+                      aria-label="Trim audio end"
+                      onPointerDown={(e) => onAudioTrimDown(e, track, "out")}
+                      onPointerMove={onAudioTrimMove}
+                      onPointerUp={onAudioTrimUp}
+                      onPointerCancel={onAudioTrimUp}
+                      className="absolute inset-y-0 right-0 z-10 w-1.5 cursor-ew-resize rounded-r-md bg-white/25 transition-colors hover:bg-white/60"
+                    />
+                    <button
+                      type="button"
                       aria-label="Remove audio"
+                      onPointerDown={(e) => e.stopPropagation()}
                       onClick={() => removeAudioTrack(track.id)}
                       className="absolute right-0.5 top-0.5 z-10 flex h-4 w-4 items-center justify-center rounded bg-black/75 text-zinc-100 opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100"
                     >

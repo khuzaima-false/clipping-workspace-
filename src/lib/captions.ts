@@ -116,3 +116,27 @@ export function buildAutoCaptions(
 
   return captions;
 }
+
+/**
+ * Turns a typed/imported script into evenly-timed caption overlays across the
+ * clip duration — a fully client-side alternative to speech recognition. Each
+ * word gets a uniform slot so karaoke/bounce highlighting stays in sync, and
+ * the text is grouped with the same readability rules as real captions.
+ */
+export function buildScriptCaptions(
+  script: string,
+  options: BuildCaptionsOptions
+): TextOverlay[] {
+  const words = script.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return [];
+
+  const limit =
+    options.duration > 0 ? options.duration : words.length * 0.4;
+  const slot = limit / words.length;
+  const timed: CaptionWord[] = words.map((text, index) => ({
+    text,
+    start: index * slot,
+    end: (index + 1) * slot,
+  }));
+  return buildAutoCaptions(timed, options);
+}

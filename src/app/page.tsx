@@ -1,19 +1,27 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import {
+  ArrowLeftRight,
   ArrowRight,
+  AudioLines,
+  Captions,
   Check,
   Coins,
   Crop,
+  Diamond,
   Gauge,
   Globe,
-  Scissors,
+  Mic,
+  Monitor,
+  MonitorPlay,
+  Pipette,
   Send,
   ShieldCheck,
+  Smile,
+  Smartphone,
   Sparkles,
   TrendingUp,
   Users,
-  WandSparkles,
   Zap,
 } from "lucide-react";
 import { Logo } from "@/components/ui/logo";
@@ -39,55 +47,116 @@ const FOUNDING_DAILY = BASE_DAILY_CREDITS + FOUNDING_CREDIT_BONUS;
 const STANDARD_MAX =
   BASE_DAILY_CREDITS + REFERRAL_CREDIT_BONUS * MAX_REFERRALS;
 
+/** The 10 real, 100% client-side power tools live in the editor. */
 const FEATURES = [
   {
-    icon: WandSparkles,
-    title: "AI Auto-Captions & Styles",
-    body: "Word-perfect subtitles with Hormozi, Pop-in, and Karaoke animations — generated on-device in seconds.",
+    icon: Pipette,
+    title: "Chroma Key (Green Screen)",
+    body: "Knock out green or blue backdrops with an eyedropper, tolerance and edge-feather controls — computed frame-by-frame on the canvas.",
+  },
+  {
+    icon: Diamond,
+    title: "Keyframe Animation Engine",
+    body: "Animate scale, position, opacity and rotation with keyframes. The renderer linearly interpolates between them for smooth motion.",
+  },
+  {
+    icon: AudioLines,
+    title: "Multi-Track Audio Mixer & SFX",
+    body: "Per-track volume, mute/solo and fade in/out with live waveforms — plus seven royalty-free effects synthesized with Web Audio.",
+  },
+  {
+    icon: Captions,
+    title: "Auto-Captions & Social Styles",
+    body: "On-device transcription with word-level karaoke, bounce and neon-glow-box styles — or turn a typed script into timed subtitles.",
+  },
+  {
+    icon: Gauge,
+    title: "Speed Ramping & Velocity Curves",
+    body: "Normal, Montage, Bullet, Hero Ramp and Jump Cut presets reshape playback and export timing with smooth accelerations.",
+  },
+  {
+    icon: ArrowLeftRight,
+    title: "Video Transitions Library",
+    body: "Cross dissolve, dip to black, whip pan, glitch cut and zoom — blended frame-by-frame across every clip boundary.",
+  },
+  {
+    icon: Smile,
+    title: "Stickers, Memes & Emoji",
+    body: "Badges, arrows, subscribe buttons, lower-thirds and emoji stickers, generated as crisp SVG overlays you drop on the V2 track.",
   },
   {
     icon: Crop,
-    title: "Dynamic Aspect Switching",
-    body: "Reframe instantly between 9:16 Shorts, 16:9 landscape, and 1:1 square with smart subject tracking.",
+    title: "Framing & Aspect Presets",
+    body: "One-tap TikTok/Reels, YouTube, Square and Cinematic framing with automatic blurred or letterboxed background fill.",
   },
   {
-    icon: Send,
-    title: "Multi-Channel Publishing",
-    body: "Export once and ship to TikTok, YouTube Shorts, and Instagram Reels — captioned and ready to post.",
+    icon: Mic,
+    title: "Voiceover & Audio Recorder",
+    body: "Record a live voiceover straight onto the A2 track with a real-time level meter and an instant waveform preview.",
   },
   {
-    icon: Scissors,
-    title: "Instant Clip Selection",
-    body: "AI scores your footage and surfaces the most engaging moments before you even scrub the timeline.",
+    icon: MonitorPlay,
+    title: "Screen & Webcam Recorder",
+    body: "Capture your screen or camera inside the studio and send the recording straight to the media bin for the timeline.",
+  },
+];
+
+/** One engine, two purpose-built interfaces. */
+const INTERFACES = [
+  {
+    icon: Monitor,
+    badge: "hidden md:flex",
+    title: "Desktop Studio",
+    tagline: "Premiere Pro-style precision",
+    points: [
+      "4-panel workspace: project bin, program monitor, colour panel and timeline",
+      "Multi-track timeline — video V1–V3 and audio A1–A2 with trim handles",
+      "Clip property inspectors, keyframe clock and transition markers",
+      "Waveform audio headers with per-track volume, mute/solo and fades",
+      "Screen and webcam recorder built into the project bin",
+    ],
+  },
+  {
+    icon: Smartphone,
+    badge: "md:hidden",
+    title: "Mobile Studio",
+    tagline: "CapCut-style touch editing",
+    points: [
+      "Touch drawers and quick-action bottom sheets",
+      "Single-tap keyframing on the transport bar",
+      "Drag-to-reposition clips with touch trim handles",
+      "Voiceover recording with a live level meter",
+      "Stickers, captions, cutout and framing sheets on the go",
+    ],
   },
 ];
 
 const STATS = [
-  { value: "10×", label: "Faster video editing" },
-  { value: String(FOUNDING_DAILY), label: "Free daily credits for founding members" },
-  { value: "3", label: "Platforms from one clip" },
-  { value: "100%", label: "Runs in your browser" },
+  { value: "10", label: "Pro editing tools built in" },
+  { value: "100%", label: "Client-side — nothing is uploaded" },
+  { value: "0", label: "Server round-trips while editing" },
+  { value: "Free", label: "Full studio, no card required" },
 ];
 
 const TIERS = [
   {
     name: "Standard",
     price: "Free",
-    tagline: "Everything you need to start clipping.",
+    tagline: "The full studio, unlocked for everyone.",
     dailyCredits: BASE_DAILY_CREDITS,
     features: [
       `${BASE_DAILY_CREDITS} daily export credits`,
-      "AI auto-captions & karaoke styles",
-      "9:16, 16:9 & 1:1 aspect ratios",
-      "Ad-supported exporting",
+      "All 10 editing tools included",
+      "On-device auto-captions & styles",
+      "9:16, 16:9, 1:1 & 21:9 exports",
     ],
-    cta: "Start Clipping Free",
+    cta: "Launch Studio",
     highlight: false,
   },
   {
     name: "Founding Member",
     price: "Free · 1st 1,000",
-    tagline: "The full studio, supercharged with credits.",
+    tagline: "The same studio with a bigger render budget.",
     dailyCredits: FOUNDING_DAILY,
     features: [
       `${FOUNDING_DAILY} daily export credits (+${FOUNDING_CREDIT_BONUS} bonus)`,
@@ -134,11 +203,11 @@ export default function LandingPage() {
             <a href="#features" className="transition-colors hover:text-zinc-100">
               Features
             </a>
+            <a href="#studio" className="transition-colors hover:text-zinc-100">
+              Studio
+            </a>
             <a href="#pricing" className="transition-colors hover:text-zinc-100">
               Pricing
-            </a>
-            <a href="#preview" className="transition-colors hover:text-zinc-100">
-              Demo
             </a>
           </nav>
           <NavAuthActions />
@@ -150,18 +219,18 @@ export default function LandingPage() {
         <div className="animate-fade-up">
           <span className="inline-flex items-center gap-2 rounded-full border border-violet-500/30 bg-violet-500/10 px-3 py-1 text-xs font-medium text-violet-200">
             <Sparkles className="h-3.5 w-3.5" aria-hidden />
-            Powered by Advanced AI Speech &amp; Frame Detection
+            100% free · Runs entirely in your browser
           </span>
 
           <h1 className="mt-6 text-4xl font-bold leading-[1.05] tracking-tight text-white sm:text-5xl lg:text-6xl">
-            Turn Long Videos into{" "}
-            <span className="text-gradient">Viral Shorts</span> in Seconds with AI
+            Forgevyn | Free Professional{" "}
+            <span className="text-gradient">In-Browser Video Studio</span>
           </h1>
 
           <p className="mt-6 max-w-xl text-base leading-7 text-zinc-400 sm:text-lg">
-            Forgevyn auto-frames your subject, generates dynamic captions, and
-            picks the most engaging moments — so a single podcast or stream
-            becomes a feed of scroll-stopping clips.
+            Full-featured multi-track editing, Chroma key, keyframe animations,
+            audio mixing, and customizable templates — running 100% locally in
+            your browser with zero server lag.
           </p>
 
           <HeroAuthActions />
@@ -173,7 +242,11 @@ export default function LandingPage() {
             </span>
             <span className="inline-flex items-center gap-1.5">
               <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" aria-hidden />
-              Runs privately in your browser
+              Nothing leaves your device
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <Zap className="h-3.5 w-3.5 text-violet-400" aria-hidden />
+              No server lag
             </span>
           </div>
         </div>
@@ -202,22 +275,76 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Features */}
-      <section id="features" className="mx-auto max-w-6xl px-4 py-20 sm:px-6">
-        <div className="max-w-2xl">
+      {/* Dual interface: desktop vs mobile */}
+      <section id="studio" className="mx-auto max-w-6xl px-4 py-20 sm:px-6">
+        <div className="mx-auto max-w-2xl text-center">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-violet-400">
-            Built for speed
+            One engine, two interfaces
           </p>
           <h2 className="mt-3 text-3xl font-bold tracking-tight text-white sm:text-4xl">
-            Everything you need to go viral, in one workspace
+            A studio that adapts to your screen
           </h2>
           <p className="mt-4 text-zinc-400">
-            From raw footage to publish-ready shorts — captioned, reframed, and
-            exported in a single flow.
+            The same client-side engine renders a precision desktop workspace on
+            large screens and a touch-first editor on phones. Reach for whatever
+            device is in front of you — your project comes with it.
           </p>
         </div>
 
-        <div className="mt-12 grid gap-5 sm:grid-cols-2">
+        <div className="mt-12 grid gap-6 lg:grid-cols-2">
+          {INTERFACES.map((ui) => {
+            const Icon = ui.icon;
+            return (
+              <div key={ui.title} className="glass-card rounded-2xl p-6">
+                <div className="flex items-center gap-3">
+                  <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-violet-600/25 to-blue-600/20 text-violet-300 ring-1 ring-inset ring-violet-500/25">
+                    <Icon className="h-5 w-5" aria-hidden />
+                  </span>
+                  <div>
+                    <h3 className="text-lg font-semibold text-white">{ui.title}</h3>
+                    <p className="text-xs text-zinc-500">{ui.tagline}</p>
+                  </div>
+                  <code className="ml-auto shrink-0 rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1 text-[10px] text-violet-300">
+                    {ui.badge}
+                  </code>
+                </div>
+                <ul className="mt-5 space-y-3">
+                  {ui.points.map((point) => (
+                    <li
+                      key={point}
+                      className="flex items-start gap-2.5 text-sm text-zinc-300"
+                    >
+                      <Check
+                        className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400"
+                        aria-hidden
+                      />
+                      {point}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* Feature grid: 10 real client-side power tools */}
+      <section id="features" className="mx-auto max-w-6xl px-4 py-20 sm:px-6">
+        <div className="max-w-2xl">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-violet-400">
+            10 power tools · zero uploads
+          </p>
+          <h2 className="mt-3 text-3xl font-bold tracking-tight text-white sm:text-4xl">
+            Every tool runs locally in your browser
+          </h2>
+          <p className="mt-4 text-zinc-400">
+            From chroma key and keyframes to transitions, captions and audio
+            mixing — the whole studio is free and processes your footage on your
+            own device.
+          </p>
+        </div>
+
+        <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {FEATURES.map((feature) => {
             const Icon = feature.icon;
             return (
@@ -244,14 +371,15 @@ export default function LandingPage() {
       <section id="pricing" className="mx-auto max-w-6xl px-4 py-20 sm:px-6">
         <div className="mx-auto max-w-2xl text-center">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-violet-400">
-            Credits &amp; tiers
+            Free · credits &amp; tiers
           </p>
           <h2 className="mt-3 text-3xl font-bold tracking-tight text-white sm:text-4xl">
-            Generous credits, no card required
+            Everything&apos;s free — credits just pace your exports
           </h2>
           <p className="mt-4 text-zinc-400">
-            Exports cost {EXPORT_CREDIT_COST} credits and AI captions cost{" "}
-            {CAPTIONS_CREDIT_COST} — so a standard day covers a lot of clips.
+            Every tool in the studio is unlocked for everyone. Exports cost{" "}
+            {EXPORT_CREDIT_COST} credits and on-device captions cost{" "}
+            {CAPTIONS_CREDIT_COST}, so a standard day covers plenty of clips.
           </p>
         </div>
 
@@ -321,22 +449,31 @@ export default function LandingPage() {
           <div className="relative">
             <span className="inline-flex items-center gap-2 rounded-full border border-zinc-700/60 bg-zinc-900/60 px-3 py-1 text-xs text-zinc-300">
               <Zap className="h-3.5 w-3.5 text-amber-400" aria-hidden />
-              Your next viral clip is one upload away
+              No installs, no uploads, no waiting
             </span>
             <h2 className="mx-auto mt-5 max-w-2xl text-3xl font-bold tracking-tight text-white sm:text-4xl">
-              Clip smarter, not harder
+              Open the studio and start editing
             </h2>
             <p className="mx-auto mt-4 max-w-xl text-zinc-400">
-              Join creators turning long-form into high-performing shorts every
-              single day.
+              Launch the full multi-track editor right now — free, private, and
+              running at native speed on your own device.
             </p>
-            <Link
-              href="/login"
-              className="brand-gradient brand-gradient-hover mt-8 inline-flex items-center gap-2 rounded-xl px-6 py-3.5 text-sm font-semibold text-white shadow-xl shadow-violet-900/30 transition-transform hover:scale-[1.03]"
-            >
-              Start Clipping Free
-              <ArrowRight className="h-4 w-4" aria-hidden />
-            </Link>
+            <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+              <Link
+                href="/editor"
+                className="brand-gradient brand-gradient-hover inline-flex items-center gap-2 rounded-xl px-6 py-3.5 text-sm font-semibold text-white shadow-xl shadow-violet-900/30 transition-transform hover:scale-[1.03]"
+              >
+                Launch Studio
+                <ArrowRight className="h-4 w-4" aria-hidden />
+              </Link>
+              <Link
+                href="/projects"
+                className="inline-flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900/60 px-6 py-3.5 text-sm font-semibold text-zinc-200 transition-colors hover:border-zinc-600 hover:text-white"
+              >
+                <Send className="h-4 w-4" aria-hidden />
+                Open Editor
+              </Link>
+            </div>
           </div>
         </div>
       </section>
@@ -347,8 +484,9 @@ export default function LandingPage() {
           <div>
             <Logo size="md" />
             <p className="mt-4 max-w-xs text-sm leading-6 text-zinc-500">
-              The AI video clipper that turns long podcasts, streams, and
-              YouTube videos into viral shorts.
+              A free, professional in-browser video studio — multi-track editing,
+              chroma key, keyframes, captions, transitions and audio mixing, all
+              running locally on your device.
             </p>
             <div className="mt-5 flex flex-wrap gap-2">
               {["X", "YouTube", "Instagram", "GitHub"].map((social) => (
@@ -363,11 +501,11 @@ export default function LandingPage() {
           </div>
 
           <FooterCol
-            title="Product"
+            title="Studio"
             links={[
-              { label: "Features", href: "#features" },
+              { label: "10 Tools", href: "#features" },
+              { label: "Dual Interface", href: "#studio" },
               { label: "Pricing", href: "#pricing" },
-              { label: "Demo", href: "#preview" },
             ]}
           />
           <FooterCol
@@ -375,7 +513,7 @@ export default function LandingPage() {
             links={[
               { label: "Dashboard", href: "/dashboard" },
               { label: "Projects", href: "/projects" },
-              { label: "Channels", href: "/channels" },
+              { label: "Launch Editor", href: "/editor" },
             ]}
           />
           <FooterCol
@@ -402,7 +540,7 @@ export default function LandingPage() {
               <span className="inline-flex items-center gap-1.5">
                 <Gauge className="h-3.5 w-3.5 text-violet-400" aria-hidden />
                 <TrendingUp className="h-3.5 w-3.5 text-emerald-400" aria-hidden />
-                Optimized for growth
+                Runs at native speed
               </span>
             </span>
           </div>

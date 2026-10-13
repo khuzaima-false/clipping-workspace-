@@ -69,7 +69,7 @@ export function NavAuthActions() {
             href="/login"
             className="brand-gradient brand-gradient-hover inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-semibold text-white shadow-lg shadow-violet-900/30 transition-transform hover:scale-[1.03]"
           >
-            Start Clipping Free
+            Launch Studio
           </Link>
         </>
       )}
@@ -77,25 +77,26 @@ export function NavAuthActions() {
   );
 }
 
-/** Hero CTAs: "Start Clipping Free" becomes "Go to Workspace" when signed in. */
+/** Hero CTAs: "Launch Studio" + "Open Editor", auth-aware. */
 export function HeroAuthActions() {
   const user = useAuthedUser();
+  const studioHref = user ? "/editor" : "/login";
 
   return (
     <div className="mt-8 flex flex-wrap items-center gap-3">
       <Link
-        href={user ? "/dashboard" : "/login"}
+        href={studioHref}
         className="brand-gradient brand-gradient-hover inline-flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold text-white shadow-xl shadow-violet-900/30 transition-transform hover:scale-[1.03]"
       >
-        {user ? "Go to Workspace" : "Start Clipping Free"}
+        Launch Studio
         <ArrowRight className="h-4 w-4" aria-hidden />
       </Link>
-      <a
-        href="#preview"
+      <Link
+        href={studioHref}
         className="inline-flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900/60 px-5 py-3 text-sm font-semibold text-zinc-200 backdrop-blur transition-colors hover:border-zinc-600 hover:text-white"
       >
-        Watch Demo
-      </a>
+        Open Editor
+      </Link>
     </div>
   );
 }

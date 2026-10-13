@@ -43,6 +43,14 @@ export type AudioMixTrack = {
   trimStart: number;
   /** Playable length after `trimStart` (seconds). */
   duration: number;
+  /** When true the track is omitted from the mix. */
+  muted?: boolean;
+  /** When true (and at least one track is soloed) other tracks are omitted. */
+  solo?: boolean;
+  /** Fade-in length (seconds). */
+  fadeIn?: number;
+  /** Fade-out length (seconds). */
+  fadeOut?: number;
 };
 
 export type MixTimelineAudioOptions = {
@@ -85,8 +93,12 @@ export async function mixTimelineAudio(
     }
   }
 
+  const soloActive = options.tracks.some((track) => track.solo && !track.muted);
+
   for (const track of options.tracks) {
     if (!track.buffer) continue;
+    if (track.muted) continue;
+    if (soloActive && !track.solo) continue;
     const timelineStart = track.startTime;
     const timelineEnd = track.startTime + track.duration;
     const playStart = Math.max(timelineStart, options.trimStart);
@@ -99,8 +111,20 @@ export async function mixTimelineAudio(
     const duration = Math.min(playEnd - playStart, available);
     if (duration <= 0) continue;
 
+    const peak = Math.min(Math.max(track.volume, 0), 1);
+    const fadeIn = Math.max(0, track.fadeIn ?? 0);
+    const fadeOut = Math.max(0, track.fadeOut ?? 0);
+
     const gain = offline.createGain();
-    gain.gain.value = Math.min(Math.max(track.volume, 0), 1);
+    // Volume envelope: fade in from silence, hold, then fade out.
+    const fadeInEnd = when + Math.min(fadeIn, duration);
+    const fadeOutStart = Math.max(when, when + duration - Math.min(fadeOut, duration));
+    gain.gain.setValueAtTime(fadeIn > 0 ? 0 : peak, when);
+    if (fadeIn > 0) gain.gain.linearRampToValueAtTime(peak, fadeInEnd);
+    if (fadeOut > 0) {
+      gain.gain.setValueAtTime(peak, Math.max(fadeInEnd, fadeOutStart));
+      gain.gain.linearRampToValueAtTime(0, when + duration);
+    }
 
     const source = offline.createBufferSource();
     source.buffer = track.buffer;

@@ -76,14 +76,44 @@ export type StoredAssetMeta = {
 /** In-memory asset: metadata + its decoded Blob. */
 export type VideoAsset = StoredAssetMeta & { blob: Blob };
 
+/** Cross-clip transition applied at the START of a clip (from the previous). */
+export type TransitionType =
+  | "crossDissolve"
+  | "dipToBlack"
+  | "whipPan"
+  | "glitchCut"
+  | "zoomIn";
+
 /** One clip placed on the timeline sequence, referencing a library asset. */
 export type TimelineClip = {
   id: string;
   assetId: string;
-  /** Seconds trimmed from the start of the source. */
+  /** Seconds trimmed from the start of the source (in-point). */
   trimStart: number;
-  /** Seconds trimmed to the end of the source. */
+  /** Seconds trimmed to the end of the source (out-point). */
   trimEnd: number;
+  /**
+   * Absolute position (seconds) on the master timeline. When omitted the clip
+   * simply flows after the previous clip, so existing projects keep their
+   * sequential layout.
+   */
+  timelineStart?: number;
+  /**
+   * Per-clip chroma-key (green/blue screen) settings. Kept structurally typed
+   * here to avoid importing the store type (and its cycle).
+   */
+  chromaKey?: {
+    enabled: boolean;
+    color: string;
+    tolerance: number;
+    feather: number;
+  };
+  /** Transition blended into this clip from the previous one. */
+  transitionIn?: {
+    type: TransitionType;
+    /** Overlap length in seconds. */
+    duration: number;
+  };
 };
 
 /** Persisted metadata for one audio track (binary lives under `mediaId`). */
@@ -95,6 +125,11 @@ export type StoredAudio = {
   volume: number;
   trimStart: number;
   duration: number;
+  muted?: boolean;
+  solo?: boolean;
+  fadeIn?: number;
+  fadeOut?: number;
+  synth?: boolean;
 };
 
 export type ProjectMedia = {

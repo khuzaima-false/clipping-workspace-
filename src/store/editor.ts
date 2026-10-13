@@ -9,6 +9,7 @@ import {
   type StoredAssetMeta,
   type StoredAudio,
   type TimelineClip,
+  type TransitionType,
   type VideoAsset,
 } from "@/lib/video-storage";
 import {
@@ -17,9 +18,13 @@ import {
   newMediaId,
   saveMediaFile,
 } from "@/lib/media-storage";
+import { renderSoundEffect, SOUND_EFFECTS, type SoundEffectId } from "@/lib/sfx";
+import { audioPreview } from "@/lib/audio-preview";
 import type { CaptionLanguageId } from "@/lib/transcribe";
 
-export type AspectRatio = "9:16" | "16:9" | "1:1";
+export type AspectRatio = "9:16" | "16:9" | "1:1" | "21:9";
+/** How mismatched media fills the canvas behind the letterboxed frame. */
+export type CanvasFill = "black" | "blur";
 export type VideoFit = "contain" | "cover";
 export type OverlayAlign = "left" | "center" | "right";
 
@@ -40,6 +45,9 @@ export type CaptionAnimation =
   | "fadeIn"
   | "neon";
 
+/** One-tap social caption looks. */
+export type CaptionPreset = "classic" | "karaoke" | "bounce" | "neonBox";
+
 /** Global styling applied to every auto-generated caption overlay. */
 export type CaptionStyle = {
   /** Highlight the word currently being spoken (Hormozi / CapCut style). */
@@ -50,6 +58,8 @@ export type CaptionStyle = {
   animation: CaptionAnimation;
   /** Fill color for the active/highlighted word. */
   highlightColor: string;
+  /** Selected social-media caption look (drives the fields above). */
+  preset: CaptionPreset;
 };
 
 export const DEFAULT_CAPTION_STYLE: CaptionStyle = {
@@ -57,6 +67,45 @@ export const DEFAULT_CAPTION_STYLE: CaptionStyle = {
   textStroke: true,
   animation: "pop",
   highlightColor: "#facc15",
+  preset: "classic",
+};
+
+/** Chroma-key (green/blue screen) settings. Runs entirely on the CPU canvas. */
+export type ChromaKeySettings = {
+  enabled: boolean;
+  /** Key color, hex. */
+  color: string;
+  /** 0..100 — how far a pixel may stray from the key color before it is cut. */
+  tolerance: number;
+  /** 0..100 — softens the cut edge to avoid a hard, aliased matte. */
+  feather: number;
+};
+
+export const DEFAULT_CHROMA_KEY: ChromaKeySettings = {
+  enabled: false,
+  color: "#00ff00",
+  tolerance: 32,
+  feather: 22,
+};
+
+/**
+ * A transform keyframe for an overlay. Values are linear-interpolated between
+ * adjacent keyframes during playback so overlays can animate over time.
+ */
+export type OverlayKeyframe = {
+  id: string;
+  /** Position on the timeline (seconds) where this pose applies. */
+  time: number;
+  /** Scale multiplier, 1 = the overlay's base size. */
+  scale: number;
+  /** Horizontal anchor, 0..100 (% of canvas width). */
+  x: number;
+  /** Vertical anchor, 0..100 (% of canvas height). */
+  y: number;
+  /** Opacity, 0..100. */
+  opacity: number;
+  /** Rotation, degrees. */
+  rotation: number;
 };
 
 /** Default frame rate used for frame-stepping and export. */
@@ -113,6 +162,16 @@ export type AudioTrack = {
   trimStart: number;
   /** Usable length of the source after `trimStart`. */
   duration: number;
+  /** Mute this track during preview + export. */
+  muted: boolean;
+  /** Solo this track (all non-soloed tracks are silenced). */
+  solo: boolean;
+  /** Fade-in length in seconds. */
+  fadeIn: number;
+  /** Fade-out length in seconds. */
+  fadeOut: number;
+  /** True for built-in synthesized sound effects. */
+  synth?: boolean;
 };
 
 export type TextOverlay = {
@@ -157,6 +216,8 @@ export type TextOverlay = {
   imageSrc?: string;
   /** Blur (px) applied behind an image overlay. */
   bgBlur?: number;
+  /** Transform keyframes; when present the renderer LERPs between them. */
+  keyframes?: OverlayKeyframe[];
 };
 
 /** A keyframe on the speed (velocity) curve. `time` is in source-video seconds. */
@@ -169,7 +230,23 @@ export const MIN_SPEED = 0.2;
 export const MAX_SPEED = 5;
 
 /** Named velocity presets, plus `custom` once the user edits the curve. */
-export type SpeedPreset = "none" | "montage" | "hero" | "bullet" | "custom";
+export type SpeedPreset = "none" | "montage" | "hero" | "bullet" | "jumpCut" | "custom";
+
+/** Cross-clip transition presets offered by the Transitions library. */
+export type TransitionPreset = {
+  id: TransitionType;
+  label: string;
+  /** Default overlap length (seconds). */
+  duration: number;
+};
+
+export const TRANSITION_PRESETS: TransitionPreset[] = [
+  { id: "crossDissolve", label: "Cross Dissolve", duration: 0.6 },
+  { id: "dipToBlack", label: "Dip to Black", duration: 0.5 },
+  { id: "whipPan", label: "Whip Pan", duration: 0.4 },
+  { id: "glitchCut", label: "Glitch Cut", duration: 0.3 },
+  { id: "zoomIn", label: "Zoom In", duration: 0.5 },
+];
 
 export type VideoEffectType =
   | "zoom-in"
@@ -230,7 +307,7 @@ export function normalizeSpeedPoints(points: SpeedPoint[]): SpeedPoint[] {
 }
 
 /** Normalized shapes (0..1 of the clip) expanded across the video duration. */
-const PRESET_SHAPES: Record<"montage" | "hero" | "bullet", SpeedPoint[]> = {
+const PRESET_SHAPES: Record<"montage" | "hero" | "bullet" | "jumpCut", SpeedPoint[]> = {
   montage: [
     { time: 0, speed: 1 },
     { time: 0.15, speed: 3 },
@@ -252,6 +329,20 @@ const PRESET_SHAPES: Record<"montage" | "hero" | "bullet", SpeedPoint[]> = {
     { time: 0.62, speed: 0.25 },
     { time: 0.72, speed: 1.5 },
     { time: 1, speed: 1.5 },
+  ],
+  // Fast spikes that read like hard jump cuts without changing clip count.
+  jumpCut: [
+    { time: 0, speed: 1 },
+    { time: 0.18, speed: 1 },
+    { time: 0.2, speed: 5 },
+    { time: 0.28, speed: 1 },
+    { time: 0.46, speed: 1 },
+    { time: 0.48, speed: 5 },
+    { time: 0.56, speed: 1 },
+    { time: 0.74, speed: 1 },
+    { time: 0.76, speed: 5 },
+    { time: 0.84, speed: 1 },
+    { time: 1, speed: 1 },
   ],
 };
 
@@ -311,6 +402,26 @@ export function createId(prefix: string): string {
     : `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
+/**
+ * Resolves every sequence clip to its absolute timeline position and length.
+ * Clips without an explicit `timelineStart` flow after the previous clip, so
+ * sequential projects keep their layout while dragged clips stay put.
+ */
+export function computeClipStarts(
+  sequence: TimelineClip[]
+): { clip: TimelineClip; start: number; dur: number }[] {
+  let cursor = 0;
+  return sequence.map((clip) => {
+    const dur = Math.max(0.1, clip.trimEnd - clip.trimStart);
+    const start =
+      typeof clip.timelineStart === "number" && clip.timelineStart >= 0
+        ? clip.timelineStart
+        : cursor;
+    cursor = start + dur;
+    return { clip, start, dur };
+  });
+}
+
 function createOverlay(duration: number): TextOverlay {
   return {
     id: createId("overlay"),
@@ -348,6 +459,8 @@ export type EditSnapshot = {
   fit: VideoFit;
   offsetX: number;
   offsetY: number;
+  canvasFill: CanvasFill;
+  chromaKey: ChromaKeySettings;
 };
 
 type EditorState = {
@@ -389,6 +502,8 @@ type EditorState = {
   fit: VideoFit;
   offsetX: number;
   offsetY: number;
+  /** Background fill strategy for letterboxed / mismatched media. */
+  canvasFill: CanvasFill;
 
   overlays: TextOverlay[];
   selectedId: string | null;
@@ -421,6 +536,10 @@ type EditorState = {
   speedPoints: SpeedPoint[];
   /** Timed visual effects applied over the video frame. */
   activeEffects: VideoEffect[];
+  /** Chroma-key (green screen) settings for the active clip. */
+  chromaKey: ChromaKeySettings;
+  /** True while the program monitor acts as a color eyedropper. */
+  eyedropper: boolean;
 
   loadVideo: (file: File) => void;
   /** Applies raw video bytes (e.g. restored from IndexedDB) to the editor. */
@@ -445,10 +564,18 @@ type EditorState = {
   duplicateActiveClip: () => void;
   /** Reorders a clip up (-1) or down (+1). */
   moveClip: (clipId: string, direction: -1 | 1) => void;
+  /** Repositions a clip freely along the timeline (seconds). */
+  moveClipTo: (clipId: string, timelineStart: number) => void;
   /** Updates a clip's trim range. */
   setClipTrim: (
     clipId: string,
     patch: { trimStart?: number; trimEnd?: number }
+  ) => void;
+  /** Sets (or clears) the transition blended into a clip from the previous one. */
+  setClipTransition: (
+    clipId: string,
+    type: TransitionType | null,
+    duration?: number
   ) => void;
   /** Restores an undo/redo snapshot of the editable timeline state. */
   restoreEdit: (snapshot: EditSnapshot) => void;
@@ -471,12 +598,20 @@ type EditorState = {
   setHdRendering: (enabled: boolean) => void;
   setFit: (fit: VideoFit) => void;
   setOffset: (x: number, y: number) => void;
+  /** Sets the letterbox background fill strategy. */
+  setCanvasFill: (fill: CanvasFill) => void;
   addOverlay: () => void;
+  /** Adds a text/emoji sticker overlay at a larger default size. */
+  addTextSticker: (text: string, fontSize?: number) => void;
+  /** Adds a graphic (SVG data URL) sticker overlay, centered. */
+  addStickerImage: (src: string) => void;
   /** Adds a bitmap (PNG data URL) overlay layer (renders on V2). */
   addImageOverlay: (src: string, duration?: number) => void;
   updateOverlay: (id: string, patch: Partial<Omit<TextOverlay, "id">>) => void;
   setOverlayStartTime: (id: string, time: number) => void;
   setOverlayEndTime: (id: string, time: number) => void;
+  /** Shifts an overlay along the timeline, preserving its duration. */
+  moveOverlayTo: (id: string, startTime: number) => void;
   removeOverlay: (id: string) => void;
   selectOverlay: (id: string | null) => void;
   setCaptionStyle: (patch: Partial<CaptionStyle>) => void;
@@ -490,7 +625,11 @@ type EditorState = {
   resetColorAdjustments: () => void;
   /** Decodes and appends one or more uploaded audio files. */
   addAudioFiles: (files: FileList | File[]) => Promise<void>;
+  /** Decodes a recorded blob (voiceover / mic) and appends it as a track. */
+  addAudioTrackFromBlob: (blob: Blob, name: string) => Promise<void>;
   updateAudioTrack: (id: string, patch: Partial<Omit<AudioTrack, "id">>) => void;
+  /** Repositions an audio track along the timeline (seconds). */
+  moveAudioTrackTo: (id: string, startTime: number) => void;
   removeAudioTrack: (id: string) => void;
   /** Applies a named velocity preset (scaled to the clip duration). */
   setSpeedPreset: (preset: SpeedPreset) => void;
@@ -506,8 +645,34 @@ type EditorState = {
     id: string,
     patch: Partial<Omit<VideoEffect, "id" | "type">>
   ) => void;
+  /** Repositions an effect along the timeline (seconds). */
+  moveEffectTo: (id: string, startTime: number) => void;
   removeEffect: (id: string) => void;
   clearEffects: () => void;
+
+  /* Chroma key (green/blue screen) */
+  /** Merges a chroma-key update for the active clip. */
+  setChromaKey: (patch: Partial<ChromaKeySettings>) => void;
+  /** Disables and resets chroma keying. */
+  resetChromaKey: () => void;
+  /** Toggles the program-monitor eyedropper (color picker) mode. */
+  setEyedropper: (active: boolean) => void;
+
+  /* Overlay keyframes */
+  /** Records the selected overlay's current transform at the playhead. */
+  addOverlayKeyframe: (overlayId?: string) => void;
+  removeOverlayKeyframe: (overlayId: string, keyframeId: string) => void;
+  clearOverlayKeyframes: (overlayId: string) => void;
+
+  /* Captions */
+  /** Applies a one-tap social caption preset. */
+  applyCaptionPreset: (preset: CaptionPreset) => void;
+  /** Builds timed caption overlays from a typed script (no server). */
+  generateCaptionsFromScript: (script: string) => Promise<void>;
+
+  /* Sound effects */
+  /** Synthesizes and appends a royalty-free sound effect. */
+  addSoundEffect: (id: SoundEffectId) => Promise<void>;
 };
 
 function releaseVideo(el: HTMLVideoElement | null, url: string | null): void {
@@ -540,7 +705,7 @@ function persistProject(state: EditorState): void {
     })
   );
   const audioMeta: StoredAudio[] = state.audioTracks.map(
-    ({ id, mediaId, name, startTime, volume, trimStart, duration }) => ({
+    ({ id, mediaId, name, startTime, volume, trimStart, duration, muted, solo, fadeIn, fadeOut, synth }) => ({
       id,
       mediaId,
       name,
@@ -548,6 +713,11 @@ function persistProject(state: EditorState): void {
       volume,
       trimStart,
       duration,
+      muted,
+      solo,
+      fadeIn,
+      fadeOut,
+      synth,
     })
   );
   void saveProjectMedia(state.projectId, {
@@ -576,6 +746,8 @@ function snapshotOf(state: EditorState): EditSnapshot {
     fit: state.fit,
     offsetX: state.offsetX,
     offsetY: state.offsetY,
+    canvasFill: state.canvasFill,
+    chromaKey: state.chromaKey,
   };
 }
 
@@ -612,6 +784,7 @@ export const useEditorStore = create<EditorState>()(
   fit: "contain",
   offsetX: 0,
   offsetY: 0,
+  canvasFill: "black",
 
   overlays: [],
   selectedId: null,
@@ -633,6 +806,8 @@ export const useEditorStore = create<EditorState>()(
   speedPreset: "none",
   speedPoints: [{ time: 0, speed: 1 }],
   activeEffects: [],
+  chromaKey: DEFAULT_CHROMA_KEY,
+  eyedropper: false,
 
   loadVideo: (file) => {
     const isVideo =
@@ -864,6 +1039,11 @@ export const useEditorStore = create<EditorState>()(
           volume: raw.volume,
           trimStart: raw.trimStart,
           duration: raw.duration,
+          muted: raw.muted ?? false,
+          solo: raw.solo ?? false,
+          fadeIn: raw.fadeIn ?? 0,
+          fadeOut: raw.fadeOut ?? 0,
+          synth: raw.synth,
         });
       }
 
@@ -880,6 +1060,7 @@ export const useEditorStore = create<EditorState>()(
             trimStart: firstClip.trimStart,
             trimEnd: firstClip.trimEnd,
           },
+          chromaKey: firstClip.chromaKey ?? DEFAULT_CHROMA_KEY,
         });
         get().loadVideoBlob(asset.blob, asset.name);
         return;
@@ -933,7 +1114,11 @@ export const useEditorStore = create<EditorState>()(
     const firstClip = newClips[0];
     const firstAsset = assets.find((asset) => asset.id === firstClip.assetId);
     if (firstAsset) {
-      set({ activeClipId: firstClip.id, pendingTrim: null });
+      set({
+        activeClipId: firstClip.id,
+        pendingTrim: null,
+        chromaKey: DEFAULT_CHROMA_KEY,
+      });
       get().loadVideoBlob(firstAsset.blob, firstAsset.name);
     }
   },
@@ -979,6 +1164,7 @@ export const useEditorStore = create<EditorState>()(
     set({
       activeClipId: clipId,
       pendingTrim: { trimStart: clip.trimStart, trimEnd: clip.trimEnd },
+      chromaKey: clip.chromaKey ?? DEFAULT_CHROMA_KEY,
     });
     get().loadVideoBlob(asset.blob, asset.name);
   },
@@ -1028,11 +1214,52 @@ export const useEditorStore = create<EditorState>()(
     persistProject(get());
   },
 
+  moveClipTo: (clipId, timelineStart) => {
+    set({
+      sequence: get().sequence.map((clip) =>
+        clip.id === clipId
+          ? { ...clip, timelineStart: Math.max(0, timelineStart) }
+          : clip
+      ),
+    });
+    persistProject(get());
+  },
+
   setClipTrim: (clipId, patch) => {
-    const sequence = get().sequence.map((clip) =>
-      clip.id === clipId ? { ...clip, ...patch } : clip
-    );
+    const sequence = get().sequence.map((clip) => {
+      if (clip.id !== clipId) return clip;
+      const next = { ...clip, ...patch };
+      next.trimStart = Math.max(0, next.trimStart);
+      if (!(next.trimEnd > next.trimStart + 0.05)) {
+        // Keep a minimum span, honouring whichever edge was just moved.
+        if (patch.trimEnd !== undefined) next.trimEnd = next.trimStart + 0.1;
+        else next.trimStart = Math.max(0, next.trimEnd - 0.1);
+      }
+      return next;
+    });
     set({ sequence });
+    persistProject(get());
+  },
+
+  setClipTransition: (clipId, type, duration) => {
+    set({
+      sequence: get().sequence.map((clip) => {
+        if (clip.id !== clipId) return clip;
+        if (!type) {
+          const rest = { ...clip };
+          delete rest.transitionIn;
+          return rest;
+        }
+        const preset = TRANSITION_PRESETS.find((item) => item.id === type);
+        return {
+          ...clip,
+          transitionIn: {
+            type,
+            duration: Math.max(0.1, duration ?? preset?.duration ?? 0.5),
+          },
+        };
+      }),
+    });
     persistProject(get());
   },
 
@@ -1051,6 +1278,8 @@ export const useEditorStore = create<EditorState>()(
       fit: snapshot.fit,
       offsetX: snapshot.offsetX,
       offsetY: snapshot.offsetY,
+      canvasFill: snapshot.canvasFill,
+      chromaKey: snapshot.chromaKey,
     }),
 
   undo: () => {
@@ -1133,6 +1362,7 @@ export const useEditorStore = create<EditorState>()(
     const { videoEl, videoUrl, audioTracks } = get();
     releaseVideo(videoEl, videoUrl);
     for (const track of audioTracks) URL.revokeObjectURL(track.url);
+    audioPreview.stop();
 
     set({
       videoEl: null,
@@ -1158,6 +1388,7 @@ export const useEditorStore = create<EditorState>()(
       fit: "contain",
       offsetX: 0,
       offsetY: 0,
+      canvasFill: "black",
       overlays: [],
       selectedId: null,
       captionStyle: DEFAULT_CAPTION_STYLE,
@@ -1175,6 +1406,8 @@ export const useEditorStore = create<EditorState>()(
       speedPreset: "none",
       speedPoints: [{ time: 0, speed: 1 }],
       activeEffects: [],
+      chromaKey: DEFAULT_CHROMA_KEY,
+      eyedropper: false,
     });
   },
 
@@ -1217,25 +1450,40 @@ export const useEditorStore = create<EditorState>()(
   },
 
   setTrimStart: (time) => {
-    const { trimEnd, duration } = get();
+    const { trimEnd, duration, videoEl } = get();
     const max = Math.max(0, Math.min(trimEnd - 0.1, duration || trimEnd));
-    set({ trimStart: Math.min(Math.max(time, 0), max) });
+    const next = Math.min(Math.max(time, 0), max);
+    set({ trimStart: next });
+    // Bring the playhead up to the new in-point so the trimmed head is visible.
+    if (videoEl && videoEl.currentTime < next) {
+      videoEl.currentTime = next;
+      set({ currentTime: next });
+    }
     const id = get().activeClipId;
-    if (id) get().setClipTrim(id, { trimStart: get().trimStart });
+    if (id) get().setClipTrim(id, { trimStart: next });
   },
 
   setTrimEnd: (time) => {
-    const { trimStart, duration } = get();
+    const { trimStart, duration, videoEl } = get();
     if (duration <= 0) return;
     const min = Math.min(Math.max(trimStart + 0.1, 0), duration);
-    set({ trimEnd: Math.max(Math.min(time, duration), min) });
+    const next = Math.max(Math.min(time, duration), min);
+    set({ trimEnd: next });
+    // If the out-point was pulled before the playhead, snap it back so the
+    // preview never renders past the trimmed endpoint.
+    if (videoEl && videoEl.currentTime > next) {
+      videoEl.currentTime = next;
+      set({ currentTime: next });
+    }
     const id = get().activeClipId;
-    if (id) get().setClipTrim(id, { trimEnd: get().trimEnd });
+    if (id) get().setClipTrim(id, { trimEnd: next });
   },
 
   resetTrim: () => {
     const { duration } = get();
     set({ trimStart: 0, trimEnd: duration });
+    const id = get().activeClipId;
+    if (id) get().setClipTrim(id, { trimStart: 0, trimEnd: duration });
   },
 
   setAspect: (aspect) => set({ aspect }),
@@ -1250,8 +1498,34 @@ export const useEditorStore = create<EditorState>()(
       offsetY: Math.min(Math.max(y, -100), 100),
     }),
 
+  setCanvasFill: (fill) => set({ canvasFill: fill }),
+
   addOverlay: () => {
     const overlay = createOverlay(get().duration);
+    set({ overlays: [...get().overlays, overlay], selectedId: overlay.id });
+  },
+
+  addTextSticker: (text, fontSize = 120) => {
+    const overlay: TextOverlay = {
+      ...createOverlay(get().duration),
+      text,
+      fontSize,
+      x: 50,
+      y: 50,
+      padding: 0,
+      bgColor: "",
+    };
+    set({ overlays: [...get().overlays, overlay], selectedId: overlay.id });
+  },
+
+  addStickerImage: (src) => {
+    const overlay: TextOverlay = {
+      ...createOverlay(get().duration),
+      text: "",
+      imageSrc: src,
+      x: 50,
+      y: 50,
+    };
     set({ overlays: [...get().overlays, overlay], selectedId: overlay.id });
   },
 
@@ -1296,6 +1570,20 @@ export const useEditorStore = create<EditorState>()(
     set({
       overlays: overlays.map((item) =>
         item.id === id ? { ...item, endTime } : item
+      ),
+    });
+  },
+
+  moveOverlayTo: (id, startTime) => {
+    const { overlays, duration } = get();
+    const overlay = overlays.find((item) => item.id === id);
+    if (!overlay) return;
+    const span = Math.max(0.1, overlay.endTime - overlay.startTime);
+    const upper = duration > 0 ? Math.max(0, duration - span) : Number.MAX_SAFE_INTEGER;
+    const start = Math.min(Math.max(startTime, 0), upper);
+    set({
+      overlays: overlays.map((item) =>
+        item.id === id ? { ...item, startTime: start, endTime: start + span } : item
       ),
     });
   },
@@ -1425,6 +1713,10 @@ export const useEditorStore = create<EditorState>()(
           volume: 1,
           trimStart: 0,
           duration: decoded?.duration ?? 0,
+          muted: false,
+          solo: false,
+          fadeIn: 0,
+          fadeOut: 0,
         };
         set({ audioTracks: [...get().audioTracks, track], audioTrackError: null });
       }
@@ -1434,6 +1726,48 @@ export const useEditorStore = create<EditorState>()(
           error instanceof Error
             ? error.message
             : "That audio file could not be decoded.",
+      });
+    }
+  },
+
+  addAudioTrackFromBlob: async (blob, name) => {
+    try {
+      const { decodeAudioFile } = await import("@/lib/audio");
+      const mediaId = newMediaId();
+      try {
+        await saveMediaFile(mediaId, blob);
+      } catch {
+        // Storage can fail; playback still works this session.
+      }
+      const url = URL.createObjectURL(blob);
+      const file =
+        blob instanceof File
+          ? blob
+          : new File([blob], name, { type: blob.type || "audio/webm" });
+      const decoded = await decodeAudioFile(file);
+      const track: AudioTrack = {
+        id: createId("audio"),
+        mediaId,
+        name,
+        url,
+        file,
+        buffer: decoded?.buffer ?? null,
+        startTime: get().currentTime,
+        volume: 1,
+        trimStart: 0,
+        duration: decoded?.duration ?? 0,
+        muted: false,
+        solo: false,
+        fadeIn: 0,
+        fadeOut: 0,
+      };
+      set({ audioTracks: [...get().audioTracks, track], audioTrackError: null });
+    } catch (error) {
+      set({
+        audioTrackError:
+          error instanceof Error
+            ? error.message
+            : "That recording could not be decoded.",
       });
     }
   },
@@ -1448,8 +1782,17 @@ export const useEditorStore = create<EditorState>()(
         next.volume = Math.min(Math.max(next.volume, 0), 1);
         next.startTime = Math.max(0, next.startTime);
         next.duration = Math.min(Math.max(next.duration, 0), Math.max(0, maxDuration - next.trimStart));
+        next.fadeIn = Math.max(0, Math.min(next.fadeIn ?? 0, next.duration));
+        next.fadeOut = Math.max(0, Math.min(next.fadeOut ?? 0, next.duration));
         return next;
       }),
+    }),
+
+  moveAudioTrackTo: (id, startTime) =>
+    set({
+      audioTracks: get().audioTracks.map((track) =>
+        track.id === id ? { ...track, startTime: Math.max(0, startTime) } : track
+      ),
     }),
 
   removeAudioTrack: (id) => {
@@ -1531,12 +1874,189 @@ export const useEditorStore = create<EditorState>()(
       ),
     }),
 
+  moveEffectTo: (id, startTime) => {
+    const { activeEffects, duration } = get();
+    set({
+      activeEffects: activeEffects.map((effect) => {
+        if (effect.id !== id) return effect;
+        const upper =
+          duration > 0
+            ? Math.max(0, duration - effect.duration)
+            : Number.MAX_SAFE_INTEGER;
+        return { ...effect, startTime: Math.min(Math.max(startTime, 0), upper) };
+      }),
+    });
+  },
+
   removeEffect: (id) =>
     set({
       activeEffects: get().activeEffects.filter((effect) => effect.id !== id),
     }),
 
   clearEffects: () => set({ activeEffects: [] }),
+
+  setChromaKey: (patch) => {
+    const next = { ...get().chromaKey, ...patch };
+    set({ chromaKey: next });
+    const id = get().activeClipId;
+    if (id) {
+      set({
+        sequence: get().sequence.map((clip) =>
+          clip.id === id ? { ...clip, chromaKey: next } : clip
+        ),
+      });
+      persistProject(get());
+    }
+  },
+
+  resetChromaKey: () => get().setChromaKey({ ...DEFAULT_CHROMA_KEY }),
+
+  setEyedropper: (active) => set({ eyedropper: active }),
+
+  addOverlayKeyframe: (overlayId) => {
+    const id = overlayId ?? get().selectedId;
+    if (!id) return;
+    const overlay = get().overlays.find((item) => item.id === id);
+    if (!overlay) return;
+    const time = get().currentTime;
+    const keyframe: OverlayKeyframe = {
+      id: createId("kf"),
+      time,
+      scale: 1,
+      x: overlay.x,
+      y: overlay.y,
+      opacity: overlay.opacity,
+      rotation: overlay.rotation,
+    };
+    // Replace any existing keyframe at (nearly) the same time.
+    const existing = (overlay.keyframes ?? []).filter(
+      (frame) => Math.abs(frame.time - time) > 0.05
+    );
+    const keyframes = [...existing, keyframe].sort((a, b) => a.time - b.time);
+    set({
+      overlays: get().overlays.map((item) =>
+        item.id === id ? { ...item, keyframes } : item
+      ),
+      selectedId: id,
+    });
+  },
+
+  removeOverlayKeyframe: (overlayId, keyframeId) =>
+    set({
+      overlays: get().overlays.map((item) =>
+        item.id === overlayId
+          ? {
+              ...item,
+              keyframes: (item.keyframes ?? []).filter(
+                (frame) => frame.id !== keyframeId
+              ),
+            }
+          : item
+      ),
+    }),
+
+  clearOverlayKeyframes: (overlayId) =>
+    set({
+      overlays: get().overlays.map((item) =>
+        item.id === overlayId ? { ...item, keyframes: [] } : item
+      ),
+    }),
+
+  applyCaptionPreset: (preset) => {
+    const patches: Record<CaptionPreset, Partial<CaptionStyle>> = {
+      classic: {
+        preset: "classic",
+        animation: "pop",
+        activeWordHighlight: true,
+        textStroke: true,
+      },
+      karaoke: {
+        preset: "karaoke",
+        animation: "karaoke",
+        activeWordHighlight: true,
+        textStroke: true,
+        highlightColor: "#facc15",
+      },
+      bounce: {
+        preset: "bounce",
+        animation: "bounce",
+        activeWordHighlight: true,
+        textStroke: true,
+      },
+      neonBox: {
+        preset: "neonBox",
+        animation: "neon",
+        activeWordHighlight: false,
+        textStroke: false,
+        highlightColor: "#22d3ee",
+      },
+    };
+    set({ captionStyle: { ...get().captionStyle, ...patches[preset] } });
+    // Give existing auto captions a matching box look.
+    set({
+      overlays: get().overlays.map((overlay) => {
+        if (!overlay.auto) return overlay;
+        if (preset === "neonBox") {
+          return { ...overlay, bgColor: "#09090b", padding: 30, radius: 18 };
+        }
+        return { ...overlay, bgColor: "", padding: 0, radius: 0 };
+      }),
+    });
+  },
+
+  generateCaptionsFromScript: async (script) => {
+    const trimmed = script.trim();
+    if (!trimmed) {
+      set({ transcriptionError: "Type or dictate a script first." });
+      return;
+    }
+    const { buildScriptCaptions } = await import("@/lib/captions");
+    const captions = buildScriptCaptions(trimmed, {
+      duration: get().duration,
+      aspect: get().aspect,
+    });
+    if (captions.length === 0) return;
+    set({
+      overlays: [...get().overlays.filter((overlay) => !overlay.auto), ...captions],
+      selectedId: captions[0]?.id ?? get().selectedId,
+      transcriptionError: null,
+    });
+  },
+
+  addSoundEffect: async (id) => {
+    const spec = SOUND_EFFECTS.find((effect) => effect.id === id);
+    const rendered = await renderSoundEffect(id);
+    if (!rendered) {
+      set({ audioTrackError: "Sound effects are not supported in this browser." });
+      return;
+    }
+    const mediaId = newMediaId();
+    try {
+      await saveMediaFile(mediaId, rendered.blob);
+    } catch {
+      // Storage can fail (quota / private mode); playback still works now.
+    }
+    const url = URL.createObjectURL(rendered.blob);
+    const file = new File([rendered.blob], `${id}.wav`, { type: "audio/wav" });
+    const track: AudioTrack = {
+      id: createId("sfx"),
+      mediaId,
+      name: spec?.label ?? id,
+      url,
+      file,
+      buffer: rendered.buffer,
+      startTime: get().currentTime,
+      volume: 1,
+      trimStart: 0,
+      duration: rendered.buffer.duration,
+      muted: false,
+      solo: false,
+      fadeIn: 0.01,
+      fadeOut: 0.12,
+      synth: true,
+    };
+    set({ audioTracks: [...get().audioTracks, track], audioTrackError: null });
+  },
   })),
 );
 
@@ -1560,6 +2080,8 @@ useEditorStore.subscribe(
     fit: state.fit,
     offsetX: state.offsetX,
     offsetY: state.offsetY,
+    canvasFill: state.canvasFill,
+    chromaKey: state.chromaKey,
   }),
   (_current, previous) => {
     if (historyPaused) return;

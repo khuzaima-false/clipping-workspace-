@@ -2,7 +2,9 @@ import type {
   AspectRatio,
   CaptionAnimation,
   CaptionStyle,
+  ChromaKeySettings,
   ColorAdjustments,
+  OverlayKeyframe,
   SpeedPoint,
   TextOverlay,
   VideoEffect,
@@ -12,6 +14,7 @@ import {
   DEFAULT_CAPTION_STYLE,
   DEFAULT_COLOR_ADJUSTMENTS,
 } from "@/store/editor";
+import type { TransitionType } from "@/lib/video-storage";
 
 /** Target output resolution for each supported aspect ratio (1080p-class). */
 export const ASPECT_RESOLUTIONS: Record<
@@ -21,6 +24,7 @@ export const ASPECT_RESOLUTIONS: Record<
   "9:16": { width: 1080, height: 1920 },
   "16:9": { width: 1920, height: 1080 },
   "1:1": { width: 1080, height: 1080 },
+  "21:9": { width: 2560, height: 1080 },
 };
 
 export type SceneConfig = {
@@ -57,7 +61,94 @@ export type SceneConfig = {
    * frame. Applied when `sceneTime` falls inside an effect's window.
    */
   activeEffects?: VideoEffect[];
+  /**
+   * Source-video out-point (seconds). When set, the video frame is never drawn
+   * past this time — the canvas stays black — so a clip's trimmed endpoint is
+   * respected even if playback overshoots by a frame.
+   */
+  clipEnd?: number;
+  /**
+   * Chroma-key (green/blue screen) settings. When enabled, matching pixels are
+   * made transparent before the frame is composited.
+   */
+  chromaKey?: ChromaKeySettings;
+  /**
+   * Background fill for letterboxed / mismatched media. `blur` paints a
+   * blurred, cover-scaled copy of the frame behind the contained video.
+   */
+  canvasFill?: "black" | "blur";
+  /**
+   * Cross-clip transition frame. When present, `fromVideo` (the outgoing clip)
+   * is composited with the main video according to `type` and `progress`.
+   */
+  transition?: {
+    type: TransitionType;
+    /** 0..1 across the transition window. */
+    progress: number;
+    fromVideo: HTMLVideoElement;
+  };
 };
+
+/** Per-frame overlay transform resolved from its keyframes (or its base pose). */
+export type OverlayTransform = {
+  x: number;
+  y: number;
+  scale: number;
+  opacity: number;
+  rotation: number;
+};
+
+function lerp(a: number, b: number, t: number): number {
+  return a + (b - a) * t;
+}
+
+/**
+ * Resolves an overlay's animated transform at `sceneTime`, linearly
+ * interpolating between adjacent keyframes (clamped outside the range).
+ */
+export function resolveOverlayTransform(
+  overlay: TextOverlay,
+  sceneTime: number
+): OverlayTransform {
+  const base: OverlayTransform = {
+    x: overlay.x,
+    y: overlay.y,
+    scale: 1,
+    opacity: overlay.opacity,
+    rotation: overlay.rotation,
+  };
+  const keyframes = overlay.keyframes;
+  if (!keyframes || keyframes.length === 0) return base;
+
+  const pose = (frame: OverlayKeyframe): OverlayTransform => ({
+    x: frame.x,
+    y: frame.y,
+    scale: frame.scale,
+    opacity: frame.opacity,
+    rotation: frame.rotation,
+  });
+
+  if (sceneTime <= keyframes[0].time) return pose(keyframes[0]);
+  const last = keyframes[keyframes.length - 1];
+  if (sceneTime >= last.time) return pose(last);
+
+  for (let i = 0; i < keyframes.length - 1; i++) {
+    const a = keyframes[i];
+    const b = keyframes[i + 1];
+    if (sceneTime >= a.time && sceneTime <= b.time) {
+      const span = b.time - a.time;
+      const t = span <= 0 ? 0 : (sceneTime - a.time) / span;
+      return {
+        x: lerp(a.x, b.x, t),
+        y: lerp(a.y, b.y, t),
+        scale: lerp(a.scale, b.scale, t),
+        opacity: lerp(a.opacity, b.opacity, t),
+        rotation: lerp(a.rotation, b.rotation, t),
+      };
+    }
+  }
+  return base;
+}
 
 /**
  * Instantaneous playback speed for a source time, linearly interpolated
@@ -255,19 +346,32 @@ export function drawScene(
     ctx.translate(-width / 2, -height / 2);
   }
 
-  if (video && video.videoWidth > 0 && video.videoHeight > 0) {
+  const pastOutPoint =
+    typeof config.clipEnd === "number" && config.sceneTime > config.clipEnd + 0.02;
+
+  if (video && video.videoWidth > 0 && video.videoHeight > 0 && !pastOutPoint) {
     // High-quality scaling keeps the frame sharp when up/down-scaled.
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = config.crisp === false ? "low" : "high";
+
+    // Blurred background fill behind letterboxed / mismatched media.
+    if (config.canvasFill === "blur" && !config.transition) {
+      drawBlurBackground(ctx, video, config);
+    }
+
     const filter = buildCanvasFilter(
       config.colorAdjustments ?? DEFAULT_COLOR_ADJUSTMENTS,
       fx?.blur ?? 0
     );
     if (filter !== "none") ctx.filter = filter;
-    drawVideoFrame(ctx, video, config);
+    if (config.transition) {
+      drawTransition(ctx, config, video);
+    } else {
+      drawVideoFrame(ctx, video, config);
+    }
     // Reset so captions/overlays are never colour-graded.
     if (filter !== "none") ctx.filter = "none";
-  } else if (options.placeholder) {
+  } else if (options.placeholder && !pastOutPoint) {
     drawPlaceholder(ctx, width, height);
   }
 
@@ -315,25 +419,183 @@ function panRange(drawW: number, drawH: number, canvasW: number, canvasH: number
   };
 }
 
+/** Draws a video frame with an optional alpha / zoom / x-offset transform. */
+function drawFrameTransformed(
+  ctx: CanvasRenderingContext2D,
+  video: HTMLVideoElement,
+  config: SceneConfig,
+  opts: { alpha?: number; zoom?: number; offsetXRatio?: number } = {}
+): void {
+  const vw = video.videoWidth;
+  const vh = video.videoHeight;
+  if (vw <= 0 || vh <= 0) return;
+  const { width, height, fit, offsetX, offsetY } = config;
+  const baseScale =
+    fit === "contain" ? Math.min(width / vw, height / vh) : Math.max(width / vw, height / vh);
+  const scale = baseScale * (opts.zoom ?? 1);
+  const drawW = vw * scale;
+  const drawH = vh * scale;
+
+  const range = panRange(drawW, drawH, width, height);
+  const x = (width - drawW) / 2 + (offsetX / 100) * range.x + (opts.offsetXRatio ?? 0) * width;
+  const y = (height - drawH) / 2 + (offsetY / 100) * range.y;
+
+  ctx.save();
+  if (opts.alpha !== undefined) {
+    ctx.globalAlpha *= Math.max(0, Math.min(1, opts.alpha));
+  }
+  const source =
+    config.chromaKey?.enabled ? keyedVideoFrame(video, config.chromaKey) : video;
+  ctx.drawImage(source, x, y, drawW, drawH);
+  ctx.restore();
+}
+
 function drawVideoFrame(
   ctx: CanvasRenderingContext2D,
   video: HTMLVideoElement,
   config: SceneConfig
 ): void {
-  const { width, height, fit, offsetX, offsetY } = config;
+  drawFrameTransformed(ctx, video, config);
+}
+
+/** Paints a blurred, cover-scaled copy of the frame to fill letterbox bars. */
+function drawBlurBackground(
+  ctx: CanvasRenderingContext2D,
+  video: HTMLVideoElement,
+  config: SceneConfig
+): void {
   const vw = video.videoWidth;
   const vh = video.videoHeight;
+  if (vw <= 0 || vh <= 0) return;
+  const { width, height } = config;
+  const scale = Math.max(width / vw, height / vh) * 1.15;
+  const w = vw * scale;
+  const h = vh * scale;
+  ctx.save();
+  ctx.filter = "blur(42px)";
+  ctx.globalAlpha = 0.92;
+  ctx.drawImage(video, (width - w) / 2, (height - h) / 2, w, h);
+  ctx.restore();
+}
 
-  const scale =
-    fit === "contain" ? Math.min(width / vw, height / vh) : Math.max(width / vw, height / vh);
-  const drawW = vw * scale;
-  const drawH = vh * scale;
+/** Composites a cross-clip transition between the outgoing and incoming clip. */
+function drawTransition(
+  ctx: CanvasRenderingContext2D,
+  config: SceneConfig,
+  toVideo: HTMLVideoElement
+): void {
+  const transition = config.transition;
+  if (!transition) return;
+  const from = transition.fromVideo;
+  const p = Math.max(0, Math.min(1, transition.progress));
 
-  const range = panRange(drawW, drawH, width, height);
-  const x = (width - drawW) / 2 + (offsetX / 100) * range.x;
-  const y = (height - drawH) / 2 + (offsetY / 100) * range.y;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, 0, config.width, config.height);
+  ctx.clip();
 
-  ctx.drawImage(video, x, y, drawW, drawH);
+  switch (transition.type) {
+    case "crossDissolve":
+      drawFrameTransformed(ctx, from, config, { alpha: 1 - p });
+      drawFrameTransformed(ctx, toVideo, config, { alpha: p });
+      break;
+    case "dipToBlack":
+      if (p < 0.5) drawFrameTransformed(ctx, from, config, { alpha: 1 - p * 2 });
+      else drawFrameTransformed(ctx, toVideo, config, { alpha: (p - 0.5) * 2 });
+      break;
+    case "whipPan":
+      drawFrameTransformed(ctx, from, config, { alpha: 1, offsetXRatio: -p });
+      drawFrameTransformed(ctx, toVideo, config, { alpha: 1, offsetXRatio: 1 - p });
+      break;
+    case "glitchCut": {
+      const showTo = p >= 0.5;
+      const jitter = (Math.random() - 0.5) * 0.04;
+      drawFrameTransformed(ctx, showTo ? toVideo : from, config, {
+        alpha: 1,
+        offsetXRatio: jitter,
+      });
+      break;
+    }
+    case "zoomIn":
+      drawFrameTransformed(ctx, from, config, { alpha: 1 - p, zoom: 1 + p * 0.5 });
+      drawFrameTransformed(ctx, toVideo, config, { alpha: p, zoom: 1.5 - p * 0.5 });
+      break;
+  }
+  ctx.restore();
+}
+
+/** Parses a `#rgb`/`#rrggbb` hex color into 0..255 channels. */
+function hexToRgb(hex: string): { r: number; g: number; b: number } {
+  const value = (hex || "#00ff00").replace("#", "").trim();
+  const full =
+    value.length === 3
+      ? value
+          .split("")
+          .map((c) => c + c)
+          .join("")
+      : value.padEnd(6, "0").slice(0, 6);
+  const int = Number.parseInt(full, 16);
+  if (Number.isNaN(int)) return { r: 0, g: 255, b: 0 };
+  return { r: (int >> 16) & 255, g: (int >> 8) & 255, b: int & 255 };
+}
+
+let chromaCanvas: HTMLCanvasElement | null = null;
+let chromaCtx: CanvasRenderingContext2D | null = null;
+
+function getChromaContext(
+  width: number,
+  height: number
+): CanvasRenderingContext2D | null {
+  if (typeof document === "undefined") return null;
+  if (!chromaCanvas) {
+    chromaCanvas = document.createElement("canvas");
+    chromaCtx = chromaCanvas.getContext("2d", { willReadFrequently: true });
+  }
+  if (!chromaCtx) return null;
+  if (chromaCanvas.width !== width) chromaCanvas.width = width;
+  if (chromaCanvas.height !== height) chromaCanvas.height = height;
+  return chromaCtx;
+}
+
+/**
+ * Samples the video frame, makes pixels close to the key color transparent
+ * (with soft edge feathering) and returns the cutout canvas. Runs entirely on
+ * the client — no GPU/shaders and no server round-trip.
+ */
+function keyedVideoFrame(
+  video: HTMLVideoElement,
+  chroma: ChromaKeySettings
+): CanvasImageSource {
+  const vw = video.videoWidth;
+  const vh = video.videoHeight;
+  if (vw <= 0 || vh <= 0) return video;
+  const ctx = getChromaContext(vw, vh);
+  if (!ctx) return video;
+
+  ctx.clearRect(0, 0, vw, vh);
+  ctx.drawImage(video, 0, 0, vw, vh);
+  const image = ctx.getImageData(0, 0, vw, vh);
+  const { data } = image;
+  const key = hexToRgb(chroma.color);
+  const maxDist = Math.sqrt(3) * 255;
+  const tolerance = (Math.min(Math.max(chroma.tolerance, 0), 100) / 100) * maxDist;
+  const feather = Math.min(Math.max(chroma.feather, 0), 100) / 100;
+  const inner = tolerance * (1 - feather * 0.85);
+
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i + 3] === 0) continue;
+    const dr = data[i] - key.r;
+    const dg = data[i + 1] - key.g;
+    const db = data[i + 2] - key.b;
+    const dist = Math.sqrt(dr * dr + dg * dg + db * db);
+    if (dist <= inner) {
+      data[i + 3] = 0;
+    } else if (tolerance > inner && dist < tolerance) {
+      data[i + 3] = data[i + 3] * ((dist - inner) / (tolerance - inner));
+    }
+  }
+  ctx.putImageData(image, 0, 0);
+  return chromaCanvas as HTMLCanvasElement;
 }
 
 function drawPlaceholder(
@@ -369,32 +631,139 @@ function drawImageOverlay(
   ctx: CanvasRenderingContext2D,
   overlay: TextOverlay,
   width: number,
-  height: number
+  height: number,
+  transform: OverlayTransform
 ): void {
   if (!overlay.imageSrc) return;
   const image = getOverlayImage(overlay.imageSrc);
   if (!image) return;
 
   const maxW = width * 0.8;
-  const scale = Math.min(1, maxW / image.naturalWidth);
+  const scale = Math.min(1, maxW / image.naturalWidth) * transform.scale;
   const w = image.naturalWidth * scale;
   const h = image.naturalHeight * scale;
-  const cx = (overlay.x / 100) * width;
-  const cy = (overlay.y / 100) * height;
+  const cx = (transform.x / 100) * width;
+  const cy = (transform.y / 100) * height;
 
   ctx.save();
-  const alpha = Math.min(1, Math.max(0, (overlay.opacity ?? 100) / 100));
+  const alpha = Math.min(1, Math.max(0, transform.opacity / 100));
   if (alpha < 1) ctx.globalAlpha = alpha;
   if (overlay.bgBlur && overlay.bgBlur > 0) {
     ctx.filter = `blur(${overlay.bgBlur}px)`;
   }
-  if (overlay.rotation) {
+  if (transform.rotation) {
     ctx.translate(cx, cy);
-    ctx.rotate((overlay.rotation * Math.PI) / 180);
+    ctx.rotate((transform.rotation * Math.PI) / 180);
     ctx.translate(-cx, -cy);
   }
   ctx.drawImage(image, cx - w / 2, cy - h / 2, w, h);
   ctx.restore();
+}
+
+/**
+ * Measures an overlay's on-canvas bounding box (output px). Used for
+ * hit-testing when dragging overlays directly on the preview monitor.
+ */
+export function measureOverlayBounds(
+  ctx: CanvasRenderingContext2D,
+  overlay: TextOverlay,
+  width: number,
+  height: number,
+  transform?: OverlayTransform
+): { x: number; y: number; w: number; h: number } | null {
+  const t: OverlayTransform = transform ?? {
+    x: overlay.x,
+    y: overlay.y,
+    scale: 1,
+    opacity: overlay.opacity,
+    rotation: overlay.rotation,
+  };
+  const anchorX = (t.x / 100) * width;
+  const anchorY = (t.y / 100) * height;
+
+  if (overlay.imageSrc) {
+    const image = getOverlayImage(overlay.imageSrc);
+    if (image) {
+      const maxW = width * 0.8;
+      const scale = Math.min(1, maxW / image.naturalWidth) * t.scale;
+      const w = image.naturalWidth * scale;
+      const h = image.naturalHeight * scale;
+      return { x: anchorX - w / 2, y: anchorY - h / 2, w, h };
+    }
+    // Not decoded yet — fall back to a square placeholder box.
+    const w = width * 0.4 * t.scale;
+    return { x: anchorX - w / 2, y: anchorY - w / 2, w, h: w };
+  }
+
+  const text = overlay.text.trim();
+  if (!text) return null;
+
+  const fontSize = overlay.fontSize * t.scale;
+  ctx.save();
+  ctx.font = `${fontSize}px ${overlay.fontFamily}`;
+  ctx.textBaseline = "middle";
+  const maxTextW = Math.max(40, width * 0.9 - overlay.padding * 2);
+  const textWords = text.split(/\s+/).filter(Boolean);
+  const timing =
+    overlay.words && overlay.words.length === textWords.length ? overlay.words : null;
+  const lines = timing
+    ? layoutTimedLines(ctx, textWords, maxTextW)
+    : layoutPlainLines(ctx, wrapText(ctx, text, maxTextW));
+  ctx.restore();
+  if (lines.length === 0) return null;
+
+  let textW = 0;
+  for (const line of lines) textW = Math.max(textW, line.width);
+
+  const lineHeight = fontSize * 1.25;
+  const boxW = textW + overlay.padding * 2;
+  const boxH = lines.length * lineHeight + overlay.padding * 2;
+  let boxX =
+    overlay.alignment === "left"
+      ? anchorX
+      : overlay.alignment === "right"
+        ? anchorX - boxW
+        : anchorX - boxW / 2;
+  const boxY = anchorY - boxH / 2;
+  boxX = Math.min(Math.max(boxX, 0), Math.max(0, width - boxW));
+  return { x: boxX, y: boxY, w: boxW, h: boxH };
+}
+
+/**
+ * Returns the top-most overlay whose box contains the canvas point, or `null`.
+ * Only overlays visible at `sceneTime` are considered.
+ */
+export function hitTestOverlay(
+  ctx: CanvasRenderingContext2D,
+  overlays: TextOverlay[],
+  width: number,
+  height: number,
+  sceneTime: number,
+  px: number,
+  py: number
+): TextOverlay | null {
+  for (let i = overlays.length - 1; i >= 0; i--) {
+    const overlay = overlays[i];
+    if (sceneTime < overlay.startTime || sceneTime > overlay.endTime) continue;
+    const bounds = measureOverlayBounds(
+      ctx,
+      overlay,
+      width,
+      height,
+      resolveOverlayTransform(overlay, sceneTime)
+    );
+    if (!bounds) continue;
+    const pad = 10;
+    if (
+      px >= bounds.x - pad &&
+      px <= bounds.x + bounds.w + pad &&
+      py >= bounds.y - pad &&
+      py <= bounds.y + bounds.h + pad
+    ) {
+      return overlay;
+    }
+  }
+  return null;
 }
 
 function drawOverlay(
@@ -405,17 +774,19 @@ function drawOverlay(
   sceneTime: number,
   style: CaptionStyle
 ): void {
+  const transform = resolveOverlayTransform(overlay, sceneTime);
   if (overlay.imageSrc) {
-    drawImageOverlay(ctx, overlay, width, height);
+    drawImageOverlay(ctx, overlay, width, height, transform);
     return;
   }
   const text = overlay.text.trim();
   if (!text) return;
 
+  const fontSize = overlay.fontSize * transform.scale;
   ctx.save();
-  ctx.font = `${overlay.fontSize}px ${overlay.fontFamily}`;
+  ctx.font = `${fontSize}px ${overlay.fontFamily}`;
   ctx.textBaseline = "middle";
-  const baseAlpha = Math.min(1, Math.max(0, (overlay.opacity ?? 100) / 100));
+  const baseAlpha = Math.min(1, Math.max(0, transform.opacity / 100));
   if (baseAlpha < 1) ctx.globalAlpha = baseAlpha;
 
   const maxTextW = Math.max(40, width * 0.9 - overlay.padding * 2);
@@ -437,12 +808,12 @@ function drawOverlay(
   let textW = 0;
   for (const line of lines) textW = Math.max(textW, line.width);
 
-  const lineHeight = overlay.fontSize * 1.25;
+  const lineHeight = fontSize * 1.25;
   const boxW = textW + overlay.padding * 2;
   const boxH = lines.length * lineHeight + overlay.padding * 2;
 
-  const anchorX = (overlay.x / 100) * width;
-  const centerY = (overlay.y / 100) * height;
+  const anchorX = (transform.x / 100) * width;
+  const centerY = (transform.y / 100) * height;
   let boxX =
     overlay.alignment === "left"
       ? anchorX
@@ -461,11 +832,11 @@ function drawOverlay(
   }
 
   // Rotate the whole block around its center.
-  if (overlay.rotation) {
+  if (transform.rotation) {
     const rcx = boxX + boxW / 2;
     const rcy = boxY + boxH / 2;
     ctx.translate(rcx, rcy);
-    ctx.rotate((overlay.rotation * Math.PI) / 180);
+    ctx.rotate((transform.rotation * Math.PI) / 180);
     ctx.translate(-rcx, -rcy);
   }
 
@@ -482,12 +853,25 @@ function drawOverlay(
   }
 
   if (overlay.bgColor) {
+    const neon = style.preset === "neonBox";
+    ctx.save();
+    if (neon) {
+      ctx.shadowColor = overlay.fillColor || style.highlightColor || "#a855f7";
+      ctx.shadowBlur = Math.max(24, fontSize * 0.6);
+    }
     ctx.fillStyle = overlay.bgColor;
     roundedRect(ctx, boxX, boxY, boxW, boxH, overlay.radius);
     ctx.fill();
+    if (neon) {
+      ctx.lineWidth = Math.max(2, fontSize * 0.06);
+      ctx.strokeStyle = overlay.fillColor || style.highlightColor || "#a855f7";
+      roundedRect(ctx, boxX, boxY, boxW, boxH, overlay.radius);
+      ctx.stroke();
+    }
+    ctx.restore();
   }
 
-  const strokeWidth = style.textStroke ? Math.max(2, overlay.fontSize * 0.12) : 0;
+  const strokeWidth = style.textStroke ? Math.max(2, fontSize * 0.12) : 0;
   const spaceWidth = ctx.measureText(" ").width;
   const highlightColor = style.highlightColor || "#facc15";
 

@@ -8,6 +8,7 @@ const ASPECTS = [
   { id: "9:16", label: "9:16", hint: "Shorts", frame: "aspect-[9/16] h-full" },
   { id: "16:9", label: "16:9", hint: "Landscape", frame: "aspect-video w-full" },
   { id: "1:1", label: "1:1", hint: "Square", frame: "aspect-square h-full" },
+  { id: "21:9", label: "21:9", hint: "Cinematic", frame: "aspect-[21/9] w-full" },
 ] as const;
 
 type AspectId = (typeof ASPECTS)[number]["id"];
@@ -33,7 +34,7 @@ export function HeroPreview() {
         </span>
         <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-violet-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-300 ring-1 ring-inset ring-violet-500/30">
           <Sparkles className="h-3 w-3" aria-hidden />
-          AI
+          100% Local
         </span>
       </div>
 
@@ -54,15 +55,15 @@ export function HeroPreview() {
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(124,58,237,0.35),transparent_55%),radial-gradient(circle_at_80%_80%,rgba(59,130,246,0.3),transparent_55%)]" />
             <div className="absolute inset-x-0 top-1/3 flex justify-center">
               <span className="rounded-md bg-black/40 px-2 py-1 text-[10px] text-zinc-300 backdrop-blur-sm">
-                🎙 podcast_clip_04.mp4
+                🎬 studio_project.mp4
               </span>
             </div>
 
             {/* caption overlay */}
             <div className="absolute inset-x-3 bottom-6 text-center">
               <p className="text-sm font-extrabold uppercase leading-tight tracking-tight text-white drop-shadow-[0_2px_6px_rgba(0,0,0,0.8)] sm:text-base">
-                Turn long videos into{" "}
-                <span className="text-amber-300">viral shorts</span>
+                Full studio,{" "}
+                <span className="text-amber-300">running locally</span>
               </p>
             </div>
 

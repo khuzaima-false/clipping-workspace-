@@ -3,40 +3,56 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import {
+  ArrowLeftRight,
+  AudioLines,
   Captions,
   ChevronDown,
   ChevronUp,
   Clapperboard,
   Copy,
   Crop,
+  Diamond,
   Film,
   Gauge,
   Layers,
   Maximize2,
+  Mic,
   Minimize2,
   Music,
   Pause,
+  Pipette,
   Play,
   Plus,
   Redo2,
   Scissors,
   SlidersHorizontal,
+  Smile,
   Sparkles,
+  Square,
   Trash2,
   Type,
   Undo2,
   Volume2,
+  VolumeX,
   Wand2,
   X,
 } from "lucide-react";
-import { ASPECT_RESOLUTIONS, drawScene } from "@/lib/render";
+import { ASPECT_RESOLUTIONS, drawScene, speedAt } from "@/lib/render";
 import {
+  TRANSITION_PRESETS,
   useEditorStore,
   type AspectRatio,
   type VideoEffectType,
 } from "@/store/editor";
 import { CAPTIONS_CREDIT_COST } from "@/lib/credits";
 import { CAPTION_LANGUAGES } from "@/lib/transcribe";
+import { useOverlayCanvasDrag } from "@/components/editor/use-overlay-drag";
+import { audioPreview } from "@/lib/audio-preview";
+import { SOUND_EFFECTS } from "@/lib/sfx";
+import { createDictation, isDictationSupported } from "@/lib/dictation";
+import { STICKER_CATEGORIES, STICKERS, stickerImageSrc, type StickerCategory } from "@/lib/stickers";
+import { Waveform } from "@/components/editor/waveform";
+import { createLevelMeter, startCapture, type ActiveCapture } from "@/lib/recorder";
 import { cn } from "@/lib/utils";
 
 
@@ -65,7 +81,15 @@ const FILTERS: { id: string; label: string; swatch: string; patch: Record<string
   { id: "bw", label: "B&W", swatch: "linear-gradient(135deg,#e5e7eb,#111827)", patch: { saturation: -100, contrast: 14 } },
 ];
 
-const SPEED_PRESETS = ["none", "montage", "hero", "bullet"] as const;
+const SPEED_PRESETS = ["none", "montage", "hero", "bullet", "jumpCut"] as const;
+
+const SPEED_PRESET_LABELS: Record<(typeof SPEED_PRESETS)[number], string> = {
+  none: "Normal",
+  montage: "Montage",
+  hero: "Hero Ramp",
+  bullet: "Bullet",
+  jumpCut: "Jump Cut",
+};
 
 /** One-click cinematic looks (mobile cards + desktop Lumetri presets). */
 const CINEMATIC_PRESETS: {
@@ -124,7 +148,7 @@ function AdjustPanel() {
   );
 }
 
-const ASPECTS: AspectRatio[] = ["9:16", "16:9", "1:1"];
+const ASPECTS: AspectRatio[] = ["9:16", "16:9", "1:1", "21:9"];
 
 /** Generic bottom drawer sheet (portaled above the mobile layout). */
 function Sheet({
@@ -232,7 +256,9 @@ function useMounted(): boolean {
 /** Compact, always-on preview with tap-to-play and fullscreen. */
 function MobilePreview({ wrapRef }: { wrapRef: React.RefObject<HTMLDivElement | null> }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const overlayDrag = useOverlayCanvasDrag(canvasRef);
   const hasVideo = useEditorStore((state) => state.videoEl !== null);
+  const eyedropper = useEditorStore((state) => state.eyedropper);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -253,6 +279,9 @@ function MobilePreview({ wrapRef }: { wrapRef: React.RefObject<HTMLDivElement | 
 
       const video = state.videoEl;
       if (video && !video.paused && !video.ended) {
+        // Follow the velocity curve so preview matches the export ramp.
+        const rate = speedAt(state.speedPoints, video.currentTime);
+        if (Math.abs(video.playbackRate - rate) > 0.01) video.playbackRate = rate;
         const now = performance.now();
         if (now - lastClockSync >= 100) {
           lastClockSync = now;
@@ -269,6 +298,12 @@ function MobilePreview({ wrapRef }: { wrapRef: React.RefObject<HTMLDivElement | 
         }
       }
 
+      audioPreview.sync(
+        state.audioTracks,
+        video ? video.currentTime : state.currentTime,
+        state.playing
+      );
+
       drawScene(
         ctx,
         video,
@@ -284,6 +319,8 @@ function MobilePreview({ wrapRef }: { wrapRef: React.RefObject<HTMLDivElement | 
           activeEffects: state.activeEffects,
           crisp: state.hdRendering,
           sceneTime: video ? video.currentTime : state.currentTime,
+          clipEnd: state.trimEnd > 0 ? state.trimEnd : undefined,
+          chromaKey: state.chromaKey,
         },
         { placeholder: true }
       );
@@ -308,8 +345,15 @@ function MobilePreview({ wrapRef }: { wrapRef: React.RefObject<HTMLDivElement | 
       <canvas
         ref={canvasRef}
         aria-label="Video preview"
-        onClick={togglePlay}
-        className="max-h-full max-w-full"
+        onClick={() => {
+          if (overlayDrag.consumeDrag()) return;
+          togglePlay();
+        }}
+        onPointerDown={overlayDrag.onPointerDown}
+        onPointerMove={overlayDrag.onPointerMove}
+        onPointerUp={overlayDrag.onPointerUp}
+        onPointerCancel={overlayDrag.onPointerCancel}
+        className={cn("max-h-full max-w-full touch-none", eyedropper && "cursor-crosshair")}
       />
       {!hasVideo && (
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 text-center">
@@ -354,6 +398,7 @@ function MobileTimeline({
   const nameFor = (assetId: string) =>
     assets.find((asset) => asset.id === assetId)?.name ?? "Clip";
   const removeClip = useEditorStore((state) => state.removeClip);
+  const moveClip = useEditorStore((state) => state.moveClip);
   const activeClipId = useEditorStore((state) => state.activeClipId);
   const duration = useEditorStore((state) => state.duration);
   const setClipTrim = useEditorStore((state) => state.setClipTrim);
@@ -370,6 +415,33 @@ function MobileTimeline({
     trimEnd: number;
     sourceMax: number;
   } | null>(null);
+
+  // Touch drag-to-reorder (swap left/right past a threshold).
+  const REORDER_PX = 36;
+  const reorderRef = useRef<{ id: string; startX: number } | null>(null);
+  const onReorderDown = (e: React.PointerEvent<HTMLButtonElement>, clipId: string) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    reorderRef.current = { id: clipId, startX: e.clientX };
+  };
+  const onReorderMove = (e: React.PointerEvent<HTMLButtonElement>) => {
+    const d = reorderRef.current;
+    if (!d) return;
+    const dx = e.clientX - d.startX;
+    if (Math.abs(dx) < 6) return;
+    if (dx > REORDER_PX) {
+      moveClip(d.id, 1);
+      d.startX = e.clientX;
+    } else if (dx < -REORDER_PX) {
+      moveClip(d.id, -1);
+      d.startX = e.clientX;
+    }
+  };
+  const onReorderUp = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    reorderRef.current = null;
+  };
 
   const onTrimDown = (
     e: React.PointerEvent<HTMLButtonElement>,
@@ -439,8 +511,12 @@ function MobileTimeline({
               <button
                 type="button"
                 onClick={() => onSelectClip(clip.id)}
+                onPointerDown={(e) => onReorderDown(e, clip.id)}
+                onPointerMove={onReorderMove}
+                onPointerUp={onReorderUp}
+                onPointerCancel={onReorderUp}
                 className={cn(
-                  "absolute inset-0 h-full w-full overflow-hidden rounded-lg border text-left",
+                  "absolute inset-0 h-full w-full touch-none overflow-hidden rounded-lg border text-left",
                   active ? "border-fuchsia-400" : "border-zinc-700"
                 )}
               >
@@ -460,7 +536,7 @@ function MobileTimeline({
                 onPointerDown={(e) => onTrimDown(e, clip, "in")}
                 onPointerMove={onTrimMove}
                 onPointerUp={onTrimUp}
-                className="absolute inset-y-0 left-0 z-10 w-2.5 cursor-ew-resize rounded-l-lg bg-white/35 transition-colors hover:bg-white/70 active:bg-white/80"
+                className="absolute inset-y-0 left-0 z-10 w-2.5 cursor-ew-resize touch-none rounded-l-lg bg-white/35 transition-colors hover:bg-white/70 active:bg-white/80"
               />
               <button
                 type="button"
@@ -468,7 +544,7 @@ function MobileTimeline({
                 onPointerDown={(e) => onTrimDown(e, clip, "out")}
                 onPointerMove={onTrimMove}
                 onPointerUp={onTrimUp}
-                className="absolute inset-y-0 right-0 z-10 w-2.5 cursor-ew-resize rounded-r-lg bg-white/35 transition-colors hover:bg-white/70 active:bg-white/80"
+                className="absolute inset-y-0 right-0 z-10 w-2.5 cursor-ew-resize touch-none rounded-r-lg bg-white/35 transition-colors hover:bg-white/70 active:bg-white/80"
               />
               <button
                 type="button"
@@ -526,6 +602,9 @@ type SheetId =
   | "speed"
   | "volume"
   | "trim"
+  | "cutout"
+  | "stickers"
+  | "transitions"
   | "captions"
   | "audio"
   | "text"
@@ -574,6 +653,75 @@ export function MobileEditor() {
   const addAudioFiles = useEditorStore((s) => s.addAudioFiles);
   const audioTracks = useEditorStore((s) => s.audioTracks);
   const removeAudioTrack = useEditorStore((s) => s.removeAudioTrack);
+  const updateAudioTrack = useEditorStore((s) => s.updateAudioTrack);
+  const addSoundEffect = useEditorStore((s) => s.addSoundEffect);
+  const chromaKey = useEditorStore((s) => s.chromaKey);
+  const setChromaKey = useEditorStore((s) => s.setChromaKey);
+  const resetChromaKey = useEditorStore((s) => s.resetChromaKey);
+  const setEyedropper = useEditorStore((s) => s.setEyedropper);
+  const eyedropper = useEditorStore((s) => s.eyedropper);
+  const addOverlayKeyframe = useEditorStore((s) => s.addOverlayKeyframe);
+  const applyCaptionPreset = useEditorStore((s) => s.applyCaptionPreset);
+  const generateCaptionsFromScript = useEditorStore((s) => s.generateCaptionsFromScript);
+  const captionStyle = useEditorStore((s) => s.captionStyle);
+  const [script, setScript] = useState("");
+  const [dictating, setDictating] = useState(false);
+  const dictationRef = useRef<ReturnType<typeof createDictation> | null>(null);
+  const dictationSupported = isDictationSupported();
+  const addTextSticker = useEditorStore((s) => s.addTextSticker);
+  const addStickerImage = useEditorStore((s) => s.addStickerImage);
+  const setClipTransition = useEditorStore((s) => s.setClipTransition);
+  const canvasFill = useEditorStore((s) => s.canvasFill);
+  const setCanvasFill = useEditorStore((s) => s.setCanvasFill);
+  const addAudioTrackFromBlob = useEditorStore((s) => s.addAudioTrackFromBlob);
+  const activeClipId = useEditorStore((s) => s.activeClipId);
+  const [stickerCategory, setStickerCategory] = useState<StickerCategory>("emoji");
+  const [voiceRecording, setVoiceRecording] = useState(false);
+  const [voiceLevel, setVoiceLevel] = useState(0);
+  const voiceRef = useRef<{
+    capture: ActiveCapture;
+    meter: ReturnType<typeof createLevelMeter>;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!voiceRecording) return;
+    let raf = 0;
+    const tick = () => {
+      setVoiceLevel(voiceRef.current?.meter?.getLevel() ?? 0);
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [voiceRecording]);
+
+  useEffect(() => () => voiceRef.current?.capture.cancel(), []);
+
+  const toggleVoiceover = async () => {
+    if (voiceRecording) {
+      const current = voiceRef.current;
+      voiceRef.current = null;
+      setVoiceRecording(false);
+      setVoiceLevel(0);
+      if (!current) return;
+      try {
+        const blob = await current.capture.stop();
+        current.meter?.close();
+        if (blob && blob.size > 0) {
+          await addAudioTrackFromBlob(blob, `Voiceover ${new Date().toLocaleTimeString()}`);
+        }
+      } catch {
+        // Recording failed; nothing to add.
+      }
+      return;
+    }
+    try {
+      const capture = await startCapture("voice");
+      voiceRef.current = { capture, meter: createLevelMeter(capture.stream) };
+      setVoiceRecording(true);
+    } catch {
+      // Mic permission denied / unavailable.
+    }
+  };
   const captionLanguage = useEditorStore((s) => s.captionLanguage);
   const setCaptionLanguage = useEditorStore((s) => s.setCaptionLanguage);
   const setCaptionStyle = useEditorStore((s) => s.setCaptionStyle);
@@ -648,6 +796,21 @@ export function MobileEditor() {
           </button>
 
           <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => {
+                if (!selectedId) {
+                  openSheet("text");
+                  return;
+                }
+                addOverlayKeyframe(selectedId);
+              }}
+              aria-label="Add keyframe at playhead"
+              title="Keyframe (+) — record the selected overlay's transform"
+              className="inline-flex items-center gap-1 rounded-lg border border-zinc-800 bg-zinc-950/60 px-2 py-1 text-[10px] font-semibold text-zinc-300"
+            >
+              <Diamond className="h-3.5 w-3.5 text-amber-300" aria-hidden /> +
+            </button>
             <button
               type="button"
               onClick={() => setHdRendering(!hdRendering)}
@@ -727,6 +890,12 @@ export function MobileEditor() {
             <button type="button" onClick={() => openSheet("trim")} className={toolbarBtn}>
               <SlidersHorizontal className="h-5 w-5" aria-hidden /> Trim
             </button>
+            <button type="button" onClick={() => openSheet("cutout")} className={toolbarBtn}>
+              <Pipette className="h-5 w-5" aria-hidden /> Cutout
+            </button>
+            <button type="button" onClick={() => openSheet("transitions")} className={toolbarBtn}>
+              <ArrowLeftRight className="h-5 w-5" aria-hidden /> Transition
+            </button>
             <button type="button" onClick={() => openSheet("filters")} className={toolbarBtn}>
               <Crop className="h-5 w-5" aria-hidden /> Filters
             </button>
@@ -757,6 +926,12 @@ export function MobileEditor() {
             </button>
             <button type="button" onClick={() => openSheet("text")} className={toolbarBtn}>
               <Type className="h-5 w-5" aria-hidden /> Text
+            </button>
+            <button type="button" onClick={() => openSheet("stickers")} className={toolbarBtn}>
+              <Smile className="h-5 w-5" aria-hidden /> Stickers
+            </button>
+            <button type="button" onClick={() => openSheet("transitions")} className={toolbarBtn}>
+              <ArrowLeftRight className="h-5 w-5" aria-hidden /> Transitions
             </button>
             <button type="button" onClick={() => openSheet("effects")} className={toolbarBtn}>
               <Wand2 className="h-5 w-5" aria-hidden /> Effects
@@ -792,6 +967,125 @@ export function MobileEditor() {
           <button type="button" onClick={resetTrim} className={chipBtn}>Reset trim</button>
           <button type="button" onClick={splitActiveClip} className={primaryBtn}><Scissors className="h-3.5 w-3.5" aria-hidden /> Split at playhead</button>
         </div>
+      </Sheet>
+
+      <Sheet open={sheet === "cutout"} title="Chroma Key / Cutout" onClose={() => setSheet(null)}>
+        <div className="flex items-center gap-2">
+          <input
+            type="color"
+            value={chromaKey.color}
+            onChange={(e) => setChromaKey({ color: e.target.value, enabled: true })}
+            aria-label="Key color"
+            className="h-10 w-14 shrink-0 rounded-lg border border-zinc-800 bg-zinc-950"
+          />
+          <button
+            type="button"
+            onClick={() => setEyedropper(!eyedropper)}
+            aria-pressed={eyedropper}
+            className={cn(chipBtn, "flex-1 justify-center", eyedropper && "border-violet-500 text-violet-200")}
+          >
+            <Pipette className="h-3.5 w-3.5" aria-hidden />
+            {eyedropper ? "Tap the preview…" : "Eyedropper"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setChromaKey({ enabled: !chromaKey.enabled })}
+            aria-pressed={chromaKey.enabled}
+            className={cn(chipBtn, chromaKey.enabled && "border-violet-500 text-violet-200")}
+          >
+            {chromaKey.enabled ? "On" : "Off"}
+          </button>
+        </div>
+        <label className="mt-4 block text-[11px] text-zinc-400">
+          Tolerance · {Math.round(chromaKey.tolerance)}%
+          <input type="range" min={0} max={100} step={1} value={chromaKey.tolerance} onChange={(e) => setChromaKey({ tolerance: Number(e.target.value), enabled: true })} className="mt-1 w-full accent-violet-500" />
+        </label>
+        <label className="mt-4 block text-[11px] text-zinc-400">
+          Edge feather · {Math.round(chromaKey.feather)}%
+          <input type="range" min={0} max={100} step={1} value={chromaKey.feather} onChange={(e) => setChromaKey({ feather: Number(e.target.value), enabled: true })} className="mt-1 w-full accent-violet-500" />
+        </label>
+        <button type="button" onClick={resetChromaKey} className={cn(chipBtn, "mt-4 w-full justify-center")}>
+          Reset chroma key
+        </button>
+      </Sheet>
+
+      <Sheet open={sheet === "stickers"} title="Stickers & Emojis" onClose={() => setSheet(null)}>
+        <div className="flex flex-wrap gap-1">
+          {STICKER_CATEGORIES.map((category) => (
+            <button
+              key={category.id}
+              type="button"
+              onClick={() => setStickerCategory(category.id)}
+              aria-pressed={stickerCategory === category.id}
+              className={cn(
+                "rounded-lg px-2.5 py-1 text-[11px]",
+                stickerCategory === category.id
+                  ? "bg-violet-600/20 text-violet-200"
+                  : "text-zinc-400"
+              )}
+            >
+              {category.label}
+            </button>
+          ))}
+        </div>
+        <div className="mt-3 grid grid-cols-4 gap-2">
+          {STICKERS.filter((sticker) => sticker.category === stickerCategory).map((sticker) => (
+            <button
+              key={sticker.id}
+              type="button"
+              title={sticker.label}
+              onClick={() => {
+                if (sticker.emoji) {
+                  addTextSticker(sticker.emoji, sticker.fontSize ?? 160);
+                  return;
+                }
+                const src = stickerImageSrc(sticker);
+                if (src) addStickerImage(src);
+              }}
+              className="flex aspect-square items-center justify-center overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950/60 p-1 active:border-violet-500"
+            >
+              {sticker.emoji ? (
+                <span className="text-2xl">{sticker.emoji}</span>
+              ) : (
+                <span
+                  className="block h-full w-full [&>svg]:h-full [&>svg]:w-full"
+                  dangerouslySetInnerHTML={{ __html: sticker.svg ?? "" }}
+                />
+              )}
+            </button>
+          ))}
+        </div>
+      </Sheet>
+
+      <Sheet open={sheet === "transitions"} title="Transitions" onClose={() => setSheet(null)}>
+        {!activeClipId ? (
+          <p className="text-[11px] text-zinc-500">Select a clip on the timeline first.</p>
+        ) : (
+          <div className="grid grid-cols-2 gap-2">
+            {TRANSITION_PRESETS.map((preset) => {
+              const active =
+                sequence.find((clip) => clip.id === activeClipId)?.transitionIn?.type ===
+                preset.id;
+              return (
+                <button
+                  key={preset.id}
+                  type="button"
+                  onClick={() => setClipTransition(activeClipId, active ? null : preset.id)}
+                  aria-pressed={active}
+                  className={cn(
+                    "flex items-center gap-1.5 rounded-xl border px-3 py-3 text-[11px]",
+                    active
+                      ? "border-violet-500 bg-violet-600/15 text-violet-200"
+                      : "border-zinc-800 bg-zinc-950/60 text-zinc-300"
+                  )}
+                >
+                  <ArrowLeftRight className="h-3.5 w-3.5 text-violet-400" aria-hidden />
+                  {preset.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </Sheet>
 
       <Sheet open={sheet === "effects"} title="Effects" onClose={() => setSheet(null)}>
@@ -875,7 +1169,7 @@ export function MobileEditor() {
                   : "border-zinc-800 bg-zinc-950/60 text-zinc-300"
               )}
             >
-              {preset === "none" ? "1×" : preset}
+              {SPEED_PRESET_LABELS[preset]}
             </button>
           ))}
         </div>
@@ -918,8 +1212,24 @@ export function MobileEditor() {
         )}
       </Sheet>
 
-      <Sheet open={sheet === "audio"} title="Audio" onClose={() => setSheet(null)}>
-        <label className={cn(chipBtn, "w-full justify-center")}>
+      <Sheet open={sheet === "audio"} title="Audio & SFX" onClose={() => setSheet(null)}>
+        <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+          Sound effects
+        </p>
+        <div className="grid grid-cols-3 gap-2">
+          {SOUND_EFFECTS.map((effect) => (
+            <button
+              key={effect.id}
+              type="button"
+              onClick={() => void addSoundEffect(effect.id)}
+              className="rounded-xl border border-zinc-800 bg-zinc-950/60 px-1.5 py-2.5 text-[10px] text-zinc-200 transition-colors hover:border-zinc-600"
+            >
+              {effect.label}
+            </button>
+          ))}
+        </div>
+
+        <label className={cn(chipBtn, "mt-3 w-full justify-center")}>
           <Plus className="h-3.5 w-3.5" aria-hidden /> Add audio file
           <input
             type="file"
@@ -932,20 +1242,79 @@ export function MobileEditor() {
             }}
           />
         </label>
+
+        <button
+          type="button"
+          onClick={() => void toggleVoiceover()}
+          className={cn(
+            chipBtn,
+            "mt-2 w-full justify-center",
+            voiceRecording && "border-red-500/50 text-red-300"
+          )}
+        >
+          {voiceRecording ? (
+            <Square className="h-3.5 w-3.5" aria-hidden />
+          ) : (
+            <Mic className="h-3.5 w-3.5" aria-hidden />
+          )}
+          {voiceRecording ? "Stop voiceover" : "Record voiceover"}
+        </button>
+        {voiceRecording && (
+          <span className="mt-2 block h-1 overflow-hidden rounded-full bg-zinc-800">
+            <span
+              className="block h-full bg-red-400"
+              style={{ width: `${Math.round(voiceLevel * 100)}%` }}
+            />
+          </span>
+        )}
+
         {audioTracks.length > 0 && (
-          <ul className="mt-3 space-y-1.5">
+          <ul className="mt-3 space-y-2">
             {audioTracks.map((track) => (
-              <li key={track.id} className="flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-2 text-xs text-zinc-300">
-                <Music className="h-3.5 w-3.5 shrink-0 text-violet-400" aria-hidden />
-                <span className="min-w-0 flex-1 truncate">{track.name}</span>
-                <button
-                  type="button"
-                  onClick={() => removeAudioTrack(track.id)}
-                  aria-label="Remove audio"
-                  className="shrink-0 rounded p-1 text-zinc-500 transition-colors hover:text-red-400"
-                >
-                  <Trash2 className="h-3.5 w-3.5" aria-hidden />
-                </button>
+              <li key={track.id} className="space-y-2 rounded-xl border border-zinc-800 bg-zinc-950/60 p-3">
+                <div className="flex items-center gap-2">
+                  <AudioLines className="h-3.5 w-3.5 shrink-0 text-violet-400" aria-hidden />
+                  <span className="min-w-0 flex-1 truncate text-xs text-zinc-200">{track.name}</span>
+                  <button
+                    type="button"
+                    onClick={() => updateAudioTrack(track.id, { muted: !track.muted })}
+                    aria-label="Mute"
+                    className={cn("rounded p-1", track.muted ? "text-amber-300" : "text-zinc-500")}
+                  >
+                    {track.muted ? <VolumeX className="h-3.5 w-3.5" aria-hidden /> : <Volume2 className="h-3.5 w-3.5" aria-hidden />}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => updateAudioTrack(track.id, { solo: !track.solo })}
+                    aria-label="Solo"
+                    className={cn("rounded px-1 text-[10px] font-bold", track.solo ? "text-sky-300" : "text-zinc-500")}
+                  >
+                    S
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => removeAudioTrack(track.id)}
+                    aria-label="Remove audio"
+                    className="shrink-0 rounded p-1 text-zinc-500 transition-colors hover:text-red-400"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                  </button>
+                </div>
+                <Waveform buffer={track.buffer} className="h-8 w-full rounded bg-zinc-900/60" />
+                <label className="block text-[10px] text-zinc-500">
+                  Volume · {Math.round(track.volume * 100)}%
+                  <input type="range" min={0} max={1} step={0.01} value={track.volume} onChange={(e) => updateAudioTrack(track.id, { volume: Number(e.target.value) })} className="w-full accent-violet-500" />
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="block text-[10px] text-zinc-500">
+                    Fade in · {track.fadeIn.toFixed(1)}s
+                    <input type="range" min={0} max={Math.max(track.duration, 0.1)} step={0.1} value={track.fadeIn} onChange={(e) => updateAudioTrack(track.id, { fadeIn: Number(e.target.value) })} className="w-full accent-violet-500" />
+                  </label>
+                  <label className="block text-[10px] text-zinc-500">
+                    Fade out · {track.fadeOut.toFixed(1)}s
+                    <input type="range" min={0} max={Math.max(track.duration, 0.1)} step={0.1} value={track.fadeOut} onChange={(e) => updateAudioTrack(track.id, { fadeOut: Number(e.target.value) })} className="w-full accent-violet-500" />
+                  </label>
+                </div>
               </li>
             ))}
           </ul>
@@ -981,6 +1350,78 @@ export function MobileEditor() {
               {label}
             </button>
           ))}
+        </div>
+
+        <p className="mb-1.5 mt-4 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+          Caption styles
+        </p>
+        <div className="grid grid-cols-3 gap-2">
+          {(
+            [
+              ["karaoke", "Karaoke"],
+              ["bounce", "Bounce"],
+              ["neonBox", "Neon Box"],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => applyCaptionPreset(id)}
+              aria-pressed={captionStyle.preset === id}
+              className={cn(
+                "rounded-xl border px-2 py-2.5 text-[11px]",
+                captionStyle.preset === id
+                  ? "border-violet-500 bg-violet-600/15 text-violet-200"
+                  : "border-zinc-800 bg-zinc-950/60 text-zinc-300"
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <p className="mb-1.5 mt-4 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+          Script → captions
+        </p>
+        <textarea
+          value={script}
+          onChange={(e) => setScript(e.target.value)}
+          rows={3}
+          placeholder="Type or dictate your script…"
+          className="w-full resize-none rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs text-zinc-100 focus:border-violet-500 focus:outline-none"
+        />
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => void generateCaptionsFromScript(script)}
+            disabled={!script.trim()}
+            className={cn(chipBtn, "justify-center disabled:opacity-40")}
+          >
+            Generate captions
+          </button>
+          <button
+            type="button"
+            disabled={!dictationSupported}
+            onClick={() => {
+              if (dictating) {
+                dictationRef.current?.stop();
+                setDictating(false);
+                return;
+              }
+              const session = createDictation(
+                (chunk) => setScript((prev) => `${prev} ${chunk}`.trim()),
+                () => setDictating(false)
+              );
+              if (!session) return;
+              dictationRef.current = session;
+              session.start();
+              setDictating(true);
+            }}
+            className={cn(chipBtn, "justify-center disabled:opacity-40", dictating && "border-red-500/40 text-red-300")}
+          >
+            <Mic className="h-3.5 w-3.5" aria-hidden />
+            {dictating ? "Stop" : "Dictate"}
+          </button>
         </div>
 
         {overlays.length > 0 && (
@@ -1020,6 +1461,19 @@ export function MobileEditor() {
             );
           })}
         </div>
+        <button
+          type="button"
+          onClick={() => setCanvasFill(canvasFill === "blur" ? "black" : "blur")}
+          aria-pressed={canvasFill === "blur"}
+          className={cn(
+            chipBtn,
+            "mt-3 w-full justify-center",
+            canvasFill === "blur" && "border-violet-500 text-violet-200"
+          )}
+        >
+          <Sparkles className="h-3.5 w-3.5" aria-hidden />
+          {canvasFill === "blur" ? "Blurred background" : "Black letterbox"}
+        </button>
       </Sheet>
     </div>
   );

@@ -39,6 +39,8 @@ class AudioPreview {
       }
     }
 
+    const soloActive = tracks.some((track) => track.solo && !track.muted);
+
     for (const entry of this.entries.values()) {
       const { el, track } = entry;
       const localTime = timelineTime - track.startTime + track.trimStart;
@@ -47,9 +49,10 @@ class AudioPreview {
         localTime >= track.trimStart &&
         localTime <= track.trimStart + track.duration + 0.05;
 
-      el.volume = Math.min(Math.max(track.volume, 0), 1);
+      const audible = within && !track.muted && (!soloActive || track.solo);
+      el.volume = Math.min(Math.max(track.volume, 0), 1) * this.fadeGain(track, localTime);
 
-      if (within) {
+      if (audible) {
         if (el.paused) {
           this.seek(el, localTime);
           void el.play().catch(() => {});
@@ -60,6 +63,17 @@ class AudioPreview {
         el.pause();
       }
     }
+  }
+
+  /** Applies the track's fade-in/out envelope for a given local time. */
+  private fadeGain(track: AudioTrack, localTime: number): number {
+    const elapsed = localTime - track.trimStart;
+    let gain = 1;
+    if (track.fadeIn > 0) gain *= Math.min(1, Math.max(0, elapsed / track.fadeIn));
+    if (track.fadeOut > 0) {
+      gain *= Math.min(1, Math.max(0, (track.duration - elapsed) / track.fadeOut));
+    }
+    return gain;
   }
 
   /** Stops every element (used when the editor unmounts). */

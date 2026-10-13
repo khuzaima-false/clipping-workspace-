@@ -7,7 +7,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import type { Project } from "@/types/database";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useEditorStore } from "@/store/editor";
+import { computeClipStarts, useEditorStore } from "@/store/editor";
 import { ASPECT_RESOLUTIONS, drawScene } from "@/lib/render";
 import {
   EXPORT_FPS,
@@ -189,15 +189,21 @@ function EditorView() {
       colorAdjustments: state.colorAdjustments,
       activeEffects: state.activeEffects,
       crisp: state.hdRendering,
+      chromaKey: state.chromaKey,
+      canvasFill: state.canvasFill,
     };
 
     // Multi-clip: build a decoder per sequence clip so the exporter can merge
-    // them into one output. A single clip uses the live preview element.
+    // them into one output. Clips are ordered by their (possibly dragged)
+    // timeline position; a single clip uses the live preview element.
     const createdUrls: string[] = [];
     let segments: ExportSegment[] | undefined;
-    if (state.sequence.length > 1) {
+    const orderedClips = computeClipStarts(state.sequence)
+      .sort((a, b) => a.start - b.start)
+      .map((entry) => entry.clip);
+    if (orderedClips.length > 1) {
       segments = [];
-      for (const clip of state.sequence) {
+      for (const clip of orderedClips) {
         const asset = state.assets.find((item) => item.id === clip.assetId);
         if (!asset) continue;
         const url = URL.createObjectURL(asset.blob);
@@ -217,6 +223,7 @@ function EditorView() {
           trimStart: clip.trimStart,
           trimEnd: clip.trimEnd,
           file,
+          transition: clip.transitionIn,
         });
       }
     }
@@ -234,8 +241,18 @@ function EditorView() {
     try {
       const result = await exportVideo({
         video,
-        renderFrame: (ctx, time, frameVideo) =>
-          drawScene(ctx, frameVideo, { ...scene, sceneTime: time }),
+        renderFrame: (ctx, time, frameVideo, transition) =>
+          drawScene(ctx, frameVideo, {
+            ...scene,
+            sceneTime: time,
+            transition: transition
+              ? {
+                  type: transition.type,
+                  progress: transition.progress,
+                  fromVideo: transition.fromVideo,
+                }
+              : undefined,
+          }),
         width,
         height,
         trimStart,
@@ -462,9 +479,23 @@ function EditorView() {
           {error}
         </p>
       ) : !project ? (
-        <p className="glass-card rounded-xl px-4 py-3 text-sm text-zinc-400">
-          Project not found.
-        </p>
+        <div className="glass-card rounded-xl px-4 py-4 text-sm text-zinc-400">
+          <p className="font-medium text-zinc-200">
+            {projectId ? "Project not found" : "No project selected"}
+          </p>
+          <p className="mt-1 leading-6">
+            {projectId
+              ? "This project may have been removed or belongs to another account."
+              : "Pick a project to open in the studio, or create a new one to get started."}
+          </p>
+          <Link
+            href="/projects"
+            className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-900/60 px-3 py-2 text-xs text-zinc-200 transition-colors hover:border-zinc-600"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
+            Go to projects
+          </Link>
+        </div>
       ) : (
         <>
           {/* Desktop: Premiere-style 4-panel workspace */}
