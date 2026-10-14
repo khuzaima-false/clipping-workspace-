@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Activity,
   AlignCenter,
   AlignLeft,
   AlignRight,
@@ -26,7 +25,6 @@ import {
   Redo2,
   Repeat,
   Scissors,
-  SlidersHorizontal,
   Sparkles,
   Square,
   Trash2,
@@ -34,28 +32,36 @@ import {
   Unlock,
   Volume2,
   VolumeX,
-  Wand2,
   Zap,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
-import { ASPECT_RESOLUTIONS, drawScene, speedAt } from "@/lib/render";
 import {
+  ASPECT_RESOLUTIONS,
+  drawScene,
+  measureOverlayBounds,
+  resolveOverlayTransform,
+  speedAt,
+} from "@/lib/render";
+import {
+  CAPTION_PRESETS,
+  EFFECT_GROUPS,
   FONT_FAMILIES,
   TRANSITION_PRESETS,
   computeClipStarts,
+  effectLabel,
   useEditorStore,
   type AspectRatio,
   type CaptionAnimation,
   type OverlayAlign,
   type SpeedPreset,
   type TextOverlay,
-  type VideoEffectType,
 } from "@/store/editor";
 import { useOverlayCanvasDrag } from "@/components/editor/use-overlay-drag";
+import { VelocityCurveEditor } from "@/components/editor/velocity-editor";
 import { clampTimelineStart, usePointerDrag } from "@/lib/timeline-drag";
 import { audioPreview } from "@/lib/audio-preview";
-import { SOUND_EFFECTS, type SoundEffectId } from "@/lib/sfx";
+import { SOUND_EFFECT_CATEGORIES, SOUND_EFFECTS } from "@/lib/sfx";
 import { createDictation, isDictationSupported } from "@/lib/dictation";
 import { STICKER_CATEGORIES, STICKERS, stickerImageSrc, type StickerCategory } from "@/lib/stickers";
 import { Waveform } from "@/components/editor/waveform";
@@ -73,14 +79,8 @@ import {
   StudioPanel,
 } from "@/components/editor/studio-modules";
 import { cn } from "@/lib/utils";
-
-const EFFECT_CARDS: { type: VideoEffectType; label: string; Icon: typeof Wand2 }[] = [
-  { type: "zoom-in", label: "Zoom In", Icon: Wand2 },
-  { type: "zoom-out", label: "Zoom Out", Icon: SlidersHorizontal },
-  { type: "camera-shake", label: "Camera Shake", Icon: Activity },
-  { type: "flash", label: "Flash", Icon: Repeat },
-  { type: "blur-vignette", label: "Blur Vignette", Icon: EyeOff },
-];
+import { Modal } from "@/components/ui/modal";
+import type { TransitionType } from "@/lib/video-storage";
 
 type CinematicPreset = {
   id: string;
@@ -147,6 +147,14 @@ type WheelValue = { x: number; y: number };
 
 /** Shared handle to the Program Monitor canvas so scopes can sample it live. */
 const programCanvasRef: { current: HTMLCanvasElement | null } = { current: null };
+
+/** Corner resize handles for the on-canvas overlay selection box. */
+const CORNER_CLASSES = [
+  { id: "nw", className: "-left-1.5 -top-1.5 cursor-nwse-resize" },
+  { id: "ne", className: "-right-1.5 -top-1.5 cursor-nesw-resize" },
+  { id: "sw", className: "-left-1.5 -bottom-1.5 cursor-nesw-resize" },
+  { id: "se", className: "-right-1.5 -bottom-1.5 cursor-nwse-resize" },
+] as const;
 
 /** Premiere-style round color wheel (hue around, saturation outward). */
 function ColorWheel({
@@ -346,7 +354,6 @@ function ProjectBinPanel({
     | "captions"
     | "audio"
     | "stickers"
-    | "transitions"
     | "record"
     | "studio"
   >("media");
@@ -363,6 +370,7 @@ function ProjectBinPanel({
   const addEffect = useEditorStore((s) => s.addEffect);
   const activeEffects = useEditorStore((s) => s.activeEffects);
   const removeEffect = useEditorStore((s) => s.removeEffect);
+  const updateEffectPanel = useEditorStore((s) => s.updateEffect);
 
   const overlays = useEditorStore((s) => s.overlays);
   const selectedId = useEditorStore((s) => s.selectedId);
@@ -418,9 +426,6 @@ function ProjectBinPanel({
   const addAudioFiles = useEditorStore((s) => s.addAudioFiles);
   const speedPreset = useEditorStore((s) => s.speedPreset);
   const setSpeedPreset = useEditorStore((s) => s.setSpeedPreset);
-  const setSpeedPoints = useEditorStore((s) => s.setSpeedPoints);
-  const speedPoints = useEditorStore((s) => s.speedPoints);
-  const setClipTransition = useEditorStore((s) => s.setClipTransition);
   const addTextSticker = useEditorStore((s) => s.addTextSticker);
   const addStickerImage = useEditorStore((s) => s.addStickerImage);
   const aspect = useEditorStore((s) => s.aspect);
@@ -459,7 +464,6 @@ function ProjectBinPanel({
             ["captions", "Captions"],
             ["audio", "Audio"],
             ["stickers", "Stickers"],
-            ["transitions", "Transitions"],
             ["record", "Record"],
             ["studio", "Studio"],
           ] as const
@@ -562,41 +566,74 @@ function ProjectBinPanel({
         )}
 
         {tab === "effects" && (
-          <div className="space-y-2">
-            <div className="grid grid-cols-2 gap-2">
-              {EFFECT_CARDS.map((card) => (
-                <button
-                  key={card.type}
-                  type="button"
-                  onClick={() => addEffect(card.type, currentTime)}
-                  className="flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-950/60 p-2 text-left text-[11px] text-zinc-200"
-                >
-                  <card.Icon className="h-3.5 w-3.5 text-violet-400" aria-hidden />
-                  {card.label}
-                </button>
-              ))}
-            </div>
-            {activeEffects.length > 0 && (
-              <ul className="space-y-1.5 pt-1">
-                {activeEffects.map((fx) => (
-                  <li
-                    key={fx.id}
-                    className="flex items-center gap-2 rounded-lg border border-fuchsia-500/30 bg-fuchsia-500/10 px-2 py-1.5 text-[11px] text-fuchsia-100"
-                  >
-                    <span className="min-w-0 flex-1 truncate capitalize">
-                      {fx.type.replace("-", " ")} · {fx.startTime.toFixed(1)}s
-                    </span>
+          <div className="space-y-3">
+            {EFFECT_GROUPS.map((group) => (
+              <div key={group.label}>
+                <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                  {group.label}
+                </p>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {group.types.map((type) => (
                     <button
+                      key={type}
                       type="button"
-                      onClick={() => removeEffect(fx.id)}
-                      aria-label="Remove effect"
-                      className="rounded p-1 text-fuchsia-200/70 hover:text-white"
+                      onClick={() => addEffect(type, currentTime)}
+                      className="rounded-lg border border-zinc-800 bg-zinc-950/60 px-2 py-2 text-left text-[11px] text-zinc-200 transition-colors hover:border-violet-500/50 hover:text-violet-200"
                     >
-                      <Trash2 className="h-3 w-3" aria-hidden />
+                      {effectLabel(type)}
                     </button>
-                  </li>
-                ))}
-              </ul>
+                  ))}
+                </div>
+              </div>
+            ))}
+
+            {activeEffects.length > 0 && (
+              <div className="space-y-2 border-t border-zinc-800 pt-3">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                  Applied ({activeEffects.length})
+                </p>
+                <ul className="space-y-2">
+                  {activeEffects.map((fx) => (
+                    <li
+                      key={fx.id}
+                      className="space-y-1.5 rounded-lg border border-fuchsia-500/30 bg-fuchsia-500/10 px-2 py-1.5 text-[11px] text-fuchsia-100"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="min-w-0 flex-1 truncate">
+                          {effectLabel(fx.type)} · {fx.startTime.toFixed(1)}s
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => removeEffect(fx.id)}
+                          aria-label="Remove effect"
+                          className="rounded p-1 text-fuchsia-200/70 hover:text-white"
+                        >
+                          <Trash2 className="h-3 w-3" aria-hidden />
+                        </button>
+                      </div>
+                      <label className="block">
+                        <span className="flex items-center justify-between text-[10px] text-fuchsia-200/80">
+                          <span>Intensity</span>
+                          <span className="tabular-nums">
+                            {Math.round(fx.intensity * 100)}%
+                          </span>
+                        </span>
+                        <input
+                          type="range"
+                          min={0}
+                          max={1}
+                          step={0.01}
+                          value={fx.intensity}
+                          onChange={(e) =>
+                            updateEffectPanel(fx.id, { intensity: Number(e.target.value) })
+                          }
+                          className="w-full accent-fuchsia-400"
+                        />
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
           </div>
         )}
@@ -703,7 +740,9 @@ function ProjectBinPanel({
                   [
                     ["Position X", "x", 0, 100, "%"],
                     ["Position Y", "y", 0, 100, "%"],
-                    ["Scale", "fontSize", 16, 180, "px"],
+                    ...(selected.imageSrc
+                      ? []
+                      : ([["Scale", "fontSize", 16, 180, "px"]] as const)),
                     ["Rotation", "rotation", -180, 180, "°"],
                   ] as const
                 ).map(([label, key, min, max, suffix]) => (
@@ -726,6 +765,28 @@ function ProjectBinPanel({
                     />
                   </label>
                 ))}
+
+                {selected.imageSrc && (
+                  <label className="block">
+                    <span className="flex items-center justify-between text-[10px] text-zinc-500">
+                      <span>Scale</span>
+                      <span className="tabular-nums">
+                        {(selected.scale ?? 1).toFixed(2)}×
+                      </span>
+                    </span>
+                    <input
+                      type="range"
+                      min={0.1}
+                      max={3}
+                      step={0.05}
+                      value={selected.scale ?? 1}
+                      onChange={(e) =>
+                        patchSelected({ scale: Number(e.target.value) })
+                      }
+                      className="mt-0.5 w-full accent-violet-500"
+                    />
+                  </label>
+                )}
 
                 <label className="block">
                   <span className="flex items-center justify-between text-[10px] text-zinc-500">
@@ -1208,29 +1269,28 @@ function ProjectBinPanel({
             {/* Social caption styles + on-device script generator */}
             <div className="space-y-2 border-t border-zinc-800 pt-3">
               <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-                Caption styles
+                Caption styles ({CAPTION_PRESETS.length})
               </p>
-              <div className="grid grid-cols-3 gap-1.5">
-                {(
-                  [
-                    ["karaoke", "Karaoke"],
-                    ["bounce", "Bounce"],
-                    ["neonBox", "Neon Box"],
-                  ] as const
-                ).map(([id, label]) => (
+              <div className="custom-scrollbar grid max-h-56 grid-cols-2 gap-1.5 overflow-y-auto pr-1">
+                {CAPTION_PRESETS.map((preset) => (
                   <button
-                    key={id}
+                    key={preset.id}
                     type="button"
-                    onClick={() => applyCaptionPreset(id)}
-                    aria-pressed={captionStyle.preset === id}
+                    onClick={() => applyCaptionPreset(preset.id)}
+                    aria-pressed={captionStyle.preset === preset.id}
                     className={cn(
-                      "rounded-lg border px-1.5 py-2 text-[10px] transition-colors",
-                      captionStyle.preset === id
+                      "flex items-center gap-1.5 overflow-hidden rounded-lg border px-1.5 py-1.5 text-left text-[10px] transition-colors",
+                      captionStyle.preset === preset.id
                         ? "border-violet-500 bg-violet-600/15 text-violet-200"
                         : "border-zinc-800 bg-zinc-950/60 text-zinc-300 hover:border-zinc-600"
                     )}
                   >
-                    {label}
+                    <span
+                      className="h-4 w-4 shrink-0 rounded-full ring-1 ring-inset ring-white/20"
+                      style={{ background: preset.swatch }}
+                      aria-hidden
+                    />
+                    <span className="min-w-0 flex-1 truncate">{preset.label}</span>
                   </button>
                 ))}
               </div>
@@ -1343,21 +1403,30 @@ function ProjectBinPanel({
         {tab === "audio" && (
           <div className="space-y-3">
             <p className="text-[10px] leading-4 text-zinc-500">
-              Royalty-free sound effects, synthesized on-device — tap to drop one
-              at the playhead.
+              {SOUND_EFFECTS.length} royalty-free sound effects, synthesized
+              on-device — tap to drop one at the playhead.
             </p>
-            <div className="grid grid-cols-2 gap-1.5">
-              {SOUND_EFFECTS.map((effect) => (
-                <button
-                  key={effect.id}
-                  type="button"
-                  onClick={() => void addSoundEffect(effect.id as SoundEffectId)}
-                  className="rounded-lg border border-zinc-800 bg-zinc-950/60 px-2 py-2 text-[11px] text-zinc-200 hover:border-zinc-600"
-                >
-                  {effect.label}
-                </button>
-              ))}
-            </div>
+            {SOUND_EFFECT_CATEGORIES.map((category) => (
+              <div key={category.id}>
+                <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                  {category.label}
+                </p>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {SOUND_EFFECTS.filter((effect) => effect.category === category.id).map(
+                    (effect) => (
+                      <button
+                        key={effect.id}
+                        type="button"
+                        onClick={() => void addSoundEffect(effect.id)}
+                        className="rounded-lg border border-zinc-800 bg-zinc-950/60 px-2 py-2 text-left text-[11px] text-zinc-200 transition-colors hover:border-violet-500/50"
+                      >
+                        {effect.label}
+                      </button>
+                    )
+                  )}
+                </div>
+              </div>
+            ))}
 
             <label className="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-950/60 px-2 py-2 text-[11px] text-zinc-200 hover:border-zinc-600">
               <Music className="h-3.5 w-3.5 text-violet-400" aria-hidden /> Import audio
@@ -1515,29 +1584,9 @@ function ProjectBinPanel({
                 </button>
               ))}
             </div>
-            <div className="space-y-1 border-t border-zinc-800 pt-3">
-              <span className="flex items-center justify-between text-[10px] text-zinc-500">
-                <span>Constant rate</span>
-                <span className="tabular-nums">
-                  {(speedPoints[speedPoints.length - 1]?.speed ?? 1).toFixed(2)}×
-                </span>
-              </span>
-              <input
-                type="range"
-                min={0.25}
-                max={4}
-                step={0.05}
-                value={speedPoints[speedPoints.length - 1]?.speed ?? 1}
-                onChange={(e) => {
-                  const rate = Number(e.target.value);
-                  setSpeedPoints([
-                    { time: 0, speed: rate },
-                    { time: Math.max(duration, 1), speed: rate },
-                  ]);
-                }}
-                className="w-full accent-violet-500"
-              />
-              <p className="text-[10px] text-zinc-500">
+            <div className="border-t border-zinc-800 pt-3">
+              <VelocityCurveEditor />
+              <p className="mt-1 text-[10px] text-zinc-500">
                 Active:{" "}
                 <span className="capitalize text-zinc-300">
                   {speedPreset === "none" ? "normal" : speedPreset}
@@ -1602,46 +1651,6 @@ function ProjectBinPanel({
           </div>
         )}
 
-        {tab === "transitions" && (
-          <div className="space-y-3">
-            <p className="text-[10px] leading-4 text-zinc-500">
-              Add a transition between the selected clip and the one before it. It
-              renders on the multi-clip export path.
-            </p>
-            {!activeClipId ? (
-              <p className="text-[10px] text-zinc-500">
-                Select a clip on the timeline first.
-              </p>
-            ) : (
-              <div className="grid grid-cols-2 gap-1.5">
-                {TRANSITION_PRESETS.map((preset) => {
-                  const current = sequence.find((clip) => clip.id === activeClipId);
-                  const active = current?.transitionIn?.type === preset.id;
-                  return (
-                    <button
-                      key={preset.id}
-                      type="button"
-                      onClick={() =>
-                        setClipTransition(activeClipId, active ? null : preset.id)
-                      }
-                      aria-pressed={active}
-                      className={cn(
-                        "flex items-center gap-1.5 rounded-lg border px-2 py-2 text-left text-[11px] transition-colors",
-                        active
-                          ? "border-violet-500 bg-violet-600/15 text-violet-200"
-                          : "border-zinc-800 bg-zinc-950/60 text-zinc-300 hover:border-zinc-600"
-                      )}
-                    >
-                      <ArrowLeftRight className="h-3.5 w-3.5 shrink-0 text-violet-400" aria-hidden />
-                      <span className="min-w-0 flex-1 truncate">{preset.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
         {tab === "record" && <ScreenCamRecorder />}
 
         {tab === "studio" && (
@@ -1659,10 +1668,132 @@ function ProjectBinPanel({
 }
 
 /* ------------------------------------------------------------------ */
+/* Transition junction: preview tiles + configuration modal            */
+/* ------------------------------------------------------------------ */
+function TransitionPreview({ type }: { type: TransitionType }) {
+  const top: Record<TransitionType, string> = {
+    crossDissolve: "opacity-100 group-hover:opacity-0",
+    dipToBlack: "",
+    whipPan: "translate-x-0 group-hover:-translate-x-full",
+    glitchCut: "opacity-100 group-hover:translate-x-2 group-hover:opacity-0",
+    zoomIn: "scale-100 group-hover:scale-125 group-hover:opacity-0",
+    zoomBlur: "scale-100 group-hover:scale-125 group-hover:opacity-0 group-hover:blur-sm",
+  };
+  return (
+    <span className="relative block h-9 w-full overflow-hidden rounded-md bg-zinc-950 ring-1 ring-inset ring-zinc-800">
+      <span className="absolute inset-0 bg-gradient-to-br from-sky-500 to-blue-700" />
+      <span
+        className={cn(
+          "absolute inset-0 bg-gradient-to-br from-orange-400 to-rose-600 transition-all duration-500 ease-in-out",
+          top[type]
+        )}
+      />
+      {type === "dipToBlack" && (
+        <span className="absolute inset-0 bg-black opacity-0 transition-opacity duration-500 ease-in-out group-hover:opacity-100" />
+      )}
+    </span>
+  );
+}
+
+function TransitionModal({
+  clipId,
+  onClose,
+}: {
+  clipId: string | null;
+  onClose: () => void;
+}) {
+  const sequence = useEditorStore((s) => s.sequence);
+  const setClipTransition = useEditorStore((s) => s.setClipTransition);
+  const clip = clipId ? sequence.find((c) => c.id === clipId) ?? null : null;
+  // Remounted per clip (keyed by the parent), so local state initialises fresh.
+  const [type, setType] = useState<TransitionType | null>(
+    clip?.transitionIn?.type ?? null
+  );
+  const [duration, setDuration] = useState(clip?.transitionIn?.duration ?? 0.5);
+
+  if (!clip) return null;
+
+  return (
+    <Modal
+      open={!!clipId}
+      title="Transition"
+      onClose={onClose}
+      className="max-w-md"
+      footer={
+        <>
+          <button
+            type="button"
+            onClick={() => {
+              setClipTransition(clip.id, null);
+              onClose();
+            }}
+            className="rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-2 text-xs text-zinc-300 transition-colors hover:border-zinc-600"
+          >
+            Remove
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setClipTransition(clip.id, type, duration);
+              onClose();
+            }}
+            disabled={!type}
+            className="brand-gradient brand-gradient-hover rounded-lg px-4 py-2 text-xs font-semibold text-white disabled:opacity-40"
+          >
+            Apply transition
+          </button>
+        </>
+      }
+    >
+      <div className="grid grid-cols-2 gap-2">
+        {TRANSITION_PRESETS.map((preset) => (
+          <button
+            key={preset.id}
+            type="button"
+            onClick={() => setType(preset.id)}
+            aria-pressed={type === preset.id}
+            className={cn(
+              "group space-y-1.5 rounded-lg border p-2 text-left text-[11px] transition-colors",
+              type === preset.id
+                ? "border-violet-500 bg-violet-600/15 text-violet-200"
+                : "border-zinc-800 bg-zinc-950/60 text-zinc-300 hover:border-zinc-600"
+            )}
+          >
+            <TransitionPreview type={preset.id} />
+            <span className="block truncate">{preset.label}</span>
+          </button>
+        ))}
+      </div>
+
+      <label className="mt-4 block">
+        <span className="flex items-center justify-between text-[10px] text-zinc-500">
+          <span>Duration</span>
+          <span className="tabular-nums">{duration.toFixed(2)}s</span>
+        </span>
+        <input
+          type="range"
+          min={0.1}
+          max={1.6}
+          step={0.05}
+          value={duration}
+          onChange={(e) => setDuration(Number(e.target.value))}
+          className="mt-0.5 w-full accent-violet-500"
+        />
+      </label>
+      <p className="mt-2 text-[10px] leading-4 text-zinc-600">
+        Hover a tile to preview. Transitions blend the outgoing clip into this
+        one across the shared boundary (rendered in exports).
+      </p>
+    </Modal>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /* Top-center: Program monitor + transport                              */
 /* ------------------------------------------------------------------ */
 function ProgramPreview() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
   const overlayDrag = useOverlayCanvasDrag(canvasRef);
   // Expose the graded canvas so the Lumetri scopes can sample it live.
   useEffect(() => {
@@ -1695,6 +1826,127 @@ function ProgramPreview() {
   const setMarkOut = useEditorStore((s) => s.setMarkOut);
   const clearMarks = useEditorStore((s) => s.clearMarks);
   const eyedropper = useEditorStore((s) => s.eyedropper);
+  const selectedOverlayId = useEditorStore((s) => s.selectedId);
+  const updateOverlayBox = useEditorStore((s) => s.updateOverlay);
+
+  const [selBox, setSelBox] = useState<
+    { x: number; y: number; w: number; h: number } | null
+  >(null);
+  const selBoxKey = useRef("");
+  const resizeRef = useRef<{
+    pointerId: number;
+    cx: number;
+    cy: number;
+    half: number;
+    scale0: number;
+    fontSize0: number;
+    id: string;
+  } | null>(null);
+
+  // Live selection box over the selected overlay so it can be resized on-canvas.
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      const canvas = canvasRef.current;
+      const wrap = wrapRef.current;
+      const ctx = canvas?.getContext("2d");
+      const state = useEditorStore.getState();
+      const overlay = state.selectedId
+        ? state.overlays.find((o) => o.id === state.selectedId)
+        : null;
+      const clear = () => {
+        if (selBoxKey.current !== "") {
+          selBoxKey.current = "";
+          setSelBox(null);
+        }
+      };
+      if (!canvas || !wrap || !ctx || !overlay) {
+        clear();
+        return;
+      }
+      const sceneTime = state.videoEl
+        ? state.videoEl.currentTime
+        : state.currentTime;
+      if (sceneTime < overlay.startTime || sceneTime > overlay.endTime) {
+        clear();
+        return;
+      }
+      const bounds = measureOverlayBounds(
+        ctx,
+        overlay,
+        canvas.width,
+        canvas.height,
+        resolveOverlayTransform(overlay, sceneTime)
+      );
+      if (!bounds || !canvas.width) {
+        clear();
+        return;
+      }
+      const rect = canvas.getBoundingClientRect();
+      const wrapRect = wrap.getBoundingClientRect();
+      if (rect.width <= 0) return;
+      const sx = rect.width / canvas.width;
+      const sy = rect.height / canvas.height;
+      const box = {
+        x: rect.left - wrapRect.left + bounds.x * sx,
+        y: rect.top - wrapRect.top + bounds.y * sy,
+        w: bounds.w * sx,
+        h: bounds.h * sy,
+      };
+      const key = `${box.x.toFixed(1)},${box.y.toFixed(1)},${box.w.toFixed(1)},${box.h.toFixed(1)}`;
+      if (key !== selBoxKey.current) {
+        selBoxKey.current = key;
+        setSelBox(box);
+      }
+    }, 100);
+    return () => window.clearInterval(id);
+  }, []);
+
+  const onResizeDown = (
+    event: React.PointerEvent<HTMLButtonElement>,
+    id: string
+  ) => {
+    const wrap = wrapRef.current;
+    if (!wrap || !selBox || !id) return;
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    const wrapRect = wrap.getBoundingClientRect();
+    const overlay = useEditorStore.getState().overlays.find((o) => o.id === id);
+    resizeRef.current = {
+      pointerId: event.pointerId,
+      cx: wrapRect.left + selBox.x + selBox.w / 2,
+      cy: wrapRect.top + selBox.y + selBox.h / 2,
+      half: Math.max(12, Math.min(selBox.w, selBox.h) / 2),
+      scale0: overlay?.scale ?? 1,
+      fontSize0: overlay?.fontSize ?? 64,
+      id,
+    };
+  };
+  const onResizeMove = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const drag = resizeRef.current;
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    const dist = Math.max(
+      Math.abs(event.clientX - drag.cx),
+      Math.abs(event.clientY - drag.cy)
+    );
+    const factor = Math.max(0.1, dist / drag.half);
+    const overlay = useEditorStore.getState().overlays.find((o) => o.id === drag.id);
+    if (!overlay) return;
+    if (overlay.imageSrc) {
+      updateOverlayBox(drag.id, {
+        scale: Math.min(4, Math.max(0.08, drag.scale0 * factor)),
+      });
+    } else {
+      updateOverlayBox(drag.id, {
+        fontSize: Math.min(260, Math.max(10, drag.fontSize0 * factor)),
+      });
+    }
+  };
+  const onResizeUp = (event: React.PointerEvent<HTMLButtonElement>) => {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    resizeRef.current = null;
+  };
 
   useEffect(() => {
     loopRef.current = loop;
@@ -1852,7 +2104,10 @@ function ProgramPreview() {
         </button>
       </div>
 
-      <div className="flex min-h-0 flex-1 items-center justify-center bg-black p-3">
+      <div
+        ref={wrapRef}
+        className="relative flex min-h-0 flex-1 items-center justify-center bg-black p-3"
+      >
         <canvas
           ref={canvasRef}
           onPointerDown={overlayDrag.onPointerDown}
@@ -1865,6 +2120,36 @@ function ProgramPreview() {
           )}
           aria-label="Program preview"
         />
+
+        {/* On-canvas transform handles for the selected overlay */}
+        {selBox && (
+          <div
+            className="pointer-events-none absolute z-10"
+            style={{
+              left: selBox.x,
+              top: selBox.y,
+              width: Math.max(8, selBox.w),
+              height: Math.max(8, selBox.h),
+            }}
+          >
+            <span className="absolute inset-0 rounded border border-violet-400/80" />
+            {CORNER_CLASSES.map((corner) => (
+              <button
+                key={corner.id}
+                type="button"
+                aria-label={`Resize overlay ${corner.id}`}
+                onPointerDown={(e) => onResizeDown(e, selectedOverlayId ?? "")}
+                onPointerMove={onResizeMove}
+                onPointerUp={onResizeUp}
+                onPointerCancel={onResizeUp}
+                className={cn(
+                  "pointer-events-auto absolute h-3 w-3 touch-none rounded-sm border border-violet-200 bg-white shadow",
+                  corner.className
+                )}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Transport */}
@@ -2251,6 +2536,7 @@ function PremiereTimeline() {
   const updateAudioTrack = useEditorStore((s) => s.updateAudioTrack);
 
   const [pps, setPps] = useState(48);
+  const [transitionClipId, setTransitionClipId] = useState<string | null>(null);
   const [toggles, setToggles] = useState<Record<TrackKey, { m: boolean; s: boolean; lock: boolean; eye: boolean }>>({
     V3: { m: false, s: false, lock: false, eye: true },
     V2: { m: false, s: false, lock: false, eye: true },
@@ -2947,6 +3233,34 @@ function PremiereTimeline() {
                 </div>
                 );
               })}
+
+              {/* Transition junctions between touching / overlapping clips */}
+              {videoBlocks.slice(0, -1).map((block, index) => {
+                const next = videoBlocks[index + 1];
+                const boundary = block.start + block.dur;
+                if (next.start > boundary + 0.08) return null;
+                const applied = next.clip.transitionIn;
+                return (
+                  <button
+                    key={`junction-${next.clip.id}`}
+                    type="button"
+                    title={applied ? `Transition: ${applied.type}` : "Add transition"}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setTransitionClipId(next.clip.id);
+                    }}
+                    style={{ left: `${boundary * pps}px` }}
+                    className={cn(
+                      "absolute top-1/2 z-20 flex h-6 w-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border shadow-lg transition-transform hover:scale-110",
+                      applied
+                        ? "border-amber-300 bg-amber-400 text-black"
+                        : "border-white/50 bg-white/85 text-zinc-900"
+                    )}
+                  >
+                    <ArrowLeftRight className="h-3 w-3" aria-hidden />
+                  </button>
+                );
+              })}
             </div>
 
             {/* A1 / A2 — audio tracks (teal/green) */}
@@ -3004,6 +3318,12 @@ function PremiereTimeline() {
           </div>
         </div>
       </div>
+
+      <TransitionModal
+        key={transitionClipId ?? "none"}
+        clipId={transitionClipId}
+        onClose={() => setTransitionClipId(null)}
+      />
     </section>
   );
 }

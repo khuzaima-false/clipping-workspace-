@@ -43,10 +43,87 @@ export type CaptionAnimation =
   | "karaoke"
   | "typewriter"
   | "fadeIn"
-  | "neon";
+  | "neon"
+  | "slideUp"
+  | "zoomPunch"
+  | "blurIn"
+  | "gradientWave"
+  | "matrixRain"
+  | "flip"
+  | "shake"
+  | "glitchText"
+  | "outlinePulse"
+  | "underline"
+  | "highlightBox"
+  | "wave"
+  | "stomp";
 
-/** One-tap social caption looks. */
-export type CaptionPreset = "classic" | "karaoke" | "bounce" | "neonBox";
+/** One-tap social caption looks (20+ style gallery). */
+export type CaptionPreset =
+  | "classic"
+  | "karaoke"
+  | "bounce"
+  | "popup"
+  | "typewriter"
+  | "neonBox"
+  | "matrix"
+  | "gradientWave"
+  | "cinematic"
+  | "slideUp"
+  | "zoomPunch"
+  | "glitch"
+  | "outline"
+  | "underline"
+  | "highlightBox"
+  | "stomp"
+  | "wave"
+  | "flip"
+  | "shake"
+  | "softShadow"
+  | "boldYellow"
+  | "minimal"
+  | "boxed";
+
+/** A ready-made caption style shown in the gallery. */
+export type CaptionPresetDef = {
+  id: CaptionPreset;
+  label: string;
+  animation: CaptionAnimation;
+  activeWordHighlight: boolean;
+  textStroke: boolean;
+  fillColor: string;
+  highlightColor: string;
+  bgColor: string;
+  padding: number;
+  radius: number;
+  swatch: string;
+};
+
+export const CAPTION_PRESETS: CaptionPresetDef[] = [
+  { id: "classic", label: "Classic", animation: "pop", activeWordHighlight: true, textStroke: true, fillColor: "#ffffff", highlightColor: "#facc15", bgColor: "", padding: 0, radius: 0, swatch: "linear-gradient(135deg,#f8fafc,#a1a1aa)" },
+  { id: "karaoke", label: "Karaoke", animation: "karaoke", activeWordHighlight: true, textStroke: true, fillColor: "#ffffff", highlightColor: "#facc15", bgColor: "", padding: 0, radius: 0, swatch: "linear-gradient(135deg,#facc15,#f97316)" },
+  { id: "bounce", label: "Bounce", animation: "bounce", activeWordHighlight: true, textStroke: true, fillColor: "#ffffff", highlightColor: "#38bdf8", bgColor: "", padding: 0, radius: 0, swatch: "linear-gradient(135deg,#38bdf8,#6366f1)" },
+  { id: "popup", label: "Pop-Up", animation: "pop", activeWordHighlight: false, textStroke: true, fillColor: "#fde047", highlightColor: "#fde047", bgColor: "", padding: 0, radius: 0, swatch: "linear-gradient(135deg,#fde047,#f59e0b)" },
+  { id: "typewriter", label: "Typewriter", animation: "typewriter", activeWordHighlight: false, textStroke: false, fillColor: "#f4f4f5", highlightColor: "#f4f4f5", bgColor: "#0b0b0f", padding: 20, radius: 6, swatch: "linear-gradient(135deg,#d4d4d8,#3f3f46)" },
+  { id: "neonBox", label: "Neon Glow Box", animation: "neon", activeWordHighlight: false, textStroke: false, fillColor: "#ffffff", highlightColor: "#22d3ee", bgColor: "#09090b", padding: 30, radius: 18, swatch: "linear-gradient(135deg,#22d3ee,#a855f7)" },
+  { id: "matrix", label: "Matrix Rain", animation: "matrixRain", activeWordHighlight: false, textStroke: false, fillColor: "#22c55e", highlightColor: "#86efac", bgColor: "#001a05", padding: 22, radius: 6, swatch: "linear-gradient(135deg,#052e16,#22c55e)" },
+  { id: "gradientWave", label: "Gradient Wave", animation: "gradientWave", activeWordHighlight: false, textStroke: true, fillColor: "#ffffff", highlightColor: "#f472b6", bgColor: "", padding: 0, radius: 0, swatch: "linear-gradient(135deg,#f472b6,#22d3ee,#a855f7)" },
+  { id: "cinematic", label: "Cinematic Blur", animation: "blurIn", activeWordHighlight: false, textStroke: false, fillColor: "#e5e7eb", highlightColor: "#e5e7eb", bgColor: "", padding: 0, radius: 0, swatch: "linear-gradient(135deg,#0ea5e9,#0f172a)" },
+  { id: "slideUp", label: "Slide Up", animation: "slideUp", activeWordHighlight: true, textStroke: true, fillColor: "#ffffff", highlightColor: "#facc15", bgColor: "", padding: 0, radius: 0, swatch: "linear-gradient(135deg,#fbbf24,#7c3aed)" },
+  { id: "zoomPunch", label: "Zoom Punch", animation: "zoomPunch", activeWordHighlight: true, textStroke: true, fillColor: "#ffffff", highlightColor: "#ef4444", bgColor: "", padding: 0, radius: 0, swatch: "linear-gradient(135deg,#ef4444,#111827)" },
+  { id: "glitch", label: "Glitch Text", animation: "glitchText", activeWordHighlight: false, textStroke: false, fillColor: "#ffffff", highlightColor: "#22d3ee", bgColor: "#0b0b0f", padding: 16, radius: 4, swatch: "linear-gradient(135deg,#22d3ee,#f43f5e)" },
+  { id: "outline", label: "Outline Pulse", animation: "outlinePulse", activeWordHighlight: false, textStroke: true, fillColor: "#ffffff", highlightColor: "#ffffff", bgColor: "", padding: 0, radius: 0, swatch: "linear-gradient(135deg,#ffffff,#52525b)" },
+  { id: "underline", label: "Underline", animation: "underline", activeWordHighlight: true, textStroke: false, fillColor: "#ffffff", highlightColor: "#34d399", bgColor: "", padding: 0, radius: 0, swatch: "linear-gradient(135deg,#34d399,#065f46)" },
+  { id: "highlightBox", label: "Word Highlight Box", animation: "highlightBox", activeWordHighlight: true, textStroke: false, fillColor: "#ffffff", highlightColor: "#facc15", bgColor: "#0b0b0f", padding: 22, radius: 10, swatch: "linear-gradient(135deg,#facc15,#0b0b0f)" },
+  { id: "stomp", label: "Stomp", animation: "stomp", activeWordHighlight: true, textStroke: true, fillColor: "#ffffff", highlightColor: "#fb7185", bgColor: "", padding: 0, radius: 0, swatch: "linear-gradient(135deg,#fb7185,#4c0519)" },
+  { id: "wave", label: "Wave", animation: "wave", activeWordHighlight: false, textStroke: true, fillColor: "#ffffff", highlightColor: "#a78bfa", bgColor: "", padding: 0, radius: 0, swatch: "linear-gradient(135deg,#a78bfa,#2563eb)" },
+  { id: "flip", label: "Flip In", animation: "flip", activeWordHighlight: false, textStroke: true, fillColor: "#ffffff", highlightColor: "#facc15", bgColor: "", padding: 0, radius: 0, swatch: "linear-gradient(135deg,#64748b,#0f172a)" },
+  { id: "shake", label: "Shake", animation: "shake", activeWordHighlight: false, textStroke: true, fillColor: "#ffffff", highlightColor: "#f97316", bgColor: "", padding: 0, radius: 0, swatch: "linear-gradient(135deg,#f97316,#7c2d12)" },
+  { id: "softShadow", label: "Soft Shadow", animation: "fadeIn", activeWordHighlight: false, textStroke: false, fillColor: "#ffffff", highlightColor: "#ffffff", bgColor: "", padding: 0, radius: 0, swatch: "linear-gradient(135deg,#e4e4e7,#71717a)" },
+  { id: "boldYellow", label: "Bold Yellow", animation: "pop", activeWordHighlight: false, textStroke: true, fillColor: "#facc15", highlightColor: "#fde047", bgColor: "", padding: 0, radius: 0, swatch: "linear-gradient(135deg,#fde047,#ca8a04)" },
+  { id: "minimal", label: "Minimal", animation: "none", activeWordHighlight: false, textStroke: false, fillColor: "#ffffff", highlightColor: "#ffffff", bgColor: "", padding: 0, radius: 0, swatch: "linear-gradient(135deg,#fafafa,#d4d4d8)" },
+  { id: "boxed", label: "Boxed", animation: "fadeIn", activeWordHighlight: false, textStroke: false, fillColor: "#ffffff", highlightColor: "#ffffff", bgColor: "#18181b", padding: 24, radius: 8, swatch: "linear-gradient(135deg,#3f3f46,#09090b)" },
+];
 
 /** Global styling applied to every auto-generated caption overlay. */
 export type CaptionStyle = {
@@ -255,6 +332,8 @@ export type TextOverlay = {
   bgBlur?: number;
   /** Transform keyframes; when present the renderer LERPs between them. */
   keyframes?: OverlayKeyframe[];
+  /** Uniform size multiplier (mainly for image/sticker overlays). */
+  scale?: number;
 };
 
 /** A keyframe on the speed (velocity) curve. `time` is in source-video seconds. */
@@ -282,7 +361,7 @@ export const TRANSITION_PRESETS: TransitionPreset[] = [
   { id: "dipToBlack", label: "Dip to Black", duration: 0.5 },
   { id: "whipPan", label: "Whip Pan", duration: 0.4 },
   { id: "glitchCut", label: "Glitch Cut", duration: 0.3 },
-  { id: "zoomIn", label: "Zoom In", duration: 0.5 },
+  { id: "zoomBlur", label: "Zoom Blur", duration: 0.5 },
 ];
 
 /** Export resolution preset id. */
@@ -300,11 +379,45 @@ export const EXPORT_RESOLUTIONS: Record<
 };
 
 export type VideoEffectType =
+  // Transform / camera
   | "zoom-in"
   | "zoom-out"
+  | "punch-in"
+  | "pull-back"
   | "camera-shake"
+  | "orbit-drift"
+  | "vertical-drift"
+  | "rotate-sway"
+  | "bounce-pulse"
+  | "handheld"
+  // Colour / grade
+  | "sepia"
+  | "invert"
+  | "grayscale"
+  | "warm-flash"
+  | "cool-shift"
+  | "hue-cycle"
+  | "brightness-pulse"
+  | "contrast-pump"
+  | "chromatic-bleed"
+  | "duotone"
+  // Light / atmosphere
   | "flash"
-  | "blur-vignette";
+  | "light-leak"
+  | "cinematic-glow"
+  | "bloom"
+  | "vignette"
+  | "blur-vignette"
+  | "sparkle"
+  | "god-rays"
+  // Film / retro
+  | "film-grain"
+  | "scanlines"
+  | "vhs-glitch"
+  | "glitch-rgb"
+  | "pixelate"
+  | "retro-tv"
+  | "crt-warp";
 
 /** A timed visual effect applied on top of the video frame. */
 export type VideoEffect = {
@@ -318,17 +431,75 @@ export type VideoEffect = {
   intensity: number;
 };
 
-/** Sensible default length/strength for each effect preset. */
+/** Human labels + sensible default length/strength for every effect. */
 export const EFFECT_DEFAULTS: Record<
   VideoEffectType,
   { duration: number; intensity: number }
 > = {
   "zoom-in": { duration: 2, intensity: 0.6 },
   "zoom-out": { duration: 2, intensity: 0.6 },
+  "punch-in": { duration: 0.5, intensity: 0.7 },
+  "pull-back": { duration: 0.6, intensity: 0.7 },
   "camera-shake": { duration: 0.8, intensity: 0.5 },
+  "orbit-drift": { duration: 3, intensity: 0.5 },
+  "vertical-drift": { duration: 3, intensity: 0.5 },
+  "rotate-sway": { duration: 2.5, intensity: 0.5 },
+  "bounce-pulse": { duration: 1.2, intensity: 0.6 },
+  handheld: { duration: 3, intensity: 0.4 },
+  sepia: { duration: 2, intensity: 0.8 },
+  invert: { duration: 1.5, intensity: 1 },
+  grayscale: { duration: 2, intensity: 1 },
+  "warm-flash": { duration: 0.6, intensity: 0.7 },
+  "cool-shift": { duration: 2, intensity: 0.7 },
+  "hue-cycle": { duration: 2, intensity: 0.7 },
+  "brightness-pulse": { duration: 1, intensity: 0.5 },
+  "contrast-pump": { duration: 1, intensity: 0.6 },
+  "chromatic-bleed": { duration: 1.5, intensity: 0.6 },
+  duotone: { duration: 2.5, intensity: 0.7 },
   flash: { duration: 0.5, intensity: 0.8 },
+  "light-leak": { duration: 1.6, intensity: 0.7 },
+  "cinematic-glow": { duration: 2.5, intensity: 0.6 },
+  bloom: { duration: 2, intensity: 0.6 },
+  vignette: { duration: 2.5, intensity: 0.7 },
   "blur-vignette": { duration: 2, intensity: 0.6 },
+  sparkle: { duration: 1.5, intensity: 0.7 },
+  "god-rays": { duration: 2.5, intensity: 0.6 },
+  "film-grain": { duration: 2.5, intensity: 0.5 },
+  scanlines: { duration: 2.5, intensity: 0.5 },
+  "vhs-glitch": { duration: 1, intensity: 0.7 },
+  "glitch-rgb": { duration: 0.8, intensity: 0.7 },
+  pixelate: { duration: 1.5, intensity: 0.6 },
+  "retro-tv": { duration: 2.5, intensity: 0.6 },
+  "crt-warp": { duration: 2.5, intensity: 0.6 },
 };
+
+/** Display label for an effect type (e.g. "chromatic-bleed" → "Chromatic Bleed"). */
+export function effectLabel(type: VideoEffectType): string {
+  return type
+    .split("-")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+/** The 35 effects, grouped for the effect pickers. */
+export const EFFECT_GROUPS: { label: string; types: VideoEffectType[] }[] = [
+  {
+    label: "Transform & Camera",
+    types: ["zoom-in", "zoom-out", "punch-in", "pull-back", "camera-shake", "orbit-drift", "vertical-drift", "rotate-sway", "bounce-pulse", "handheld"],
+  },
+  {
+    label: "Color & Grade",
+    types: ["sepia", "invert", "grayscale", "warm-flash", "cool-shift", "hue-cycle", "brightness-pulse", "contrast-pump", "chromatic-bleed", "duotone"],
+  },
+  {
+    label: "Light & Atmosphere",
+    types: ["flash", "light-leak", "cinematic-glow", "bloom", "vignette", "blur-vignette", "sparkle", "god-rays"],
+  },
+  {
+    label: "Film & Retro",
+    types: ["film-grain", "scanlines", "vhs-glitch", "glitch-rgb", "pixelate", "retro-tv", "crt-warp"],
+  },
+];
 
 export function clampSpeed(speed: number): number {
   return Math.min(Math.max(speed, MIN_SPEED), MAX_SPEED);
@@ -2188,44 +2359,33 @@ export const useEditorStore = create<EditorState>()(
     }),
 
   applyCaptionPreset: (preset) => {
-    const patches: Record<CaptionPreset, Partial<CaptionStyle>> = {
-      classic: {
-        preset: "classic",
-        animation: "pop",
-        activeWordHighlight: true,
-        textStroke: true,
-      },
-      karaoke: {
-        preset: "karaoke",
-        animation: "karaoke",
-        activeWordHighlight: true,
-        textStroke: true,
-        highlightColor: "#facc15",
-      },
-      bounce: {
-        preset: "bounce",
-        animation: "bounce",
-        activeWordHighlight: true,
-        textStroke: true,
-      },
-      neonBox: {
-        preset: "neonBox",
-        animation: "neon",
-        activeWordHighlight: false,
-        textStroke: false,
-        highlightColor: "#22d3ee",
-      },
-    };
-    set({ captionStyle: { ...get().captionStyle, ...patches[preset] } });
-    // Give existing auto captions a matching box look.
+    const def = CAPTION_PRESETS.find((item) => item.id === preset);
+    if (!def) return;
     set({
-      overlays: get().overlays.map((overlay) => {
-        if (!overlay.auto) return overlay;
-        if (preset === "neonBox") {
-          return { ...overlay, bgColor: "#09090b", padding: 30, radius: 18 };
-        }
-        return { ...overlay, bgColor: "", padding: 0, radius: 0 };
-      }),
+      captionStyle: {
+        ...get().captionStyle,
+        preset: def.id,
+        animation: def.animation,
+        activeWordHighlight: def.activeWordHighlight,
+        textStroke: def.textStroke,
+        highlightColor: def.highlightColor,
+      },
+    });
+    // Restyle the generated captions to match the chosen look (manual overlays
+    // are left untouched so multiple independent captions can coexist).
+    set({
+      overlays: get().overlays.map((overlay) =>
+        overlay.auto
+          ? {
+              ...overlay,
+              animation: def.animation,
+              fillColor: def.fillColor,
+              bgColor: def.bgColor,
+              padding: def.padding,
+              radius: def.radius,
+            }
+          : overlay
+      ),
     });
   },
 
@@ -2239,10 +2399,11 @@ export const useEditorStore = create<EditorState>()(
     const captions = buildScriptCaptions(trimmed, {
       duration: get().duration,
       aspect: get().aspect,
-    });
+    }).map((caption) => ({ ...caption, auto: false }));
     if (captions.length === 0) return;
+    // Append independent captions — never replace the existing ones.
     set({
-      overlays: [...get().overlays.filter((overlay) => !overlay.auto), ...captions],
+      overlays: [...get().overlays, ...captions],
       selectedId: captions[0]?.id ?? get().selectedId,
       transcriptionError: null,
     });

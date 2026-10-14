@@ -15,7 +15,6 @@ import {
   Film,
   Gauge,
   GripVertical,
-  Layers,
   Maximize2,
   Mic,
   Minimize2,
@@ -40,16 +39,18 @@ import {
 } from "lucide-react";
 import { ASPECT_RESOLUTIONS, drawScene, speedAt } from "@/lib/render";
 import {
+  CAPTION_PRESETS,
+  EFFECT_GROUPS,
   TRANSITION_PRESETS,
+  effectLabel,
   useEditorStore,
   type AspectRatio,
-  type VideoEffectType,
 } from "@/store/editor";
 import { CAPTION_LANGUAGES } from "@/lib/transcribe";
 import { useOverlayCanvasDrag } from "@/components/editor/use-overlay-drag";
 import { usePointerDrag } from "@/lib/timeline-drag";
 import { audioPreview } from "@/lib/audio-preview";
-import { SOUND_EFFECTS } from "@/lib/sfx";
+import { SOUND_EFFECT_CATEGORIES, SOUND_EFFECTS } from "@/lib/sfx";
 import { createDictation, isDictationSupported } from "@/lib/dictation";
 import { STICKER_CATEGORIES, STICKERS, stickerImageSrc, type StickerCategory } from "@/lib/stickers";
 import { Waveform } from "@/components/editor/waveform";
@@ -63,14 +64,6 @@ function formatTime(seconds: number): string {
   const secs = Math.floor(safe % 60);
   return `${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
 }
-
-const EFFECT_CARDS: { type: VideoEffectType; label: string; Icon: typeof Wand2 }[] = [
-  { type: "zoom-in", label: "Zoom In", Icon: Wand2 },
-  { type: "zoom-out", label: "Zoom Out", Icon: SlidersHorizontal },
-  { type: "camera-shake", label: "Shake", Icon: Gauge },
-  { type: "flash", label: "Flash", Icon: Sparkles },
-  { type: "blur-vignette", label: "Vignette", Icon: Layers },
-];
 
 const FILTERS: { id: string; label: string; swatch: string; patch: Record<string, number> }[] = [
   { id: "none", label: "None", swatch: "linear-gradient(135deg,#3f3f46,#18181b)", patch: {} },
@@ -773,6 +766,8 @@ export function MobileEditor() {
   const addEffect = useEditorStore((s) => s.addEffect);
   const clearEffects = useEditorStore((s) => s.clearEffects);
   const activeEffects = useEditorStore((s) => s.activeEffects);
+  const updateEffect = useEditorStore((s) => s.updateEffect);
+  const removeEffect = useEditorStore((s) => s.removeEffect);
   const setSpeedPreset = useEditorStore((s) => s.setSpeedPreset);
   const setSpeedPoints = useEditorStore((s) => s.setSpeedPoints);
   const speedPreset = useEditorStore((s) => s.speedPreset);
@@ -1217,24 +1212,63 @@ export function MobileEditor() {
       </Sheet>
 
       <Sheet open={sheet === "effects"} title="Effects" onClose={() => setSheet(null)}>
-        <div className="grid grid-cols-2 gap-2">
-          {EFFECT_CARDS.map((card) => (
-            <button
-              key={card.type}
-              type="button"
-              onClick={() => addEffect(card.type, currentTime)}
-              className="flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-950/60 p-3 text-left text-xs text-zinc-200"
-            >
-              <card.Icon className="h-4 w-4 text-violet-400" aria-hidden />
-              {card.label}
-            </button>
+        <div className="space-y-3">
+          {EFFECT_GROUPS.map((group) => (
+            <div key={group.label}>
+              <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                {group.label}
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                {group.types.map((type) => (
+                  <button
+                    key={type}
+                    type="button"
+                    onClick={() => addEffect(type, currentTime)}
+                    className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-2.5 text-left text-[11px] text-zinc-200 transition-colors hover:border-violet-500/50"
+                  >
+                    {effectLabel(type)}
+                  </button>
+                ))}
+              </div>
+            </div>
           ))}
         </div>
+
         {activeEffects.length > 0 && (
-          <button type="button" onClick={clearEffects} className={cn(chipBtn, "mt-3 w-full justify-center")}>
-            Clear {activeEffects.length} effect{activeEffects.length === 1 ? "" : "s"}
-          </button>
+          <div className="mt-4 space-y-2 border-t border-zinc-800 pt-3">
+            <div className="flex items-center justify-between">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                Applied ({activeEffects.length})
+              </p>
+              <button type="button" onClick={clearEffects} className="text-[10px] text-zinc-500 hover:text-red-400">
+                Clear all
+              </button>
+            </div>
+            {activeEffects.map((fx) => (
+              <div key={fx.id} className="space-y-1 rounded-xl border border-fuchsia-500/30 bg-fuchsia-500/10 px-3 py-2">
+                <div className="flex items-center gap-2 text-[11px] text-fuchsia-100">
+                  <span className="min-w-0 flex-1 truncate">{effectLabel(fx.type)}</span>
+                  <button type="button" onClick={() => removeEffect(fx.id)} aria-label="Remove effect" className="rounded p-1 text-fuchsia-200/70 hover:text-white">
+                    <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                  </button>
+                </div>
+                <label className="block text-[10px] text-fuchsia-200/80">
+                  Intensity · {Math.round(fx.intensity * 100)}%
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    value={fx.intensity}
+                    onChange={(e) => updateEffect(fx.id, { intensity: Number(e.target.value) })}
+                    className="w-full accent-fuchsia-400"
+                  />
+                </label>
+              </div>
+            ))}
+          </div>
         )}
+
         <div className="mt-4 border-t border-zinc-800 pt-3">
           <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
             Filter presets
@@ -1342,18 +1376,29 @@ export function MobileEditor() {
 
       <Sheet open={sheet === "audio"} title="Audio & SFX" onClose={() => setSheet(null)}>
         <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-          Sound effects
+          Sound effects · {SOUND_EFFECTS.length}
         </p>
-        <div className="grid grid-cols-3 gap-2">
-          {SOUND_EFFECTS.map((effect) => (
-            <button
-              key={effect.id}
-              type="button"
-              onClick={() => void addSoundEffect(effect.id)}
-              className="rounded-xl border border-zinc-800 bg-zinc-950/60 px-1.5 py-2.5 text-[10px] text-zinc-200 transition-colors hover:border-zinc-600"
-            >
-              {effect.label}
-            </button>
+        <div className="space-y-3">
+          {SOUND_EFFECT_CATEGORIES.map((category) => (
+            <div key={category.id}>
+              <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-600">
+                {category.label}
+              </p>
+              <div className="grid grid-cols-3 gap-2">
+                {SOUND_EFFECTS.filter((effect) => effect.category === category.id).map(
+                  (effect) => (
+                    <button
+                      key={effect.id}
+                      type="button"
+                      onClick={() => void addSoundEffect(effect.id)}
+                      className="rounded-xl border border-zinc-800 bg-zinc-950/60 px-1.5 py-2.5 text-[10px] text-zinc-200 transition-colors hover:border-violet-500/50"
+                    >
+                      {effect.label}
+                    </button>
+                  )
+                )}
+              </div>
+            </div>
           ))}
         </div>
 
@@ -1481,29 +1526,28 @@ export function MobileEditor() {
         </div>
 
         <p className="mb-1.5 mt-4 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-          Caption styles
+          Caption styles ({CAPTION_PRESETS.length})
         </p>
-        <div className="grid grid-cols-3 gap-2">
-          {(
-            [
-              ["karaoke", "Karaoke"],
-              ["bounce", "Bounce"],
-              ["neonBox", "Neon Box"],
-            ] as const
-          ).map(([id, label]) => (
+        <div className="custom-scrollbar grid max-h-56 grid-cols-2 gap-2 overflow-y-auto pr-1">
+          {CAPTION_PRESETS.map((preset) => (
             <button
-              key={id}
+              key={preset.id}
               type="button"
-              onClick={() => applyCaptionPreset(id)}
-              aria-pressed={captionStyle.preset === id}
+              onClick={() => applyCaptionPreset(preset.id)}
+              aria-pressed={captionStyle.preset === preset.id}
               className={cn(
-                "rounded-xl border px-2 py-2.5 text-[11px]",
-                captionStyle.preset === id
+                "flex items-center gap-2 rounded-xl border px-2 py-2 text-left text-[11px]",
+                captionStyle.preset === preset.id
                   ? "border-violet-500 bg-violet-600/15 text-violet-200"
                   : "border-zinc-800 bg-zinc-950/60 text-zinc-300"
               )}
             >
-              {label}
+              <span
+                className="h-4 w-4 shrink-0 rounded-full ring-1 ring-inset ring-white/20"
+                style={{ background: preset.swatch }}
+                aria-hidden
+              />
+              <span className="min-w-0 flex-1 truncate">{preset.label}</span>
             </button>
           ))}
         </div>

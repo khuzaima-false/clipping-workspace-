@@ -17,8 +17,45 @@ const STUDIO_PRESETS: { id: string; label: string; patch: Record<string, number>
 const STUDIO_FONTS = ["Arial Black", "Impact", "Arial", "Georgia"] as const;
 type StudioFont = (typeof STUDIO_FONTS)[number];
 
+export type StudioTemplateId =
+  | "jersey"
+  | "football"
+  | "poster"
+  | "versus"
+  | "esports"
+  | "stream"
+  | "roster"
+  | "statcard"
+  | "fixture"
+  | "scoreboard"
+  | "bracket"
+  | "sponsor"
+  | "highlight"
+  | "scorebug";
+
+export const STUDIO_TEMPLATES: {
+  id: StudioTemplateId;
+  label: string;
+  group: "sports" | "gaming" | "broadcast";
+}[] = [
+  { id: "jersey", label: "Cricket Jersey", group: "sports" },
+  { id: "football", label: "Football Kit", group: "sports" },
+  { id: "poster", label: "Match Day Poster", group: "sports" },
+  { id: "versus", label: "Versus Card", group: "sports" },
+  { id: "roster", label: "Team Roster", group: "sports" },
+  { id: "statcard", label: "Player Stats", group: "sports" },
+  { id: "fixture", label: "Fixture List", group: "sports" },
+  { id: "esports", label: "Esports Clan Logo", group: "gaming" },
+  { id: "stream", label: "Stream Starting Soon", group: "gaming" },
+  { id: "highlight", label: "Highlight Reel Intro", group: "gaming" },
+  { id: "scoreboard", label: "Live Scoreboard", group: "broadcast" },
+  { id: "bracket", label: "Tournament Bracket", group: "broadcast" },
+  { id: "sponsor", label: "Sponsor Board", group: "broadcast" },
+  { id: "scorebug", label: "Score Bug", group: "broadcast" },
+];
+
 type StudioOptions = {
-  template: "jersey" | "poster";
+  template: StudioTemplateId;
   name: string;
   number: string;
   opponent: string;
@@ -78,43 +115,156 @@ function renderStudio(
   ctx.clearRect(0, 0, w, h);
   ctx.lineJoin = "round";
   ctx.miterLimit = 2;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
 
-  if (o.template === "jersey") {
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.font = `700 ${o.fontSize}px ${o.font}`;
-    ctx.fillStyle = o.color;
-    ctx.strokeStyle = o.strokeColor;
-    ctx.lineWidth = o.strokeWidth;
-    ctx.strokeText(o.number, w / 2, h * 0.62);
-    ctx.fillText(o.number, w / 2, h * 0.62);
-    drawArcText(
-      ctx,
-      o.name.toUpperCase(),
-      w / 2,
-      h * 0.34,
-      o.curvature * 0.02,
-      `700 ${Math.round(o.fontSize * 0.34)}px ${o.font}`,
-      o.color,
-      o.strokeColor,
-      o.strokeWidth * 0.6
-    );
-  } else {
-    ctx.fillStyle = "#0b0b0f";
-    ctx.fillRect(0, 0, w, h);
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillStyle = o.color;
-    ctx.strokeStyle = o.strokeColor;
-    ctx.lineWidth = o.strokeWidth;
-    ctx.font = `700 ${Math.round(o.fontSize * 0.5)}px ${o.font}`;
-    ctx.strokeText("VS", w * 0.5, h * 0.52);
-    ctx.fillText("VS", w * 0.5, h * 0.52);
-    ctx.font = `700 ${Math.round(o.fontSize * 0.26)}px ${o.font}`;
-    ctx.fillText("TEAM A", w * 0.24, h * 0.52);
-    ctx.fillText((o.opponent || "RIVALS").toUpperCase(), w * 0.76, h * 0.52);
-    ctx.font = `600 ${Math.round(o.fontSize * 0.14)}px ${o.font}`;
-    ctx.fillText("MATCH DAY", w * 0.5, h * 0.14);
+  const name = o.name.toUpperCase();
+  const opponent = (o.opponent || "RIVALS").toUpperCase();
+  const font = o.font;
+  const fs = o.fontSize;
+  const fill = o.color;
+  const stroke = o.strokeColor;
+  const sw = o.strokeWidth;
+
+  const text = (value: string, x: number, y: number, size: number, weight = 700) => {
+    ctx.font = `${weight} ${Math.max(8, Math.round(size))}px ${font}`;
+    ctx.fillStyle = fill;
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = sw;
+    if (sw > 0) ctx.strokeText(value, x, y);
+    ctx.fillText(value, x, y);
+  };
+  const panel = (x: number, y: number, pw: number, ph: number, bg: string, radius = 24) => {
+    ctx.fillStyle = bg;
+    ctx.beginPath();
+    if (typeof ctx.roundRect === "function") ctx.roundRect(x, y, pw, ph, radius);
+    else ctx.rect(x, y, pw, ph);
+    ctx.fill();
+  };
+
+  switch (o.template) {
+    case "jersey":
+      text(o.number, w / 2, h * 0.62, fs);
+      drawArcText(ctx, name, w / 2, h * 0.34, o.curvature * 0.02, `700 ${Math.round(fs * 0.34)}px ${font}`, fill, stroke, sw * 0.6);
+      break;
+    case "football":
+      panel(w * 0.2, h * 0.16, w * 0.6, h * 0.68, "#0b0b0f", 40);
+      text(o.number, w / 2, h * 0.6, fs);
+      text(name, w / 2, h * 0.28, fs * 0.28);
+      text(opponent, w / 2, h * 0.82, fs * 0.2);
+      break;
+    case "poster":
+      ctx.fillStyle = "#0b0b0f";
+      ctx.fillRect(0, 0, w, h);
+      text("VS", w * 0.5, h * 0.52, fs * 0.5);
+      text("TEAM A", w * 0.24, h * 0.52, fs * 0.26);
+      text(opponent, w * 0.76, h * 0.52, fs * 0.26);
+      text("MATCH DAY", w * 0.5, h * 0.14, fs * 0.14, 600);
+      break;
+    case "versus":
+      ctx.fillStyle = "#111827";
+      ctx.fillRect(0, 0, w, h);
+      panel(0, h * 0.36, w * 0.42, h * 0.28, "#1d4ed8", 8);
+      panel(w * 0.58, h * 0.36, w * 0.42, h * 0.28, "#b91c1c", 8);
+      text(name, w * 0.21, h * 0.5, fs * 0.22);
+      text(opponent, w * 0.79, h * 0.5, fs * 0.22);
+      text("VS", w * 0.5, h * 0.5, fs * 0.36);
+      break;
+    case "esports": {
+      const cx = w / 2;
+      const cy = h * 0.46;
+      const radius = Math.min(w, h) * 0.3;
+      ctx.beginPath();
+      for (let i = 0; i < 6; i += 1) {
+        const a = (Math.PI / 3) * i - Math.PI / 6;
+        const x = cx + Math.cos(a) * radius;
+        const y = cy + Math.sin(a) * radius;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+      ctx.fillStyle = "#0f172a";
+      ctx.fill();
+      ctx.lineWidth = Math.max(4, sw);
+      ctx.strokeStyle = fill;
+      ctx.stroke();
+      text((name || "CLAN").slice(0, 5), cx, cy, fs * 0.3);
+      text(`#${o.number || "01"}`, cx, h * 0.86, fs * 0.18);
+      break;
+    }
+    case "stream":
+      ctx.fillStyle = "#0b0b12";
+      ctx.fillRect(0, 0, w, h);
+      text("STARTING SOON", w / 2, h * 0.34, fs * 0.3);
+      text(name, w / 2, h * 0.56, fs * 0.5);
+      text(`LIVE · ${opponent}`, w / 2, h * 0.74, fs * 0.16, 600);
+      break;
+    case "roster":
+      ctx.fillStyle = "#0b0b0f";
+      ctx.fillRect(0, 0, w, h);
+      text(name, w / 2, h * 0.14, fs * 0.24);
+      ["1", "2", "3", "4"].forEach((n, i) => text(n, w * 0.18 + i * w * 0.22, h * 0.42, fs * 0.3));
+      ["A", "B", "C", "D"].forEach((t, i) => text(t, w * 0.18 + i * w * 0.22, h * 0.66, fs * 0.14, 600));
+      break;
+    case "statcard":
+      panel(w * 0.08, h * 0.08, w * 0.84, h * 0.84, "#111827", 32);
+      text(name, w / 2, h * 0.24, fs * 0.24);
+      text("SCORE", w * 0.3, h * 0.5, fs * 0.12, 600);
+      text(o.number || "0", w * 0.3, h * 0.62, fs * 0.34);
+      text("ASSISTS", w * 0.7, h * 0.5, fs * 0.12, 600);
+      text(opponent.slice(0, 2) || "0", w * 0.7, h * 0.62, fs * 0.34);
+      break;
+    case "fixture":
+      ctx.fillStyle = "#0b0b0f";
+      ctx.fillRect(0, 0, w, h);
+      text("FIXTURES", w / 2, h * 0.12, fs * 0.2);
+      ["ROUND 1", "ROUND 2", "ROUND 3"].forEach((label, i) => {
+        const y = h * 0.3 + i * h * 0.2;
+        panel(w * 0.08, y - h * 0.06, w * 0.84, h * 0.12, "#18181b", 16);
+        text(`${name}  vs  ${opponent}`, w / 2, y, fs * 0.12, 600);
+        text(label, w / 2, y + h * 0.035, fs * 0.08, 500);
+      });
+      break;
+    case "scoreboard":
+      ctx.fillStyle = "#0b0b0f";
+      ctx.fillRect(0, 0, w, h);
+      panel(w * 0.06, h * 0.3, w * 0.88, h * 0.4, "#111827", 28);
+      text(name, w * 0.28, h * 0.42, fs * 0.18);
+      text(opponent, w * 0.72, h * 0.42, fs * 0.18);
+      text(o.number || "0", w * 0.28, h * 0.58, fs * 0.3);
+      text("0", w * 0.72, h * 0.58, fs * 0.3);
+      text("-", w * 0.5, h * 0.5, fs * 0.28);
+      break;
+    case "bracket":
+      ctx.fillStyle = "#0b0b0f";
+      ctx.fillRect(0, 0, w, h);
+      text("BRACKET", w / 2, h * 0.1, fs * 0.18);
+      for (let i = 0; i < 4; i += 1) {
+        panel(w * 0.08, h * 0.25 + i * h * 0.16, w * 0.34, h * 0.1, "#18181b", 12);
+        panel(w * 0.58, h * 0.33 + i * h * 0.16, w * 0.34, h * 0.1, "#18181b", 12);
+      }
+      panel(w * 0.38, h * 0.45, w * 0.24, h * 0.1, stroke || "#7c3aed", 12);
+      break;
+    case "sponsor":
+      ctx.fillStyle = "#0b0b0f";
+      ctx.fillRect(0, 0, w, h);
+      text("SPONSORED BY", w / 2, h * 0.18, fs * 0.14, 600);
+      panel(w * 0.18, h * 0.32, w * 0.64, h * 0.36, stroke || "#7c3aed", 28);
+      text(name, w / 2, h * 0.5, fs * 0.28);
+      text(opponent, w / 2, h * 0.82, fs * 0.12, 500);
+      break;
+    case "highlight":
+      ctx.fillStyle = "#0b0b0f";
+      ctx.fillRect(0, 0, w, h);
+      text("HIGHLIGHTS", w / 2, h * 0.3, fs * 0.34);
+      text(name, w / 2, h * 0.6, fs * 0.24);
+      text(`vs ${opponent}`, w / 2, h * 0.74, fs * 0.16, 600);
+      break;
+    case "scorebug":
+      panel(w * 0.12, h * 0.42, w * 0.76, h * 0.16, "#111827", 18);
+      panel(w * 0.12, h * 0.42, w * 0.06, h * 0.16, stroke || "#7c3aed", 18);
+      text(`${name}  ${o.number || "0"} - 0  ${opponent}`, w / 2, h * 0.5, fs * 0.12, 600);
+      break;
   }
 }
 
@@ -157,7 +307,7 @@ const fieldClass =
 export function StudioPanel() {
   const addImageOverlay = useEditorStore((s) => s.addImageOverlay);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [template, setTemplate] = useState<"jersey" | "poster">("jersey");
+  const [template, setTemplate] = useState<StudioTemplateId>("jersey");
   const [name, setName] = useState("SHARMA");
   const [number, setNumber] = useState("7");
   const [opponent, setOpponent] = useState("TITANS");
@@ -202,26 +352,21 @@ export function StudioPanel() {
 
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-2 gap-1.5">
-        {(
-          [
-            ["jersey", "Cricket Jersey"],
-            ["poster", "Match Day Poster"],
-          ] as const
-        ).map(([id, label]) => (
+      <div className="custom-scrollbar grid max-h-56 grid-cols-2 gap-1.5 overflow-y-auto pr-1">
+        {STUDIO_TEMPLATES.map((item) => (
           <button
-            key={id}
+            key={item.id}
             type="button"
-            onClick={() => setTemplate(id)}
-            aria-pressed={template === id}
+            onClick={() => setTemplate(item.id)}
+            aria-pressed={template === item.id}
             className={cn(
-              "rounded-lg border px-2 py-2 text-[11px] transition-colors",
-              template === id
+              "rounded-lg border px-2 py-2 text-left text-[11px] transition-colors",
+              template === item.id
                 ? "border-violet-500 bg-violet-600/15 text-violet-200"
                 : "border-zinc-800 bg-zinc-950/60 text-zinc-300 hover:border-zinc-600"
             )}
           >
-            {label}
+            {item.label}
           </button>
         ))}
       </div>
@@ -289,61 +434,93 @@ export function StudioPanel() {
 /* 2. AI Studio: background removal + blur                             */
 /* ------------------------------------------------------------------ */
 
-/** Chroma-key style background removal on a PNG data URL. */
-async function removeBackground(
-  src: string,
-  onProgress: (percent: number) => void
-): Promise<string | null> {
-  const image = await new Promise<HTMLImageElement | null>((resolve) => {
+/** Loads an image from a (data) URL. */
+function loadImage(src: string): Promise<HTMLImageElement | null> {
+  return new Promise((resolve) => {
     const img = new Image();
     img.onload = () => resolve(img);
     img.onerror = () => resolve(null);
     img.src = src;
   });
+}
+
+/**
+ * Client-side background removal. Estimates the background colour from the
+ * image border (median-ish average), then cuts matching pixels to full
+ * transparency and feathers the edge so the subject stays smooth. `tolerance`
+ * is 0..1 (higher removes more of the background).
+ */
+async function removeBackground(
+  src: string,
+  onProgress: (percent: number) => void,
+  tolerance = 0.22
+): Promise<string | null> {
+  const image = await loadImage(src);
   if (!image) return null;
+  const w = image.naturalWidth;
+  const h = image.naturalHeight;
+  if (w === 0 || h === 0) return null;
 
   const canvas = document.createElement("canvas");
-  canvas.width = image.naturalWidth;
-  canvas.height = image.naturalHeight;
-  const ctx = canvas.getContext("2d");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (!ctx) return null;
   ctx.drawImage(image, 0, 0);
-  const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const data = ctx.getImageData(0, 0, w, h);
   const px = data.data;
 
-  // Average the four corners to estimate the background colour.
-  const corners = [
-    0,
-    (canvas.width - 1) * 4,
-    (canvas.height - 1) * canvas.width * 4,
-    ((canvas.height - 1) * canvas.width + canvas.width - 1) * 4,
-  ];
+  // Average the border pixels to estimate the background colour.
   let br = 0;
   let bg = 0;
   let bb = 0;
-  for (const i of corners) {
-    br += px[i];
-    bg += px[i + 1];
-    bb += px[i + 2];
+  let count = 0;
+  const stepX = Math.max(1, Math.floor(w / 64));
+  const stepY = Math.max(1, Math.floor(h / 64));
+  for (let x = 0; x < w; x += stepX) {
+    for (const y of [0, h - 1]) {
+      const i = (y * w + x) * 4;
+      br += px[i];
+      bg += px[i + 1];
+      bb += px[i + 2];
+      count += 1;
+    }
   }
-  br /= corners.length;
-  bg /= corners.length;
-  bb /= corners.length;
+  for (let y = 0; y < h; y += stepY) {
+    for (const x of [0, w - 1]) {
+      const i = (y * w + x) * 4;
+      br += px[i];
+      bg += px[i + 1];
+      bb += px[i + 2];
+      count += 1;
+    }
+  }
+  if (count === 0) return null;
+  br /= count;
+  bg /= count;
+  bb /= count;
 
-  const threshold = 60 * 60 * 3;
-  const rows = canvas.height;
-  for (let y = 0; y < rows; y++) {
-    for (let x = 0; x < canvas.width; x++) {
-      const i = (y * canvas.width + x) * 4;
+  const maxDist = Math.sqrt(3) * 255;
+  const outer = Math.min(Math.max(tolerance, 0.02), 0.9) * maxDist;
+  const inner = outer * 0.7;
+
+  for (let y = 0; y < h; y += 1) {
+    for (let x = 0; x < w; x += 1) {
+      const i = (y * w + x) * 4;
       const dr = px[i] - br;
       const dg = px[i + 1] - bg;
       const db = px[i + 2] - bb;
-      if (dr * dr + dg * dg + db * db < threshold) px[i + 3] = 0;
+      const dist = Math.sqrt(dr * dr + dg * dg + db * db);
+      if (dist <= inner) {
+        px[i + 3] = 0;
+      } else if (dist < outer) {
+        px[i + 3] = px[i + 3] * ((dist - inner) / (outer - inner));
+      }
     }
-    if (y % 40 === 0) {
-      onProgress(Math.round((y / rows) * 100));
+    if (y % 24 === 0) {
+      onProgress(Math.round((y / h) * 100));
       // Yield so the progress bar can paint.
-      await new Promise((r) => setTimeout(r, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
     }
   }
   ctx.putImageData(data, 0, 0);
@@ -356,18 +533,25 @@ export function AiStudioSection({ selected }: { selected: TextOverlay | null }) 
   const addImageOverlay = useEditorStore((s) => s.addImageOverlay);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [tolerance, setTolerance] = useState(0.22);
   const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
 
   const runRemoval = async (src: string, target: "overlay" | "frame") => {
     setBusy(true);
     setError(null);
+    setStatus(null);
     setProgress(0);
     try {
-      const result = await removeBackground(src, setProgress);
+      const result = await removeBackground(src, setProgress, tolerance);
       if (!result) throw new Error("Could not read the image.");
-      if (target === "overlay" && selected) updateOverlay(selected.id, { imageSrc: result });
-      else addImageOverlay(result, 0);
-      if (target === "frame") setError("Background removed — added as a new overlay.");
+      if (target === "overlay" && selected) {
+        updateOverlay(selected.id, { imageSrc: result });
+        setStatus("Background removed — overlay updated.");
+      } else {
+        addImageOverlay(result, 0);
+        setStatus("Background removed — added as a new overlay.");
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Processing failed.");
     } finally {
@@ -378,13 +562,17 @@ export function AiStudioSection({ selected }: { selected: TextOverlay | null }) 
 
   const captureFrame = (): string | null => {
     const video = useEditorStore.getState().videoEl;
-    if (!video || video.videoWidth === 0) return null;
+    if (!video || video.readyState < 2 || video.videoWidth === 0) return null;
     const canvas = document.createElement("canvas");
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
-    const ctx = canvas.getContext("2d");
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
     if (!ctx) return null;
-    ctx.drawImage(video, 0, 0);
+    try {
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    } catch {
+      return null;
+    }
     return canvas.toDataURL("image/png");
   };
 
@@ -417,6 +605,14 @@ export function AiStudioSection({ selected }: { selected: TextOverlay | null }) 
         <Sparkles className="h-3.5 w-3.5 text-fuchsia-400" aria-hidden /> Remove background (current frame)
       </button>
 
+      <Slider
+        label="Edge tolerance"
+        value={Math.round(tolerance * 100)}
+        min={5}
+        max={70}
+        onChange={(value) => setTolerance(value / 100)}
+      />
+
       {busy && (
         <div className="space-y-1">
           <div className="flex items-center justify-between text-[10px] text-zinc-500">
@@ -428,7 +624,10 @@ export function AiStudioSection({ selected }: { selected: TextOverlay | null }) 
           </div>
         </div>
       )}
-      {error && <p className="text-[10px] leading-4 text-zinc-500">{error}</p>}
+      {error && <p className="text-[10px] leading-4 text-red-400">{error}</p>}
+      {status && !error && (
+        <p className="text-[10px] leading-4 text-emerald-400">{status}</p>
+      )}
 
       {selected?.imageSrc && (
         <Slider

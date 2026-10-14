@@ -214,10 +214,54 @@ export type EffectFrame = {
   scale: number;
   offsetX: number;
   offsetY: number;
+  rotation: number;
   blur: number;
   flashAlpha: number;
   vignetteAlpha: number;
+  /** CSS-filter style colour ops (0 = neutral). */
+  sepia: number;
+  invert: number;
+  grayscale: number;
+  brightness: number;
+  contrast: number;
+  hueRotate: number;
+  /** Full-frame colour overlay (light leak / duotone / glow tint). */
+  overlay: { r: number; g: number; b: number; a: number } | null;
+  overlayMode: GlobalCompositeOperation;
+  /** Chromatic-aberration ghost offset in px. */
+  rgbSplit: number;
+  /** Grain / scanline strength 0..1. */
+  grain: number;
+  scanlines: number;
+  /** Bloom / glow pass strength 0..1. */
+  glow: number;
+  /** Pixelate block size in px (0 = off). */
+  pixelate: number;
 };
+
+let effectNoiseTile: HTMLCanvasElement | null = null;
+
+function getNoiseTile(): HTMLCanvasElement | null {
+  if (typeof document === "undefined") return null;
+  if (effectNoiseTile) return effectNoiseTile;
+  const size = 128;
+  const tile = document.createElement("canvas");
+  tile.width = size;
+  tile.height = size;
+  const ctx = tile.getContext("2d");
+  if (!ctx) return null;
+  const image = ctx.createImageData(size, size);
+  for (let i = 0; i < image.data.length; i += 4) {
+    const v = 128 + (Math.random() - 0.5) * 160;
+    image.data[i] = v;
+    image.data[i + 1] = v;
+    image.data[i + 2] = v;
+    image.data[i + 3] = 255;
+  }
+  ctx.putImageData(image, 0, 0);
+  effectNoiseTile = tile;
+  return tile;
+}
 
 /** Resolves all active effects at `sceneTime` into one compositing frame. */
 export function computeEffectFrame(
@@ -228,9 +272,23 @@ export function computeEffectFrame(
     scale: 1,
     offsetX: 0,
     offsetY: 0,
+    rotation: 0,
     blur: 0,
     flashAlpha: 0,
     vignetteAlpha: 0,
+    sepia: 0,
+    invert: 0,
+    grayscale: 0,
+    brightness: 0,
+    contrast: 0,
+    hueRotate: 0,
+    overlay: null,
+    overlayMode: "screen",
+    rgbSplit: 0,
+    grain: 0,
+    scanlines: 0,
+    glow: 0,
+    pixelate: 0,
   };
 
   for (const effect of effects) {
@@ -241,38 +299,170 @@ export function computeEffectFrame(
         ? Math.min(1, Math.max(0, (sceneTime - effect.startTime) / effect.duration))
         : 1;
     const intensity = Math.min(Math.max(effect.intensity, 0), 1);
+    const envelope = Math.sin(Math.PI * progress);
+    const seed = sceneTime * 60;
 
     switch (effect.type) {
+      /* ---- Transform / camera ---- */
       case "zoom-in":
         frame.scale *= 1 + 0.35 * intensity * easeInOut(progress);
         break;
       case "zoom-out":
         frame.scale *= 1 + 0.35 * intensity * easeInOut(1 - progress);
         break;
+      case "punch-in":
+        frame.scale *= 1 + 0.5 * intensity * (1 - Math.pow(1 - progress, 3));
+        break;
+      case "pull-back":
+        frame.scale *= 1 + 0.5 * intensity * Math.pow(1 - progress, 3);
+        break;
       case "camera-shake": {
         const amplitude = 26 * intensity;
-        const seed = sceneTime * 60;
         frame.offsetX +=
           (Math.sin(seed * 12.9898) + Math.sin(seed * 4.1414) * 0.5) * amplitude;
         frame.offsetY +=
           (Math.cos(seed * 7.233) + Math.cos(seed * 2.718) * 0.5) * amplitude;
         break;
       }
+      case "orbit-drift":
+        frame.offsetX += Math.cos(progress * Math.PI * 2) * 40 * intensity;
+        frame.offsetY += Math.sin(progress * Math.PI * 2) * 22 * intensity;
+        frame.scale *= 1 + 0.12 * intensity;
+        break;
+      case "vertical-drift":
+        frame.offsetY += (progress - 0.5) * 90 * intensity;
+        break;
+      case "rotate-sway":
+        frame.rotation += Math.sin(progress * Math.PI * 2) * 3.2 * intensity;
+        frame.scale *= 1.05;
+        break;
+      case "bounce-pulse": {
+        const bounce = Math.abs(Math.sin(progress * Math.PI * 3)) * (1 - progress);
+        frame.scale *= 1 + 0.18 * intensity * bounce;
+        frame.offsetY -= 22 * intensity * bounce;
+        break;
+      }
+      case "handheld": {
+        const amp = 7 * intensity;
+        frame.offsetX += Math.sin(seed * 8.7) * amp;
+        frame.offsetY += Math.cos(seed * 6.3) * amp;
+        frame.rotation += Math.sin(seed * 3.1) * 0.35 * intensity;
+        break;
+      }
+
+      /* ---- Colour / grade ---- */
+      case "sepia":
+        frame.sepia = Math.min(1, frame.sepia + intensity);
+        break;
+      case "invert":
+        frame.invert = Math.min(1, frame.invert + intensity);
+        break;
+      case "grayscale":
+        frame.grayscale = Math.min(1, frame.grayscale + intensity);
+        break;
+      case "warm-flash":
+        frame.overlay = { r: 255, g: 170, b: 90, a: 0.4 * intensity * envelope };
+        frame.overlayMode = "screen";
+        break;
+      case "cool-shift":
+        frame.overlay = { r: 60, g: 150, b: 255, a: 0.32 * intensity };
+        frame.overlayMode = "soft-light";
+        break;
+      case "hue-cycle":
+        frame.hueRotate += progress * 360 * intensity;
+        break;
+      case "brightness-pulse":
+        frame.brightness += Math.sin(progress * Math.PI * 2) * 45 * intensity;
+        break;
+      case "contrast-pump":
+        frame.contrast += 55 * intensity * envelope;
+        break;
+      case "chromatic-bleed":
+        frame.rgbSplit = Math.max(frame.rgbSplit, 10 * intensity * envelope);
+        break;
+      case "duotone":
+        frame.grayscale = Math.min(1, frame.grayscale + 0.7 * intensity);
+        frame.overlay = { r: 60, g: 90, b: 200, a: 0.35 * intensity };
+        frame.overlayMode = "soft-light";
+        break;
+
+      /* ---- Light / atmosphere ---- */
       case "flash":
         frame.flashAlpha = Math.min(
           1,
           frame.flashAlpha + intensity * Math.pow(1 - progress, 2)
         );
         break;
-      case "blur-vignette": {
-        const envelope = Math.sin(Math.PI * progress);
+      case "light-leak":
+        frame.overlay = { r: 255, g: 120, b: 40, a: 0.5 * intensity * envelope };
+        frame.overlayMode = "screen";
+        break;
+      case "cinematic-glow":
+        frame.glow = Math.min(1, frame.glow + 0.7 * intensity);
+        frame.contrast += 12 * intensity;
+        break;
+      case "bloom":
+        frame.glow = Math.min(1, frame.glow + intensity * envelope);
+        break;
+      case "vignette":
+        frame.vignetteAlpha = Math.min(1, frame.vignetteAlpha + intensity * 0.9);
+        break;
+      case "blur-vignette":
         frame.blur = Math.max(frame.blur, 8 * intensity * envelope);
         frame.vignetteAlpha = Math.min(
           1,
           frame.vignetteAlpha + intensity * 0.85 * envelope
         );
         break;
+      case "sparkle":
+        frame.overlay = {
+          r: 255,
+          g: 255,
+          b: 255,
+          a: 0.28 * intensity * Math.abs(Math.sin(seed * 2.3)),
+        };
+        frame.overlayMode = "screen";
+        break;
+      case "god-rays":
+        frame.overlay = { r: 255, g: 230, b: 170, a: 0.4 * intensity * envelope };
+        frame.overlayMode = "screen";
+        break;
+
+      /* ---- Film / retro ---- */
+      case "film-grain":
+        frame.grain = Math.min(1, frame.grain + intensity * 0.8);
+        frame.contrast += 8 * intensity;
+        break;
+      case "scanlines":
+        frame.scanlines = Math.min(1, frame.scanlines + intensity * 0.8);
+        break;
+      case "vhs-glitch": {
+        frame.scanlines = Math.min(1, frame.scanlines + intensity * 0.5);
+        frame.rgbSplit = Math.max(frame.rgbSplit, 8 * intensity);
+        const jitter = (Math.sin(seed * 5.7) + Math.sin(seed * 2.1)) * 5 * intensity;
+        frame.offsetY += jitter;
+        frame.grain = Math.min(1, frame.grain + intensity * 0.4);
+        break;
       }
+      case "glitch-rgb":
+        frame.rgbSplit = Math.max(frame.rgbSplit, (6 + Math.abs(Math.sin(seed * 9.1)) * 12) * intensity);
+        frame.offsetX += (Math.sin(seed * 13.3)) * 6 * intensity;
+        break;
+      case "pixelate":
+        frame.pixelate = Math.max(frame.pixelate, 4 + Math.round(28 * intensity));
+        break;
+      case "retro-tv":
+        frame.scanlines = Math.min(1, frame.scanlines + intensity * 0.7);
+        frame.grain = Math.min(1, frame.grain + intensity * 0.4);
+        frame.vignetteAlpha = Math.min(1, frame.vignetteAlpha + intensity * 0.5);
+        frame.rgbSplit = Math.max(frame.rgbSplit, 4 * intensity);
+        break;
+      case "crt-warp":
+        frame.scale *= 1.04;
+        frame.rotation += Math.sin(progress * Math.PI) * 1.4 * intensity;
+        frame.scanlines = Math.min(1, frame.scanlines + intensity * 0.4);
+        frame.vignetteAlpha = Math.min(1, frame.vignetteAlpha + intensity * 0.4);
+        break;
     }
   }
 
@@ -323,6 +513,33 @@ export function buildCanvasFilter(
 /* -------------------------------------------------------------------------- */
 /* Per-pixel colour grade (tone curve + lift/gamma/gain + vibrance/clarity)     */
 /* -------------------------------------------------------------------------- */
+
+let pixelateCanvas: HTMLCanvasElement | null = null;
+
+/**
+ * Combined CSS filter string for the colour adjustments *and* the active
+ * effect frame's colour ops (sepia / invert / grayscale / hue / brightness…).
+ */
+export function buildCombinedFilter(
+  adjustments: ColorAdjustments,
+  fx?: EffectFrame | null
+): string {
+  const { brightness, exposure, contrast, saturation, hue, tint, blur } = adjustments;
+  const parts: string[] = [];
+  const bright = brightness + exposure * 1.5 + (fx?.brightness ?? 0);
+  if (bright !== 0) parts.push(`brightness(${Math.max(0, 100 + bright)}%)`);
+  const contrastTotal = contrast + (fx?.contrast ?? 0);
+  if (contrastTotal !== 0) parts.push(`contrast(${Math.max(0, 100 + contrastTotal)}%)`);
+  if (saturation !== 0) parts.push(`saturate(${Math.max(0, 100 + saturation)}%)`);
+  const hueShift = hue + tint * 0.5 + (fx?.hueRotate ?? 0);
+  if (hueShift !== 0) parts.push(`hue-rotate(${hueShift}deg)`);
+  if (fx?.sepia) parts.push(`sepia(${fx.sepia.toFixed(3)})`);
+  if (fx?.grayscale) parts.push(`grayscale(${fx.grayscale.toFixed(3)})`);
+  if (fx?.invert) parts.push(`invert(${fx.invert.toFixed(3)})`);
+  const totalBlur = blur + (fx?.blur ?? 0);
+  if (totalBlur > 0) parts.push(`blur(${totalBlur.toFixed(2)}px)`);
+  return parts.length > 0 ? parts.join(" ") : "none";
+}
 
 function clamp01(value: number): number {
   return value < 0 ? 0 : value > 1 ? 1 : value;
@@ -521,11 +738,15 @@ export function drawScene(
   const effects = config.activeEffects ?? [];
   const fx = effects.length > 0 ? computeEffectFrame(effects, config.sceneTime) : null;
 
-  // Camera transform (zoom + shake) moves the video *and* the overlays so the
-  // whole frame feels like a camera move.
+  // Camera transform (zoom + shake + rotation) moves the video *and* the
+  // overlays so the whole frame feels like a camera move.
   ctx.save();
-  if (fx && (fx.scale !== 1 || fx.offsetX !== 0 || fx.offsetY !== 0)) {
+  if (
+    fx &&
+    (fx.scale !== 1 || fx.offsetX !== 0 || fx.offsetY !== 0 || fx.rotation !== 0)
+  ) {
     ctx.translate(width / 2 + fx.offsetX, height / 2 + fx.offsetY);
+    if (fx.rotation) ctx.rotate((fx.rotation * Math.PI) / 180);
     ctx.scale(fx.scale, fx.scale);
     ctx.translate(-width / 2, -height / 2);
   }
@@ -543,9 +764,9 @@ export function drawScene(
       drawBlurBackground(ctx, video, config);
     }
 
-    const filter = buildCanvasFilter(
+    const filter = buildCombinedFilter(
       config.colorAdjustments ?? DEFAULT_COLOR_ADJUSTMENTS,
-      fx?.blur ?? 0
+      fx
     );
     if (filter !== "none") ctx.filter = filter;
     if (config.transition) {
@@ -553,6 +774,35 @@ export function drawScene(
     } else {
       drawVideoFrame(ctx, video, config);
     }
+
+    // Chromatic-aberration ghost copies (screen blend).
+    if (fx && fx.rgbSplit > 0) {
+      ctx.globalCompositeOperation = "screen";
+      ctx.globalAlpha = 0.4;
+      ctx.save();
+      ctx.translate(fx.rgbSplit, 0);
+      drawVideoFrame(ctx, video, config);
+      ctx.restore();
+      ctx.save();
+      ctx.translate(-fx.rgbSplit, 0);
+      drawVideoFrame(ctx, video, config);
+      ctx.restore();
+      ctx.globalAlpha = 1;
+      ctx.globalCompositeOperation = "source-over";
+    }
+
+    // Bloom / cinematic glow pass (blurred, brightened, screen-blended).
+    if (fx && fx.glow > 0.001) {
+      ctx.save();
+      ctx.globalCompositeOperation = "screen";
+      ctx.globalAlpha = Math.min(1, fx.glow);
+      ctx.filter = `blur(${Math.round(10 + fx.glow * 12)}px) brightness(1.35)`;
+      drawVideoFrame(ctx, video, config);
+      ctx.restore();
+      ctx.globalAlpha = 1;
+      ctx.globalCompositeOperation = "source-over";
+    }
+
     // Reset so captions/overlays are never colour-graded.
     if (filter !== "none") ctx.filter = "none";
     // Heavier tonal grade (highlights/shadows/whites/blacks/lift-gamma-gain…).
@@ -579,6 +829,55 @@ export function drawScene(
   }
 
   ctx.restore();
+
+  // Effect post-processing (full frame, sits over captions like film grain).
+  if (fx) {
+    if (fx.pixelate > 0) {
+      const tw = Math.max(1, Math.floor(width / fx.pixelate));
+      const th = Math.max(1, Math.floor(height / fx.pixelate));
+      if (!pixelateCanvas) pixelateCanvas = document.createElement("canvas");
+      pixelateCanvas.width = tw;
+      pixelateCanvas.height = th;
+      const pctx = pixelateCanvas.getContext("2d");
+      if (pctx) {
+        pctx.imageSmoothingEnabled = false;
+        pctx.clearRect(0, 0, tw, th);
+        pctx.drawImage(ctx.canvas, 0, 0, width, height, 0, 0, tw, th);
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(pixelateCanvas, 0, 0, tw, th, 0, 0, width, height);
+        ctx.imageSmoothingEnabled = true;
+      }
+    }
+    if (fx.overlay && fx.overlay.a > 0.001) {
+      ctx.save();
+      ctx.globalCompositeOperation = fx.overlayMode;
+      ctx.globalAlpha = Math.min(1, fx.overlay.a);
+      ctx.fillStyle = `rgb(${fx.overlay.r},${fx.overlay.g},${fx.overlay.b})`;
+      ctx.fillRect(0, 0, width, height);
+      ctx.restore();
+    }
+    if (fx.grain > 0.001) {
+      const tile = getNoiseTile();
+      if (tile) {
+        ctx.save();
+        ctx.globalCompositeOperation = "overlay";
+        ctx.globalAlpha = Math.min(1, fx.grain * 0.5);
+        const pattern = ctx.createPattern(tile, "repeat");
+        if (pattern) {
+          ctx.fillStyle = pattern;
+          ctx.fillRect(0, 0, width, height);
+        }
+        ctx.restore();
+      }
+    }
+    if (fx.scanlines > 0.001) {
+      ctx.save();
+      ctx.globalAlpha = Math.min(0.5, fx.scanlines * 0.35);
+      ctx.fillStyle = "#000000";
+      for (let y = 0; y < height; y += 3) ctx.fillRect(0, y, width, 1);
+      ctx.restore();
+    }
+  }
 
   // Full-frame overlays sit outside the camera transform.
   if (fx && fx.flashAlpha > 0.001) {
@@ -613,7 +912,7 @@ function drawFrameTransformed(
   ctx: CanvasRenderingContext2D,
   video: HTMLVideoElement,
   config: SceneConfig,
-  opts: { alpha?: number; zoom?: number; offsetXRatio?: number } = {}
+  opts: { alpha?: number; zoom?: number; offsetXRatio?: number; blur?: number } = {}
 ): void {
   const vw = video.videoWidth;
   const vh = video.videoHeight;
@@ -632,6 +931,10 @@ function drawFrameTransformed(
   ctx.save();
   if (opts.alpha !== undefined) {
     ctx.globalAlpha *= Math.max(0, Math.min(1, opts.alpha));
+  }
+  if (opts.blur && opts.blur > 0.05) {
+    const existing = ctx.filter && ctx.filter !== "none" ? `${ctx.filter} ` : "";
+    ctx.filter = `${existing}blur(${opts.blur.toFixed(1)}px)`;
   }
   const source =
     config.chromaKey?.enabled ? keyedVideoFrame(video, config.chromaKey) : video;
@@ -707,6 +1010,18 @@ function drawTransition(
     case "zoomIn":
       drawFrameTransformed(ctx, from, config, { alpha: 1 - p, zoom: 1 + p * 0.5 });
       drawFrameTransformed(ctx, toVideo, config, { alpha: p, zoom: 1.5 - p * 0.5 });
+      break;
+    case "zoomBlur":
+      drawFrameTransformed(ctx, from, config, {
+        alpha: 1 - p,
+        zoom: 1 + p * 0.6,
+        blur: p * 18,
+      });
+      drawFrameTransformed(ctx, toVideo, config, {
+        alpha: p,
+        zoom: 1.7 - p * 0.6,
+        blur: (1 - p) * 18,
+      });
       break;
   }
   ctx.restore();
@@ -827,7 +1142,8 @@ function drawImageOverlay(
   if (!image) return;
 
   const maxW = width * 0.8;
-  const scale = Math.min(1, maxW / image.naturalWidth) * transform.scale;
+  const scale =
+    Math.min(1, maxW / image.naturalWidth) * transform.scale * (overlay.scale ?? 1);
   const w = image.naturalWidth * scale;
   const h = image.naturalHeight * scale;
   const cx = (transform.x / 100) * width;
@@ -873,13 +1189,13 @@ export function measureOverlayBounds(
     const image = getOverlayImage(overlay.imageSrc);
     if (image) {
       const maxW = width * 0.8;
-      const scale = Math.min(1, maxW / image.naturalWidth) * t.scale;
+      const scale = Math.min(1, maxW / image.naturalWidth) * t.scale * (overlay.scale ?? 1);
       const w = image.naturalWidth * scale;
       const h = image.naturalHeight * scale;
       return { x: anchorX - w / 2, y: anchorY - h / 2, w, h };
     }
     // Not decoded yet — fall back to a square placeholder box.
-    const w = width * 0.4 * t.scale;
+    const w = width * 0.4 * t.scale * (overlay.scale ?? 1);
     return { x: anchorX - w / 2, y: anchorY - w / 2, w, h: w };
   }
 
@@ -970,9 +1286,11 @@ function drawOverlay(
   const text = overlay.text.trim();
   if (!text) return;
 
+  const anim = overlay.animation ?? style.animation;
+  const fontFamily = anim === "matrixRain" ? "monospace" : overlay.fontFamily;
   const fontSize = overlay.fontSize * transform.scale;
   ctx.save();
-  ctx.font = `${fontSize}px ${overlay.fontFamily}`;
+  ctx.font = `${fontSize}px ${fontFamily}`;
   ctx.textBaseline = "middle";
   const baseAlpha = Math.min(1, Math.max(0, transform.opacity / 100));
   if (baseAlpha < 1) ctx.globalAlpha = baseAlpha;
@@ -982,7 +1300,6 @@ function drawOverlay(
   // Only trust word timings when they still line up with the (editable) text.
   const timing =
     overlay.words && overlay.words.length === textWords.length ? overlay.words : null;
-  const anim = overlay.animation ?? style.animation;
 
   const lines: LayoutLine[] = timing
     ? layoutTimedLines(ctx, textWords, maxTextW)
@@ -1028,8 +1345,18 @@ function drawOverlay(
     ctx.translate(-rcx, -rcy);
   }
 
-  // Pop the whole block in for overlays without word-level timing.
-  if (!timing) {
+  // Whole-block entrance animations (timed + manual overlays).
+  const blockAnim = blockAnimationStyle(anim, sceneTime - overlay.startTime);
+  if (blockAnim) {
+    if (blockAnim.alpha !== undefined && blockAnim.alpha < 1) {
+      ctx.globalAlpha *= Math.max(0, blockAnim.alpha);
+    }
+    const cx = boxX + boxW / 2;
+    const cy = boxY + boxH / 2;
+    ctx.translate(cx + (blockAnim.translateX ?? 0), cy + (blockAnim.translateY ?? 0));
+    ctx.scale(blockAnim.scaleX ?? 1, blockAnim.scaleY ?? blockAnim.scaleX ?? 1);
+    ctx.translate(-cx, -cy);
+  } else if (!timing && (anim === "pop" || anim === "bounce")) {
     const scale = animationScale(anim, sceneTime - overlay.startTime);
     if (scale !== 1) {
       const cx = boxX + boxW / 2;
@@ -1078,6 +1405,13 @@ function drawOverlay(
       let scale = 1;
       let alpha = 1;
       let glow = false;
+      let offsetX = 0;
+      let offsetY = 0;
+      let wordStroke = strokeWidth;
+
+      const wordStart = timing
+        ? timing[word.wordIndex]?.start ?? overlay.startTime
+        : overlay.startTime + wordCounter * 0.06;
 
       if (timing) {
         const wordTiming = timing[word.wordIndex];
@@ -1095,30 +1429,88 @@ function drawOverlay(
         }
       }
 
-      // Non-scale animations.
-      if (anim === "fadeIn") {
+      // Word-level animations.
+      if (anim === "fadeIn" || anim === "blurIn") {
         alpha = Math.min(1, Math.max(0, (sceneTime - overlay.startTime) / 0.35));
       } else if (anim === "typewriter") {
-        const start = timing
-          ? timing[word.wordIndex]?.start ?? overlay.startTime
-          : overlay.startTime + wordCounter * 0.06;
-        if (sceneTime < start) alpha = 0;
+        if (sceneTime < wordStart) alpha = 0;
       } else if (anim === "neon") {
         glow = true;
+      } else if (anim === "gradientWave") {
+        const hue = (sceneTime * 80 + wordCounter * 26) % 360;
+        fill = `hsl(${hue.toFixed(0)} 90% 68%)`;
+      } else if (anim === "matrixRain") {
+        const p = Math.min(1, Math.max(0, (sceneTime - wordStart) / 0.22));
+        offsetY = (1 - p) * -16;
+        alpha = p;
+        fill = "#5ef08a";
+      } else if (anim === "glitchText") {
+        if (Math.random() > 0.82) {
+          offsetX = (Math.random() - 0.5) * 6;
+          alpha = 0.75;
+        }
+      } else if (anim === "wave") {
+        offsetY = Math.sin(sceneTime * 4 + wordCounter * 0.9) * 5;
+      } else if (anim === "outlinePulse") {
+        wordStroke = strokeWidth + Math.max(0, Math.sin(sceneTime * 6)) * 3;
+      }
+
+      // Chromatic fringe for the glitch look.
+      if (anim === "glitchText") {
+        drawWord(ctx, word.text, cursorX - 2 + offsetX, baselineY + offsetY, word.width, "#ff2d55", wordStroke, scale, alpha * 0.7, false);
+        drawWord(ctx, word.text, cursorX + 2 + offsetX, baselineY + offsetY, word.width, "#22d3ee", wordStroke, scale, alpha * 0.7, false);
+      }
+
+      // Word highlight box behind the currently-spoken word.
+      if (anim === "highlightBox" && timing) {
+        const wordTiming = timing[word.wordIndex];
+        const active =
+          wordTiming && sceneTime >= wordTiming.start && sceneTime <= wordTiming.end;
+        if (active) {
+          const pad = Math.max(6, overlay.fontSize * 0.14);
+          ctx.save();
+          ctx.fillStyle = highlightColor;
+          roundedRect(
+            ctx,
+            cursorX - pad + offsetX,
+            baselineY - fontSize * 0.6 + offsetY,
+            word.width + pad * 2,
+            fontSize * 1.2,
+            Math.max(4, overlay.fontSize * 0.14)
+          );
+          ctx.fill();
+          ctx.restore();
+          fill = "#111827";
+        }
       }
 
       drawWord(
         ctx,
         word.text,
-        cursorX,
-        baselineY,
+        cursorX + offsetX,
+        baselineY + offsetY,
         word.width,
         fill,
-        strokeWidth,
+        wordStroke,
         scale,
         alpha,
         glow
       );
+
+      // Growing underline per word.
+      if (anim === "underline") {
+        const p = Math.min(1, Math.max(0, (sceneTime - wordStart) / 0.2));
+        ctx.save();
+        ctx.strokeStyle = highlightColor;
+        ctx.lineWidth = Math.max(2, overlay.fontSize * 0.08);
+        ctx.lineCap = "round";
+        ctx.beginPath();
+        ctx.moveTo(cursorX, baselineY + fontSize * 0.66);
+        ctx.lineTo(cursorX + word.width * p, baselineY + fontSize * 0.66);
+        ctx.stroke();
+        ctx.restore();
+      }
+
       cursorX += word.width + spaceWidth;
       wordCounter += 1;
     }
@@ -1169,6 +1561,57 @@ function layoutPlainLines(
     });
     return { words: pieces, width };
   });
+}
+
+type BlockAnimation = {
+  alpha?: number;
+  translateX?: number;
+  translateY?: number;
+  scaleX?: number;
+  scaleY?: number;
+};
+
+function easeOutCubic(x: number): number {
+  return 1 - Math.pow(1 - Math.min(1, Math.max(0, x)), 3);
+}
+
+/** Whole-block entrance transform for the newer caption animations. */
+function blockAnimationStyle(
+  animation: CaptionAnimation,
+  elapsed: number
+): BlockAnimation | null {
+  if (elapsed < 0) return null;
+  const t = (duration: number) => Math.min(1, Math.max(0, elapsed / duration));
+  switch (animation) {
+    case "slideUp": {
+      const p = easeOutCubic(t(0.4));
+      return { translateY: (1 - p) * 60, alpha: Math.min(1, elapsed / 0.15) };
+    }
+    case "zoomPunch": {
+      const p = t(0.25);
+      const s = 1 + 0.6 * (1 - p) * (1 - p);
+      return { scaleX: s, scaleY: s };
+    }
+    case "stomp": {
+      const p = t(0.35);
+      const s = 1 + 1.1 * (1 - p);
+      return { scaleX: s, scaleY: s, alpha: Math.min(1, elapsed / 0.08) };
+    }
+    case "blurIn": {
+      const p = t(0.5);
+      return { alpha: p, scaleX: 1 + (1 - p) * 0.05, scaleY: 1 + (1 - p) * 0.05 };
+    }
+    case "flip": {
+      const p = easeOutCubic(t(0.4));
+      return { scaleY: Math.max(0.02, p), scaleX: 1 };
+    }
+    case "shake": {
+      const p = t(0.5);
+      return { translateX: Math.sin(elapsed * 50) * 9 * (1 - p) };
+    }
+    default:
+      return null;
+  }
 }
 
 /** Smooth scale for a word/block as it enters (1.05 pop by default). */

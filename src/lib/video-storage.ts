@@ -79,7 +79,8 @@ export type TransitionType =
   | "dipToBlack"
   | "whipPan"
   | "glitchCut"
-  | "zoomIn";
+  | "zoomIn"
+  | "zoomBlur";
 
 /** One clip placed on the timeline sequence, referencing a library asset. */
 export type TimelineClip = {
