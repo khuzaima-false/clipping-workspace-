@@ -965,6 +965,30 @@ function persistProject(state: EditorState): void {
   });
 }
 
+/** Writes the current global velocity curve onto the active clip (persisted). */
+function sequenceWithSpeed(state: EditorState): TimelineClip[] {
+  if (!state.activeClipId) return state.sequence;
+  return state.sequence.map((clip) =>
+    clip.id === state.activeClipId
+      ? { ...clip, speedPreset: state.speedPreset, speedPoints: state.speedPoints }
+      : clip
+  );
+}
+
+/** The speed state to restore when a clip is selected. */
+function speedPatchForClip(clip: TimelineClip | undefined): {
+  speedPreset: SpeedPreset;
+  speedPoints: SpeedPoint[];
+} {
+  return {
+    speedPreset: (clip?.speedPreset as SpeedPreset) ?? "none",
+    speedPoints:
+      clip?.speedPoints && clip.speedPoints.length > 0
+        ? clip.speedPoints.map((point) => ({ ...point }))
+        : [{ time: 0, speed: 1 }],
+  };
+}
+
 /** Deep-ish snapshot of the editable state (arrays/objects are immutable in the store). */
 function snapshotOf(state: EditorState): EditSnapshot {
   return {
@@ -1066,6 +1090,11 @@ export const useEditorStore = create<EditorState>()(
       });
     }
 
+    set({
+      activeClipId: null,
+      speedPreset: "none",
+      speedPoints: [{ time: 0, speed: 1 }],
+    });
     get().loadVideoBlob(file, file.name);
   },
 
@@ -1092,8 +1121,6 @@ export const useEditorStore = create<EditorState>()(
       transcribingProgress: 0,
       transcribingStatus: "",
       transcriptionError: null,
-      speedPreset: "none",
-      speedPoints: [{ time: 0, speed: 1 }],
     });
 
     const url = URL.createObjectURL(blob);
@@ -1105,12 +1132,19 @@ export const useEditorStore = create<EditorState>()(
 
     const applyDuration = (value: number) => {
       if (get().videoEl !== el) return;
-      const preset = get().speedPreset;
+      // Prefer the active clip's stored velocity curve so custom keyframes
+      // survive clip switches / loops (and persist in the sequence).
+      const activeClip = get().activeClipId
+        ? get().sequence.find((item) => item.id === get().activeClipId)
+        : undefined;
+      const preset = ((activeClip?.speedPreset as SpeedPreset) ??
+        get().speedPreset) as SpeedPreset;
+      const sourcePoints = activeClip?.speedPoints ?? get().speedPoints;
       const speedPoints =
         preset === "none"
           ? [{ time: 0, speed: 1 }]
           : preset === "custom"
-            ? normalizeSpeedPoints(get().speedPoints).map((point) => ({
+            ? normalizeSpeedPoints(sourcePoints).map((point) => ({
                 ...point,
                 time: Math.min(point.time, value),
               }))
@@ -1137,6 +1171,7 @@ export const useEditorStore = create<EditorState>()(
         currentTime: seekTo,
         pendingTrim: null,
         pendingSeek: null,
+        speedPreset: preset,
         speedPoints,
       });
       if (seekTo > 0) {
@@ -1328,6 +1363,7 @@ export const useEditorStore = create<EditorState>()(
           },
           pendingSeek: null,
           chromaKey: firstClip.chromaKey ?? DEFAULT_CHROMA_KEY,
+          ...speedPatchForClip(firstClip),
         });
         get().loadVideoBlob(asset.blob, asset.name);
         return;
@@ -1386,6 +1422,7 @@ export const useEditorStore = create<EditorState>()(
         pendingTrim: null,
         pendingSeek: null,
         chromaKey: DEFAULT_CHROMA_KEY,
+        ...speedPatchForClip(firstClip),
       });
       get().loadVideoBlob(firstAsset.blob, firstAsset.name);
     }
@@ -1434,6 +1471,7 @@ export const useEditorStore = create<EditorState>()(
       pendingTrim: { trimStart: clip.trimStart, trimEnd: clip.trimEnd },
       pendingSeek: null,
       chromaKey: clip.chromaKey ?? DEFAULT_CHROMA_KEY,
+      ...speedPatchForClip(clip),
     });
     get().loadVideoBlob(asset.blob, asset.name);
   },
@@ -1460,6 +1498,7 @@ export const useEditorStore = create<EditorState>()(
       pendingTrim: { trimStart: clip.trimStart, trimEnd: clip.trimEnd },
       pendingSeek: time,
       chromaKey: clip.chromaKey ?? DEFAULT_CHROMA_KEY,
+      ...speedPatchForClip(clip),
     });
     get().loadVideoBlob(asset.blob, asset.name);
   },
@@ -2181,20 +2220,25 @@ export const useEditorStore = create<EditorState>()(
   setSpeedPreset: (preset) => {
     if (preset === "custom") {
       set({ speedPreset: preset });
-      return;
+    } else {
+      set({
+        speedPreset: preset,
+        speedPoints: buildSpeedPreset(preset, get().duration),
+      });
     }
-    set({
-      speedPreset: preset,
-      speedPoints: buildSpeedPreset(preset, get().duration),
-    });
+    // Mirror the curve onto the active clip so it persists with the project.
+    set({ sequence: sequenceWithSpeed(get()) });
   },
 
-  setSpeedPoints: (points) =>
-    set({ speedPoints: normalizeSpeedPoints(points), speedPreset: "custom" }),
+  setSpeedPoints: (points) => {
+    set({ speedPoints: normalizeSpeedPoints(points), speedPreset: "custom" });
+    set({ sequence: sequenceWithSpeed(get()) });
+  },
 
   addSpeedPoint: (point) => {
     const points = [...get().speedPoints, point].sort((a, b) => a.time - b.time);
     set({ speedPoints: normalizeSpeedPoints(points), speedPreset: "custom" });
+    set({ sequence: sequenceWithSpeed(get()) });
   },
 
   updateSpeedPoint: (index, patch) => {
@@ -2216,6 +2260,7 @@ export const useEditorStore = create<EditorState>()(
     next.time = Math.min(Math.max(next.time, lower), Math.max(lower, upper));
     points[index] = next;
     set({ speedPoints: points, speedPreset: "custom" });
+    set({ sequence: sequenceWithSpeed(get()) });
   },
 
   removeSpeedPoint: (index) => {
@@ -2224,6 +2269,7 @@ export const useEditorStore = create<EditorState>()(
       speedPoints: points.length > 0 ? points : [{ time: 0, speed: 1 }],
       speedPreset: "custom",
     });
+    set({ sequence: sequenceWithSpeed(get()) });
   },
 
   addEffect: (type, atTime) => {

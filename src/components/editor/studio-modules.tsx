@@ -352,7 +352,7 @@ export function StudioPanel() {
 
   return (
     <div className="space-y-3">
-      <div className="custom-scrollbar flex items-center gap-2 overflow-x-auto whitespace-nowrap pb-1">
+      <div className="custom-scrollbar flex items-center gap-2 overflow-x-auto whitespace-nowrap py-2">
         {STUDIO_TEMPLATES.map((item) => (
           <button
             key={item.id}

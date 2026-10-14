@@ -112,6 +112,10 @@ export type TimelineClip = {
     /** Overlap length in seconds. */
     duration: number;
   };
+  /** Velocity-curve preset for this clip (mirrors the editor's speed state). */
+  speedPreset?: string;
+  /** Per-clip velocity keyframes (seconds → speed multiplier). */
+  speedPoints?: { time: number; speed: number }[];
 };
 
 /** Persisted metadata for one audio track (binary lives under `mediaId`). */
