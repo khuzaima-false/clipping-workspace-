@@ -76,12 +76,8 @@ export type ExportVideoOptions = {
   audioTracks?: AudioMixTrack[];
   /** Velocity curve; when ramped, output frames step variable source deltas. */
   speedPoints?: SpeedPoint[];
-  /**
-   * Credit gate. Called once, before any rendering begins. Returning `false`
-   * aborts the export with {@link InsufficientCreditsError} (no frames are
-   * encoded), which the UI uses to surface the referral prompt.
-   */
-  authorize?: () => Promise<boolean>;
+  /** Target average bitrate in bits/sec; defaults to a size-based estimate. */
+  bitrate?: number;
   onProgress: (progress: ExportProgress) => void;
   signal?: AbortSignal;
 };
@@ -92,14 +88,6 @@ export type ExportResult = {
   /** True when the real-time MediaRecorder fallback was used. */
   usedFallback: boolean;
 };
-
-/** Thrown when `authorize` rejects the export (e.g. no daily credits left). */
-export class InsufficientCreditsError extends Error {
-  constructor(message = "Daily export credits exhausted.") {
-    super(message);
-    this.name = "InsufficientCreditsError";
-  }
-}
 
 class EncoderSetupError extends Error {
   constructor() {
@@ -272,11 +260,15 @@ async function buildSequenceAudio(
 async function pickVideoConfig(
   width: number,
   height: number,
-  fps: number
+  fps: number,
+  bitrateOverride?: number
 ): Promise<VideoEncoderConfig | null> {
-  const bitrate = Math.round(
-    Math.min(Math.max(width * height * fps * 0.12, 4_000_000), 16_000_000)
-  );
+  const bitrate =
+    bitrateOverride && bitrateOverride > 0
+      ? Math.round(bitrateOverride)
+      : Math.round(
+          Math.min(Math.max(width * height * fps * 0.12, 4_000_000), 16_000_000)
+        );
   const candidates = ["avc1.640028", "avc1.4d0028", "avc1.420028", "avc1.42001f"];
   for (const codec of candidates) {
     try {
@@ -411,7 +403,7 @@ async function exportWithWebCodecs(
   }
   const totalFrames = Math.max(1, plan.length);
 
-  const videoConfig = await pickVideoConfig(width, height, fps);
+  const videoConfig = await pickVideoConfig(width, height, fps, opts.bitrate);
   if (!videoConfig) throw new EncoderSetupError();
 
   // Decode the source audio (single clip: its own track; sequence: every
@@ -688,11 +680,12 @@ async function exportWithMediaRecorder(
   }
 
   const requestedMime = pickRecorderMime(hasAudio);
+  const videoBitsPerSecond = opts.bitrate ?? 8_000_000;
   const recorder = new MediaRecorder(
     stream,
     requestedMime
-      ? { mimeType: requestedMime, videoBitsPerSecond: 8_000_000 }
-      : { videoBitsPerSecond: 8_000_000 }
+      ? { mimeType: requestedMime, videoBitsPerSecond }
+      : { videoBitsPerSecond }
   );
 
   const chunks: BlobPart[] = [];
@@ -833,26 +826,18 @@ async function exportWithMediaRecorder(
 }
 
 /**
- * Exports the trimmed scene as a 1080p-class video file. Uses WebCodecs +
- * mp4-muxer when available and falls back to MediaRecorder otherwise.
+ * Exports the scene as a video file. Uses WebCodecs + mp4-muxer when available
+ * and falls back to MediaRecorder otherwise. Fully client-side and unlimited.
  */
 export async function exportVideo(
   opts: ExportVideoOptions
 ): Promise<ExportResult> {
   throwIfAborted(opts.signal);
 
-  // Credit gate: spends one daily credit before any frame is rendered.
-  if (opts.authorize) {
-    const allowed = await opts.authorize();
-    if (!allowed) throw new InsufficientCreditsError();
-  }
-
   if (typeof VideoEncoder !== "undefined") {
     try {
       return await exportWithWebCodecs(opts);
     } catch (err) {
-      // Re-throw the credit error untouched (never fall back for it).
-      if (err instanceof InsufficientCreditsError) throw err;
       if (err instanceof DOMException && err.name === "AbortError") throw err;
       if (err instanceof EncoderSetupError) {
         opts.onProgress({ label: "Preparing real-time recording…", percent: 0 });

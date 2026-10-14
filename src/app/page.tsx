@@ -8,7 +8,6 @@ import {
   Captions,
   CaseSensitive,
   Check,
-  Coins,
   Crop,
   Diamond,
   Download,
@@ -51,22 +50,10 @@ import {
   HeroAuthActions,
   NavAuthActions,
 } from "@/components/marketing/auth-actions";
-import {
-  BASE_DAILY_CREDITS,
-  CAPTIONS_CREDIT_COST,
-  EXPORT_CREDIT_COST,
-  FOUNDING_CREDIT_BONUS,
-  MAX_REFERRALS,
-  REFERRAL_CREDIT_BONUS,
-} from "@/lib/credits";
 
 export const metadata: Metadata = {
   alternates: { canonical: "/" },
 };
-
-const FOUNDING_DAILY = BASE_DAILY_CREDITS + FOUNDING_CREDIT_BONUS;
-const STANDARD_MAX =
-  BASE_DAILY_CREDITS + REFERRAL_CREDIT_BONUS * MAX_REFERRALS;
 
 /**
  * Every tool below is a real, shipped, 100% client-side feature of the editor.
@@ -317,50 +304,14 @@ const STATS = [
   { value: "Free", label: "Full studio, no card required" },
 ];
 
-const TIERS = [
-  {
-    name: "Standard",
-    price: "Free",
-    tagline: "The full studio, unlocked for everyone.",
-    dailyCredits: BASE_DAILY_CREDITS,
-    features: [
-      `${BASE_DAILY_CREDITS} daily export credits`,
-      `All ${TOTAL_TOOLS} editing tools included`,
-      "On-device auto-captions & styles",
-      "9:16, 16:9, 1:1 & 21:9 exports",
-    ],
-    cta: "Launch Studio",
-    highlight: false,
-  },
-  {
-    name: "Founding Member",
-    price: "Free · 1st 1,000",
-    tagline: "The same studio with a bigger render budget.",
-    dailyCredits: FOUNDING_DAILY,
-    features: [
-      `${FOUNDING_DAILY} daily export credits (+${FOUNDING_CREDIT_BONUS} bonus)`,
-      "Everything in Standard",
-      "Priority render queue",
-      "Founding badge on your profile",
-    ],
-    cta: "Become a Founding Member",
-    highlight: true,
-  },
-  {
-    name: "Referral Rewards",
-    price: "Unlimited",
-    tagline: "Grow your daily allowance by sharing.",
-    dailyCredits: STANDARD_MAX,
-    features: [
-      `+${REFERRAL_CREDIT_BONUS} daily credits per referral`,
-      `Bonus caps at ${MAX_REFERRALS} referrals`,
-      `Reach ${STANDARD_MAX} credits / day`,
-      "Stackable with your tier",
-    ],
-    cta: "Invite Friends",
-    highlight: false,
-  },
-] as const;
+/** Everything is free: a single plan card, no credit gating. */
+const INCLUDED = [
+  `All ${TOTAL_TOOLS} editing tools unlocked`,
+  "Unlimited 1080p / 720p / 4K exports",
+  "On-device auto-captions & social styles",
+  "Chroma key, keyframes, transitions & SFX",
+  "9:16, 16:9, 1:1 & 21:9 framing",
+];
 
 export default function LandingPage() {
   return (
@@ -559,78 +510,48 @@ export default function LandingPage() {
         ))}
       </section>
 
-      {/* Pricing / credit tiers */}
+      {/* Free forever */}
       <section id="pricing" className="mx-auto max-w-6xl px-4 py-20 sm:px-6">
         <div className="mx-auto max-w-2xl text-center">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-violet-400">
-            Free · credits &amp; tiers
+            100% free
           </p>
           <h2 className="mt-3 text-3xl font-bold tracking-tight text-white sm:text-4xl">
-            Everything&apos;s free — credits just pace your exports
+            The whole studio — no credits, no limits
           </h2>
           <p className="mt-4 text-zinc-400">
-            Every tool in the studio is unlocked for everyone. Exports cost{" "}
-            {EXPORT_CREDIT_COST} credits and on-device captions cost{" "}
-            {CAPTIONS_CREDIT_COST}, so a standard day covers plenty of clips.
+            Every tool is unlocked for everyone. Rendering happens on your own
+            device, so exports are unlimited and always free.
           </p>
         </div>
 
-        <div className="mt-12 grid gap-6 lg:grid-cols-3">
-          {TIERS.map((tier) => (
-            <div
-              key={tier.name}
-              className={`relative flex flex-col rounded-2xl p-6 ${
-                tier.highlight
-                  ? "glass-card glow-brand border-violet-500/40"
-                  : "glass-card"
-              }`}
-            >
-              {tier.highlight && (
-                <span className="brand-gradient absolute -top-3 left-6 rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-white shadow-lg">
-                  Most popular
-                </span>
-              )}
-              <h3 className="text-sm font-semibold uppercase tracking-wide text-zinc-300">
-                {tier.name}
-              </h3>
-              <p className="mt-3 text-3xl font-bold tracking-tight text-white">
-                {tier.price}
+        <div className="mx-auto mt-12 max-w-2xl">
+          <div className="glass-card glow-brand relative flex flex-col rounded-2xl p-8">
+            <span className="brand-gradient absolute -top-3 left-8 rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-white shadow-lg">
+              Free forever
+            </span>
+            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              <p className="text-3xl font-bold tracking-tight text-white">Free</p>
+              <p className="text-sm text-zinc-500">
+                no credit card, no watermark, no caps
               </p>
-              <p className="mt-2 text-sm text-zinc-500">{tier.tagline}</p>
-
-              <p className="mt-5 inline-flex items-center gap-2 rounded-lg border border-zinc-800/80 bg-zinc-950/60 px-3 py-2 text-sm text-zinc-300">
-                <Coins className="h-4 w-4 text-amber-400" aria-hidden />
-                <span className="font-semibold text-white">
-                  {tier.dailyCredits}
-                </span>
-                credits / day
-              </p>
-
-              <ul className="mt-6 space-y-3">
-                {tier.features.map((item) => (
-                  <li key={item} className="flex items-start gap-2.5 text-sm text-zinc-300">
-                    <Check
-                      className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400"
-                      aria-hidden
-                    />
-                    {item}
-                  </li>
-                ))}
-              </ul>
-
-              <Link
-                href="/login"
-                className={`mt-8 inline-flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold transition-transform hover:scale-[1.02] ${
-                  tier.highlight
-                    ? "brand-gradient brand-gradient-hover text-white shadow-lg shadow-violet-900/30"
-                    : "border border-zinc-800 bg-zinc-900/60 text-zinc-100 hover:border-zinc-600"
-                }`}
-              >
-                {tier.cta}
-                <ArrowRight className="h-4 w-4" aria-hidden />
-              </Link>
             </div>
-          ))}
+            <ul className="mt-6 grid gap-3 sm:grid-cols-2">
+              {INCLUDED.map((item) => (
+                <li key={item} className="flex items-start gap-2.5 text-sm text-zinc-300">
+                  <Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" aria-hidden />
+                  {item}
+                </li>
+              ))}
+            </ul>
+            <Link
+              href="/login"
+              className="brand-gradient brand-gradient-hover mt-8 inline-flex items-center justify-center gap-2 self-start rounded-xl px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-violet-900/30 transition-transform hover:scale-[1.03]"
+            >
+              Launch Studio
+              <ArrowRight className="h-4 w-4" aria-hidden />
+            </Link>
+          </div>
         </div>
       </section>
 

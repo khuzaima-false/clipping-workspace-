@@ -132,13 +132,20 @@ async function main() {
   writeFileSync(resolve(publicDir, "favicon.ico"), ico);
 
   // 2b. PNG icons in the sizes Google Search wants: square multiples of 48px
-  //     (48, 96, 144, 192). Shipping these gives Googlebot clean pixels.
+  //     (48, 96, 144, 192). The 48px and 192px names are explicit because
+  //     they are referenced directly by the site metadata and crawler fallback.
   for (const size of [48, 96, 144, 192]) {
     const png = await sharp(Buffer.from(centeredMarkSvg(size)))
       .resize(size, size)
       .png()
       .toBuffer();
-    writeFileSync(resolve(publicDir, `icon-${size}.png`), png);
+    const filename =
+      size === 48
+        ? "icon-48x48.png"
+        : size === 192
+          ? "icon-192x192.png"
+          : `icon-${size}.png`;
+    writeFileSync(resolve(publicDir, filename), png);
   }
 
   // A high-res master square + the iOS home-screen icon.
@@ -164,7 +171,10 @@ async function main() {
   console.log("Brand assets written:");
   console.log(`  public/logo.png        ${logo.length} bytes (512x512)`);
   console.log(`  public/favicon.ico     ${icoSizes.join("/")} (${ico.length} bytes)`);
-  console.log(`  public/icon-48/96/144/192.png  (Google multiples of 48)`);
+  console.log(`  public/icon-48x48.png           48x48 (Google favicon)`);
+  console.log(`  public/icon-96.png               96x96`);
+  console.log(`  public/icon-144.png              144x144`);
+  console.log(`  public/icon-192x192.png         192x192 (Google favicon)`);
   console.log(`  public/icon.png        ${iconPng.length} bytes (512x512)`);
   console.log(`  public/apple-icon.png  ${appleIcon.length} bytes (180x180)`);
   console.log(`  public/og-image.png    ${og.length} bytes (1200x630)`);

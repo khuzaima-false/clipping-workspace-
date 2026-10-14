@@ -8,7 +8,6 @@ import {
   AlertCircle,
   Clapperboard,
   Clock,
-  Coins,
   Download,
   Film,
   FolderKanban,
@@ -16,12 +15,12 @@ import {
   Plus,
   RefreshCw,
   Scissors,
+  Sparkles,
   Upload,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useProjectsStore } from "@/store/projects";
 import { useWorkspaceStore } from "@/store/workspace";
-import { BASE_DAILY_CREDITS, dailyCreditLimit } from "@/lib/credits";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { Project } from "@/types/database";
 
@@ -72,7 +71,6 @@ export default function DashboardPage() {
   const error = useProjectsStore((state) => state.error);
   const loadProjects = useProjectsStore((state) => state.loadProjects);
 
-  const profile = useWorkspaceStore((state) => state.profile);
   const channels = useWorkspaceStore((state) => state.channels);
   const loadProfile = useWorkspaceStore((state) => state.loadProfile);
   const loadChannels = useWorkspaceStore((state) => state.loadChannels);
@@ -146,15 +144,6 @@ export default function DashboardPage() {
 
   const recentProjects = useMemo(() => projects.slice(0, 5), [projects]);
 
-  const creditLimit = profile
-    ? dailyCreditLimit(profile.referral_count, profile.is_founding_user)
-    : BASE_DAILY_CREDITS;
-  const creditsRemaining = profile?.daily_credits ?? null;
-  const creditPercent =
-    creditsRemaining === null
-      ? 0
-      : Math.min(100, Math.round((creditsRemaining / creditLimit) * 100));
-
   const statCards = [
     {
       label: "Total Projects",
@@ -191,7 +180,7 @@ export default function DashboardPage() {
             You&apos;re signed out
           </p>
           <p className="mt-1 max-w-sm text-sm text-zinc-500">
-            Sign in to view your dashboard, projects, and export credits.
+            Sign in to view your dashboard, projects, and exports.
           </p>
         </div>
         <Link
@@ -264,26 +253,19 @@ export default function DashboardPage() {
           );
         })}
 
-        {/* Daily credits remaining */}
+        {/* Client-side rendering */}
         <div className="glass-card rounded-xl p-5">
           <div className="flex items-center justify-between">
             <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
-              Daily Credits Remaining
+              Rendering
             </p>
-            <Coins className="h-4 w-4 text-amber-400" aria-hidden />
+            <Sparkles className="h-4 w-4 text-emerald-400" aria-hidden />
           </div>
           <p className="mt-3 text-3xl font-semibold tracking-tight text-zinc-50">
-            {creditsRemaining === null ? "—" : creditsRemaining}
+            Unlimited
           </p>
-          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-zinc-800">
-            <div
-              className="h-full rounded-full bg-gradient-to-r from-amber-400 to-amber-500 transition-[width] duration-300"
-              style={{ width: `${creditPercent}%` }}
-            />
-          </div>
           <p className="mt-1 text-xs text-zinc-600">
-            of {creditLimit} remaining today
-            {profile?.is_founding_user ? " · Founding" : ""}
+            100% client-side · no credits, no limits
           </p>
         </div>
       </section>

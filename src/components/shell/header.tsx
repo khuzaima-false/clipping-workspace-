@@ -4,8 +4,6 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   ChevronDown,
-  Coins,
-  Gift,
   LogIn,
   Menu,
   Moon,
@@ -17,7 +15,6 @@ import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
 import { SignOutButton } from "@/components/auth/sign-out-button";
-import { ReferralModal } from "@/components/credits/referral-modal";
 import { Logo } from "@/components/ui/logo";
 import { useWorkspaceStore } from "@/store/workspace";
 
@@ -28,7 +25,6 @@ type HeaderProps = {
 export function Header({ onMenuClick }: HeaderProps) {
   const [channelOpen, setChannelOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
-  const [referralOpen, setReferralOpen] = useState(false);
 
   const channels = useWorkspaceStore((state) => state.channels);
   const activeChannelId = useWorkspaceStore((state) => state.activeChannelId);
@@ -212,29 +208,11 @@ export function Header({ onMenuClick }: HeaderProps) {
         <Search className="h-4 w-4 text-zinc-500" aria-hidden />
         <input
           type="search"
-          placeholder="Search projects, clips, campaigns…"
+          placeholder="Search projects, clips, sponsorships…"
           className="w-full bg-transparent text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none"
         />
       </div>
       <div className="flex-1 md:hidden" />
-
-      {/* Daily export credits */}
-      {profile && (
-        <button
-          type="button"
-          onClick={() => {
-            setReferralOpen(true);
-            setChannelOpen(false);
-            setProfileOpen(false);
-          }}
-          className="hidden items-center gap-1.5 rounded-full border border-zinc-800 bg-zinc-900 px-2.5 py-1 text-xs font-medium text-zinc-300 transition-colors hover:border-zinc-700 sm:flex"
-          title="Daily export credits"
-        >
-          <Coins className="h-3.5 w-3.5 text-amber-400" aria-hidden />
-          <span className="tabular-nums">{profile.daily_credits}</span>
-          <span className="text-zinc-600">credits</span>
-        </button>
-      )}
 
       {/* Theme badge */}
       <span className="hidden items-center gap-1.5 rounded-full border border-zinc-800 bg-zinc-900 px-2.5 py-1 text-xs font-medium text-zinc-400 sm:flex">
@@ -286,30 +264,11 @@ export function Header({ onMenuClick }: HeaderProps) {
               <p className="truncate text-xs text-zinc-500">
                 {profile?.email || "creator@forgevyn.app"}
               </p>
-              {profile && (
-                <p className="mt-1 inline-flex items-center gap-1 text-[11px] text-zinc-500">
-                  <Coins className="h-3 w-3 text-amber-400" aria-hidden />
-                  {profile.daily_credits} credits today
-                  {profile.is_founding_user ? " · Founding" : ""}
-                </p>
-              )}
             </div>
             <button
               type="button"
               role="menuitem"
-              onClick={() => {
-                setProfileOpen(false);
-                setReferralOpen(true);
-              }}
               className="mt-1 flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
-            >
-              <Gift className="h-4 w-4 text-violet-400" aria-hidden />
-              Referrals &amp; Rewards
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
             >
               <User className="h-4 w-4" aria-hidden />
               Profile
@@ -319,11 +278,6 @@ export function Header({ onMenuClick }: HeaderProps) {
         )}
         </div>
       )}
-
-      <ReferralModal
-        open={referralOpen}
-        onClose={() => setReferralOpen(false)}
-      />
     </header>
   );
 }

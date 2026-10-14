@@ -248,6 +248,20 @@ export const TRANSITION_PRESETS: TransitionPreset[] = [
   { id: "zoomIn", label: "Zoom In", duration: 0.5 },
 ];
 
+/** Export resolution preset id. */
+export type ExportResolutionId = "720p" | "1080p" | "4k" | "vertical";
+
+/** Client-side render targets: dimensions + target bitrate per preset. */
+export const EXPORT_RESOLUTIONS: Record<
+  ExportResolutionId,
+  { label: string; width: number; height: number; bitrate: number }
+> = {
+  "720p": { label: "720p", width: 1280, height: 720, bitrate: 6_000_000 },
+  "1080p": { label: "1080p", width: 1920, height: 1080, bitrate: 12_000_000 },
+  "4k": { label: "4K", width: 3840, height: 2160, bitrate: 35_000_000 },
+  vertical: { label: "9:16", width: 1080, height: 1920, bitrate: 12_000_000 },
+};
+
 export type VideoEffectType =
   | "zoom-in"
   | "zoom-out"
@@ -497,6 +511,9 @@ type EditorState = {
   currentTime: number;
   trimStart: number;
   trimEnd: number;
+  /** Playback/render region marks (seconds), or null when unset. */
+  markIn: number | null;
+  markOut: number | null;
   volume: number;
   playing: boolean;
 
@@ -525,6 +542,8 @@ type EditorState = {
   fps: number;
   /** Use high-quality canvas scaling (crisp) for preview and export. */
   hdRendering: boolean;
+  /** Active export resolution preset (dimensions + target bitrate). */
+  exportResolution: ExportResolutionId;
   /** Colour grading applied to the video frame. */
   colorAdjustments: ColorAdjustments;
   /** External audio tracks / sound effects layered on the timeline. */
@@ -605,9 +624,17 @@ type EditorState = {
   setTrimStart: (time: number) => void;
   setTrimEnd: (time: number) => void;
   resetTrim: () => void;
+  /** Sets the In mark (playback + export region start). */
+  setMarkIn: (time: number) => void;
+  /** Sets the Out mark (playback + export region end). */
+  setMarkOut: (time: number) => void;
+  /** Clears both marks so the full clip region is used. */
+  clearMarks: () => void;
   setAspect: (aspect: AspectRatio) => void;
   /** Toggle high-quality (crisp) canvas scaling. */
   setHdRendering: (enabled: boolean) => void;
+  /** Selects the export resolution preset. */
+  setExportResolution: (id: ExportResolutionId) => void;
   setFit: (fit: VideoFit) => void;
   setOffset: (x: number, y: number) => void;
   /** Sets the letterbox background fill strategy. */
@@ -790,6 +817,8 @@ export const useEditorStore = create<EditorState>()(
   currentTime: 0,
   trimStart: 0,
   trimEnd: 0,
+  markIn: null,
+  markOut: null,
   volume: 1,
   playing: false,
 
@@ -810,6 +839,7 @@ export const useEditorStore = create<EditorState>()(
 
   fps: DEFAULT_FPS,
   hdRendering: true,
+  exportResolution: "1080p",
   history: [],
   future: [],
   colorAdjustments: DEFAULT_COLOR_ADJUSTMENTS,
@@ -858,6 +888,8 @@ export const useEditorStore = create<EditorState>()(
       currentTime: 0,
       trimStart: 0,
       trimEnd: 0,
+      markIn: null,
+      markOut: null,
       playing: false,
       transcribing: false,
       transcribingProgress: 0,
@@ -1498,6 +1530,8 @@ export const useEditorStore = create<EditorState>()(
       currentTime: 0,
       trimStart: 0,
       trimEnd: 0,
+      markIn: null,
+      markOut: null,
       playing: false,
       aspect: "16:9",
       fit: "contain",
@@ -1601,9 +1635,25 @@ export const useEditorStore = create<EditorState>()(
     if (id) get().setClipTrim(id, { trimStart: 0, trimEnd: duration });
   },
 
+  setMarkIn: (time) => {
+    const { duration, markOut } = get();
+    const upper = markOut !== null ? markOut : duration || time;
+    set({ markIn: Math.min(Math.max(time, 0), upper) });
+  },
+
+  setMarkOut: (time) => {
+    const { duration, markIn } = get();
+    const lower = markIn !== null ? markIn : 0;
+    set({ markOut: Math.max(Math.min(time, duration || time), lower) });
+  },
+
+  clearMarks: () => set({ markIn: null, markOut: null }),
+
   setAspect: (aspect) => set({ aspect }),
 
   setHdRendering: (enabled) => set({ hdRendering: enabled }),
+
+  setExportResolution: (id) => set({ exportResolution: id }),
 
   setFit: (fit) => set({ fit, offsetX: fit === "contain" ? 0 : get().offsetX, offsetY: fit === "contain" ? 0 : get().offsetY }),
 

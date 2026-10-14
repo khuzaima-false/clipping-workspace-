@@ -66,9 +66,7 @@ import {
   type ActiveCapture,
   type CaptureKind,
 } from "@/lib/recorder";
-import { CAPTIONS_CREDIT_COST } from "@/lib/credits";
 import { CAPTION_LANGUAGES, type CaptionLanguageId } from "@/lib/transcribe";
-import { useWorkspaceStore } from "@/store/workspace";
 import {
   AiStudioSection,
   BatchTools,
@@ -309,10 +307,8 @@ function ScreenCamRecorder() {
 /* Top-left: Project bin + Inspector                                    */
 /* ------------------------------------------------------------------ */
 function ProjectBinPanel({
-  onRequireCredits,
   onBatchExport,
 }: {
-  onRequireCredits?: () => void;
   onBatchExport?: (clipIds: string[]) => void;
 }) {
   const [tab, setTab] = useState<
@@ -410,22 +406,10 @@ function ProjectBinPanel({
   const [dictating, setDictating] = useState(false);
   const dictationRef = useRef<ReturnType<typeof createDictation> | null>(null);
   const dictationSupported = useMemo(() => isDictationSupported(), []);
-  const consumeCredits = useWorkspaceStore((s) => s.consumeCredits);
-  const [captionError, setCaptionError] = useState<string | null>(null);
   const [selectedClips, setSelectedClips] = useState<string[]>([]);
 
   const handleAutoCaptions = async () => {
     if (transcribing) return;
-    setCaptionError(null);
-    const result = await consumeCredits(CAPTIONS_CREDIT_COST);
-    if (!result.ok) {
-      if (result.reason === "insufficient") onRequireCredits?.();
-      else
-        setCaptionError(
-          result.error ?? "Could not verify your credits. Please try again."
-        );
-      return;
-    }
     void generateAutoCaptions();
   };
 
@@ -1157,11 +1141,6 @@ function ProjectBinPanel({
                 <Sparkles className="h-3.5 w-3.5" aria-hidden />
               )}
               {transcribing ? "Transcribing…" : "Auto-generate AI captions"}
-              {!transcribing && (
-                <span className="rounded bg-black/25 px-1.5 py-0.5 text-[10px]">
-                  {CAPTIONS_CREDIT_COST}
-                </span>
-              )}
             </button>
 
             {transcribing && (
@@ -1179,9 +1158,9 @@ function ProjectBinPanel({
               </div>
             )}
 
-            {(transcriptionError || captionError) && (
+            {transcriptionError && (
               <p role="alert" className="text-[10px] leading-4 text-red-400">
-                {captionError ?? transcriptionError}
+                {transcriptionError}
               </p>
             )}
 
@@ -1677,8 +1656,11 @@ function ProgramPreview() {
   const redo = useEditorStore((s) => s.redo);
   const setPlaying = useEditorStore((s) => s.setPlaying);
   const seek = useEditorStore((s) => s.seek);
-  const setTrimStart = useEditorStore((s) => s.setTrimStart);
-  const setTrimEnd = useEditorStore((s) => s.setTrimEnd);
+  const markIn = useEditorStore((s) => s.markIn);
+  const markOut = useEditorStore((s) => s.markOut);
+  const setMarkIn = useEditorStore((s) => s.setMarkIn);
+  const setMarkOut = useEditorStore((s) => s.setMarkOut);
+  const clearMarks = useEditorStore((s) => s.clearMarks);
   const eyedropper = useEditorStore((s) => s.eyedropper);
 
   useEffect(() => {
@@ -1717,15 +1699,26 @@ function ProgramPreview() {
           }
         }
 
-        // Clip boundary — roll into the next clip, loop the last one, or stop.
+        // Clip boundary — roll into the next clip, loop the marked region, or stop.
+        const regionStart = state.markIn ?? state.trimStart;
+        const regionEnd = state.markOut ?? state.trimEnd;
+        // Respect an In mark: if playback starts before it, jump forward.
+        if (
+          state.playing &&
+          state.markIn !== null &&
+          !video.paused &&
+          video.currentTime < regionStart - 0.1
+        ) {
+          video.currentTime = regionStart;
+        }
         const reachedEnd =
           state.duration > 0 &&
-          (video.ended || video.currentTime >= state.trimEnd - 0.02);
+          (video.ended || video.currentTime >= regionEnd - 0.02);
         if (reachedEnd && state.playing) {
           const advanced = state.advanceClip(loopRef.current);
           if (!advanced) {
             if (loopRef.current) {
-              video.currentTime = state.trimStart;
+              video.currentTime = regionStart;
               if (video.ended) void video.play().catch(() => {});
             } else {
               state.setPlaying(false);
@@ -1844,7 +1837,7 @@ function ProgramPreview() {
       <div className="space-y-2 border-t border-zinc-800 px-3 py-2">
         <div className="flex flex-wrap items-center gap-2">
           <span className="shrink-0 rounded bg-zinc-950 px-2 py-1 font-mono text-[11px] tabular-nums text-emerald-300 ring-1 ring-inset ring-zinc-800">
-            {formatTimecode(currentTime, fps)}
+            {formatTimecode(currentTime, fps)} / {formatTimecode(duration, fps)}
           </span>
           <input
             type="range"
@@ -1857,9 +1850,6 @@ function ProgramPreview() {
             aria-label="Scrub"
             className="min-w-[120px] flex-1 accent-violet-500"
           />
-          <span className="shrink-0 font-mono text-[10px] tabular-nums text-zinc-500">
-            {formatTimecode(duration, fps)}
-          </span>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
           <button
@@ -1902,20 +1892,48 @@ function ProgramPreview() {
           </button>
           <button
             type="button"
-            onClick={() => setTrimStart(currentTime)}
+            onClick={() => setMarkIn(currentTime)}
             disabled={!hasVideo}
-            className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-zinc-800 bg-zinc-950/60 px-2.5 py-1.5 text-[11px] text-zinc-300 disabled:opacity-40"
+            title="Mark In (I)"
+            className={cn(
+              "inline-flex shrink-0 items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[11px] disabled:opacity-40",
+              markIn !== null
+                ? "border-sky-500/50 bg-sky-500/10 text-sky-200"
+                : "border-zinc-800 bg-zinc-950/60 text-zinc-300"
+            )}
           >
             <Scissors className="h-3.5 w-3.5" aria-hidden /> Mark In
+            {markIn !== null && (
+              <span className="tabular-nums">{markIn.toFixed(1)}s</span>
+            )}
           </button>
           <button
             type="button"
-            onClick={() => setTrimEnd(currentTime)}
+            onClick={() => setMarkOut(currentTime)}
             disabled={!hasVideo}
-            className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-zinc-800 bg-zinc-950/60 px-2.5 py-1.5 text-[11px] text-zinc-300 disabled:opacity-40"
+            title="Mark Out (O)"
+            className={cn(
+              "inline-flex shrink-0 items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[11px] disabled:opacity-40",
+              markOut !== null
+                ? "border-sky-500/50 bg-sky-500/10 text-sky-200"
+                : "border-zinc-800 bg-zinc-950/60 text-zinc-300"
+            )}
           >
             <Scissors className="h-3.5 w-3.5 -scale-x-100" aria-hidden /> Mark Out
+            {markOut !== null && (
+              <span className="tabular-nums">{markOut.toFixed(1)}s</span>
+            )}
           </button>
+          {(markIn !== null || markOut !== null) && (
+            <button
+              type="button"
+              onClick={clearMarks}
+              title="Clear In/Out marks"
+              className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-zinc-800 bg-zinc-950/60 px-2.5 py-1.5 text-[11px] text-zinc-400 transition-colors hover:border-zinc-600 hover:text-zinc-200"
+            >
+              Clear marks
+            </button>
+          )}
         </div>
       </div>
     </section>
@@ -2144,6 +2162,8 @@ function PremiereTimeline() {
   const selectClip = useEditorStore((s) => s.selectClip);
   const selectOverlay = useEditorStore((s) => s.selectOverlay);
   const scrubTo = useEditorStore((s) => s.scrubTo);
+  const markIn = useEditorStore((s) => s.markIn);
+  const markOut = useEditorStore((s) => s.markOut);
   const setClipTrim = useEditorStore((s) => s.setClipTrim);
   const setTrimStart = useEditorStore((s) => s.setTrimStart);
   const setTrimEnd = useEditorStore((s) => s.setTrimEnd);
@@ -2648,6 +2668,36 @@ function PremiereTimeline() {
                   </div>
                 );
               })}
+
+              {/* Mark In / Mark Out brackets */}
+              {markIn !== null && markOut !== null && (
+                <span
+                  aria-hidden
+                  className="pointer-events-none absolute inset-y-0 bg-sky-400/10"
+                  style={{
+                    left: `${timelineLeft(markIn) * pps}px`,
+                    width: `${Math.max(0, (timelineLeft(markOut) - timelineLeft(markIn)) * pps)}px`,
+                  }}
+                />
+              )}
+              {markIn !== null && (
+                <span
+                  title={`Mark In · ${markIn.toFixed(2)}s`}
+                  className="pointer-events-none absolute inset-y-0 z-10 w-0.5 bg-sky-400"
+                  style={{ left: `${timelineLeft(markIn) * pps}px` }}
+                >
+                  <span className="absolute left-0 top-0 h-2 w-2 rounded-br-sm bg-sky-400" />
+                </span>
+              )}
+              {markOut !== null && (
+                <span
+                  title={`Mark Out · ${markOut.toFixed(2)}s`}
+                  className="pointer-events-none absolute inset-y-0 z-10 w-0.5 bg-sky-400"
+                  style={{ left: `${timelineLeft(markOut) * pps}px` }}
+                >
+                  <span className="absolute right-0 top-0 h-2 w-2 rounded-bl-sm bg-sky-400" />
+                </span>
+              )}
             </div>
 
             {/* V3 — adjustment / effect layers (pink) */}
@@ -2891,16 +2941,13 @@ function PremiereTimeline() {
 
 /* ------------------------------------------------------------------ */
 export function DesktopEditor({
-  onRequireCredits,
   onBatchExport,
 }: {
-  onRequireCredits?: () => void;
   onBatchExport?: (clipIds: string[]) => void;
 }) {
-  // Desktop-only keyboard shortcuts for undo/redo.
+  // Desktop-only keyboard shortcuts: undo/redo, play/pause, frame step, marks.
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      if (!(event.ctrlKey || event.metaKey)) return;
       if (!window.matchMedia("(min-width: 768px)").matches) return;
       const target = event.target as HTMLElement | null;
       if (target) {
@@ -2914,13 +2961,36 @@ export function DesktopEditor({
           return;
         }
       }
-      const key = event.key.toLowerCase();
-      if (key === "z" && !event.shiftKey) {
+      const state = useEditorStore.getState();
+      const key = event.key;
+      const lower = key.toLowerCase();
+
+      if (event.ctrlKey || event.metaKey) {
+        if (lower === "z" && !event.shiftKey) {
+          event.preventDefault();
+          state.undo();
+        } else if (lower === "y" || (lower === "z" && event.shiftKey)) {
+          event.preventDefault();
+          state.redo();
+        }
+        return;
+      }
+
+      if (key === " ") {
         event.preventDefault();
-        useEditorStore.getState().undo();
-      } else if (key === "y" || (key === "z" && event.shiftKey)) {
+        if (state.videoEl) state.setPlaying(!state.playing);
+      } else if (key === "ArrowLeft") {
         event.preventDefault();
-        useEditorStore.getState().redo();
+        state.stepFrame(-1);
+      } else if (key === "ArrowRight") {
+        event.preventDefault();
+        state.stepFrame(1);
+      } else if (lower === "i") {
+        event.preventDefault();
+        state.setMarkIn(state.currentTime);
+      } else if (lower === "o") {
+        event.preventDefault();
+        state.setMarkOut(state.currentTime);
       }
     }
     window.addEventListener("keydown", onKeyDown);
@@ -2930,7 +3000,7 @@ export function DesktopEditor({
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
       <div className="grid min-h-0 gap-3 lg:grid-cols-[280px_minmax(0,1fr)_300px] xl:grid-cols-[320px_minmax(0,1fr)_340px]" style={{ height: "min(58vh, 600px)", minHeight: 380 }}>
-        <ProjectBinPanel onRequireCredits={onRequireCredits} onBatchExport={onBatchExport} />
+        <ProjectBinPanel onBatchExport={onBatchExport} />
         <ProgramPreview />
         <LumetriPanel />
       </div>

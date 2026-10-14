@@ -45,7 +45,6 @@ import {
   type AspectRatio,
   type VideoEffectType,
 } from "@/store/editor";
-import { CAPTIONS_CREDIT_COST } from "@/lib/credits";
 import { CAPTION_LANGUAGES } from "@/lib/transcribe";
 import { useOverlayCanvasDrag } from "@/components/editor/use-overlay-drag";
 import { usePointerDrag } from "@/lib/timeline-drag";
@@ -294,14 +293,16 @@ function MobilePreview({ wrapRef }: { wrapRef: React.RefObject<HTMLDivElement | 
           }
         }
 
-        // Clip boundary — roll into the next clip, else loop this one.
+        // Clip boundary — roll into the next clip, else loop the marked region.
+        const regionStart = state.markIn ?? state.trimStart;
+        const regionEnd = state.markOut ?? state.trimEnd;
         const reachedEnd =
           state.duration > 0 &&
-          (video.ended || video.currentTime >= state.trimEnd - 0.02);
+          (video.ended || video.currentTime >= regionEnd - 0.02);
         if (reachedEnd && state.playing) {
           const advanced = state.advanceClip(true);
           if (!advanced) {
-            video.currentTime = state.trimStart;
+            video.currentTime = regionStart;
             if (video.ended) void video.play().catch(() => {});
           }
         }
@@ -1322,7 +1323,7 @@ export function MobileEditor() {
           className={cn(primaryBtn, "mt-3 w-full justify-center disabled:opacity-60")}
         >
           <Sparkles className="h-3.5 w-3.5" aria-hidden />
-          {transcribing ? "Transcribing…" : `Auto captions · ${CAPTIONS_CREDIT_COST} credits`}
+          {transcribing ? "Transcribing…" : "Auto captions"}
         </button>
         {autoCaptionCount > 0 && (
           <p className="mt-2 text-[11px] text-zinc-500">{autoCaptionCount} AI caption(s) generated.</p>

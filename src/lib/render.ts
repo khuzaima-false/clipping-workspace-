@@ -472,8 +472,7 @@ function drawBlurBackground(
   const w = vw * scale;
   const h = vh * scale;
   ctx.save();
-  ctx.filter = "blur(42px)";
-  ctx.globalAlpha = 0.92;
+  ctx.filter = "blur(20px) brightness(0.7)";
   ctx.drawImage(video, (width - w) / 2, (height - h) / 2, w, h);
   ctx.restore();
 }

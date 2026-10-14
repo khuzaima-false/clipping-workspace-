@@ -51,14 +51,12 @@ export const metadata: Metadata = {
   keywords: KEYWORDS,
   applicationName: SITE_NAME,
   // Icons served from /public. Google Search favours square, 48px-multiple
-  // sizes, so we declare 48/96/144/192 PNGs (plus the .ico for browsers).
+  // PNGs, so expose explicit crawler-facing 48px and 192px variants.
   icons: {
     icon: [
+      { url: "/icon-48x48.png", sizes: "48x48", type: "image/png" },
+      { url: "/icon-192x192.png", sizes: "192x192", type: "image/png" },
       { url: "/favicon.ico", sizes: "any" },
-      { url: "/icon-48.png", type: "image/png", sizes: "48x48" },
-      { url: "/icon-96.png", type: "image/png", sizes: "96x96" },
-      { url: "/icon-144.png", type: "image/png", sizes: "144x144" },
-      { url: "/icon-192.png", type: "image/png", sizes: "192x192" },
     ],
     apple: [{ url: "/apple-icon.png", type: "image/png", sizes: "180x180" }],
   },
@@ -110,6 +108,11 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased dark`}
     >
+      <head>
+        <link rel="icon" type="image/png" sizes="48x48" href="/icon-48x48.png" />
+        <link rel="icon" type="image/png" sizes="192x192" href="/icon-192x192.png" />
+        <link rel="apple-touch-icon" sizes="180x180" href="/apple-icon.png" />
+      </head>
       <body className="min-h-full">
         <script
           type="application/ld+json"

@@ -81,7 +81,12 @@ export function Sidebar({ open, onClose }: SidebarProps) {
                   )}
                   aria-hidden
                 />
-                {item.label}
+                <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                {item.badge && (
+                  <span className="shrink-0 rounded-full bg-purple-900/50 px-2 py-0.5 text-xs text-purple-300">
+                    {item.badge}
+                  </span>
+                )}
               </Link>
             );
           })}

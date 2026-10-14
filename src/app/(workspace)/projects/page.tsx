@@ -14,7 +14,6 @@ import {
   X,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { PROJECT_CREATE_CREDIT_COST } from "@/lib/credits";
 import { useWorkspaceStore } from "@/store/workspace";
 import { useProjectsStore } from "@/store/projects";
 import type { Project } from "@/types/database";
@@ -39,7 +38,6 @@ export default function ProjectsPage() {
     loadChannels,
     activeChannelId,
     setActiveChannel,
-    consumeCredits,
   } = useWorkspaceStore();
 
   const projects = useProjectsStore((state) => state.projects);
@@ -100,16 +98,6 @@ export default function ProjectsPage() {
         data: { user },
       } = await supabase.auth.getUser();
       if (!user) throw new Error("You must be signed in to create a project.");
-
-      // Charge for the new project before it is created.
-      const charge = await consumeCredits(PROJECT_CREATE_CREDIT_COST);
-      if (!charge.ok) {
-        throw new Error(
-          charge.reason === "insufficient"
-            ? `Creating a project costs ${PROJECT_CREATE_CREDIT_COST} credits and you're out of credits for today. Check back after the UTC reset, or invite friends for more.`
-            : charge.error ?? "Could not verify your credits. Please try again."
-        );
-      }
 
       const { data, error } = await supabase
         .from("projects")
@@ -457,8 +445,8 @@ export default function ProjectsPage() {
           )}
 
           <p className="flex items-center gap-1.5 text-xs text-zinc-500">
-            <Coins className="h-3.5 w-3.5 text-amber-400" aria-hidden />
-            Creating a project costs {PROJECT_CREATE_CREDIT_COST} credits.
+            <Coins className="h-3.5 w-3.5 text-emerald-400" aria-hidden />
+            Projects are free and unlimited.
           </p>
 
           <button

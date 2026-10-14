@@ -13,11 +13,11 @@ import {
 import { Logo } from "@/components/ui/logo";
 
 const PERKS = [
-  { icon: Clapperboard, text: "100 free daily credits — 50 1080p exports every day" },
-  { icon: Sparkles, text: "AI auto-captions, colour grading & speed ramps" },
+  { icon: Clapperboard, text: `Full multi-track studio — 100% free, unlimited exports` },
+  { icon: Sparkles, text: "Auto-captions, chroma key, keyframes, transitions & SFX" },
   {
     icon: TrendingUp,
-    text: "Earn +10 daily credits for every friend you refer (max 12 = 220/day)",
+    text: "Runs locally in your browser — no installs, nothing uploaded",
   },
 ];
 
@@ -53,8 +53,8 @@ export default function ReferralLandingPage() {
             You&apos;ve been invited to Forgevyn
           </h1>
           <p className="mt-1.5 text-sm text-zinc-500">
-            Create your free account to clip and export 1080p videos in your
-            browser — your friend earns extra daily credits when you join.
+            Create your free account to edit and export videos in your browser —
+            no credit card, no watermarks, no limits.
           </p>
 
           <ul className="mx-auto mt-5 space-y-2.5 text-left">
@@ -88,7 +88,7 @@ export default function ReferralLandingPage() {
       </main>
 
       <footer className="px-6 pb-6 text-center text-xs text-zinc-600">
-        1080p clipping workspace · Projects, Channels &amp; Campaigns
+        Free in-browser video studio · Projects, Channels &amp; Sponsorships
       </footer>
     </div>
   );

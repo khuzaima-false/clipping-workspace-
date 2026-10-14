@@ -1,35 +1,45 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, Coins, Download, Gift } from "lucide-react";
+import { ArrowLeft, Download } from "lucide-react";
 import Link from "next/link";
+import { shallow } from "zustand/shallow";
 import { createClient } from "@/lib/supabase/client";
 import type { Project } from "@/types/database";
 import { Skeleton } from "@/components/ui/skeleton";
-import { computeClipStarts, useEditorStore } from "@/store/editor";
-import { ASPECT_RESOLUTIONS, drawScene } from "@/lib/render";
+import {
+  EXPORT_RESOLUTIONS,
+  computeClipStarts,
+  useEditorStore,
+  type ExportResolutionId,
+} from "@/store/editor";
+import { drawScene } from "@/lib/render";
 import {
   EXPORT_FPS,
-  InsufficientCreditsError,
   downloadFile,
   exportVideo,
   type ExportSegment,
 } from "@/lib/exporter";
-import { useWorkspaceStore } from "@/store/workspace";
-import { EXPORT_CREDIT_COST } from "@/lib/credits";
 import { DesktopEditor } from "@/components/editor/desktop-editor";
 import { MobileEditor } from "@/components/editor/mobile-editor";
 import { ExportDialog, type ExportRun } from "@/components/editor/export-dialog";
-import { ReferralModal } from "@/components/credits/referral-modal";
+import { cn } from "@/lib/utils";
 
-function fileNameFor(title: string, extension: string): string {
+function fileNameFor(title: string, extension: string, label: string): string {
   const slug =
     title
       .trim()
       .replace(/\s+/g, "-")
       .replace(/[^\w-]/g, "") || "video";
-  return `${slug}_1080p.${extension}`;
+  return `${slug}_${label}.${extension}`;
 }
 
 function EditorView() {
@@ -54,19 +64,40 @@ function EditorView() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const aspect = useEditorStore((state) => state.aspect);
-  const hasVideo = useEditorStore((state) => state.videoEl !== null);
-  const [exportRun, setExportRun] = useState<ExportRun | null>(null);
-  const [referralOpen, setReferralOpen] = useState(false);
+  const [titleDraft, setTitleDraft] = useState("");
+  const [saveState, setSaveState] = useState<"saved" | "saving">("saved");
+  const saveTimer = useRef<number | null>(null);
 
-  const profile = useWorkspaceStore((state) => state.profile);
-  const loadProfile = useWorkspaceStore((state) => state.loadProfile);
-  /** Reason the last credit attempt failed (for tailored error UI). */
-  const creditReason = useRef<"insufficient" | "error" | null>(null);
+  const hasVideo = useEditorStore((state) => state.videoEl !== null);
+  const exportResolution = useEditorStore((state) => state.exportResolution);
+  const setExportResolution = useEditorStore((s) => s.setExportResolution);
+  const [exportRun, setExportRun] = useState<ExportRun | null>(null);
+
+  const preset = EXPORT_RESOLUTIONS[exportResolution];
+
+  // Flash "Saving…" whenever the timeline state changes, then settle to "Saved".
+  const markSaving = useCallback(() => {
+    setSaveState("saving");
+    if (saveTimer.current) window.clearTimeout(saveTimer.current);
+    saveTimer.current = window.setTimeout(() => setSaveState("saved"), 700);
+  }, []);
 
   useEffect(() => {
-    void loadProfile();
-  }, [loadProfile]);
+    const unsubscribe = useEditorStore.subscribe(
+      (state) => ({
+        assets: state.assets,
+        sequence: state.sequence,
+        overlays: state.overlays,
+        audioTracks: state.audioTracks,
+      }),
+      markSaving,
+      { equalityFn: shallow }
+    );
+    return () => {
+      unsubscribe();
+      if (saveTimer.current) window.clearTimeout(saveTimer.current);
+    };
+  }, [markSaving]);
 
   useEffect(() => {
     let cancelled = false;
@@ -98,7 +129,11 @@ function EditorView() {
           .maybeSingle();
 
         if (queryError) throw new Error(queryError.message);
-        if (!cancelled) setProject(data as Project | null);
+        if (!cancelled) {
+          const next = (data as Project | null) ?? null;
+          setProject(next);
+          setTitleDraft(next?.title ?? "");
+        }
       } catch (err) {
         if (!cancelled) {
           setError(
@@ -166,8 +201,24 @@ function EditorView() {
     };
   }, []);
 
-  // Persist export stats onto the project so the dashboard can show real
-  // counts and total processed duration (best-effort, never blocks the UI).
+  /** Commits an inline title edit to local state + Supabase. */
+  const commitTitle = async () => {
+    const current = project;
+    if (!current) return;
+    const next = titleDraft.trim() || current.title;
+    setTitleDraft(next);
+    if (next === current.title) return;
+    setProject((prev) => (prev ? { ...prev, title: next } : prev));
+    markSaving();
+    try {
+      const supabase = createClient();
+      await supabase.from("projects").update({ title: next }).eq("id", current.id);
+    } catch {
+      // Local state already reflects the change; retry on the next edit.
+    }
+  };
+
+  // Persist export stats onto the project (best-effort, never blocks the UI).
   const persistExport = async (target: Project, seconds: number) => {
     try {
       const supabase = createClient();
@@ -198,21 +249,21 @@ function EditorView() {
     const video = state.videoEl;
     if (!video || !project || exportRun?.status === "running") return;
 
-    // Block early with the referral prompt when today's credits are short.
-    const workspace = useWorkspaceStore.getState();
-    if (workspace.profile && workspace.profile.daily_credits < EXPORT_CREDIT_COST) {
-      setReferralOpen(true);
-      return;
-    }
-    creditReason.current = null;
-
     if (state.playing) state.setPlaying(false);
 
-    const { width, height } = ASPECT_RESOLUTIONS[state.aspect];
+    const { width, height, bitrate, label } =
+      EXPORT_RESOLUTIONS[state.exportResolution];
     const duration = state.duration > 0 ? state.duration : video.duration;
-    const trimStart = state.trimStart;
+    const naturalStart = state.trimStart;
+    const naturalEnd =
+      state.trimEnd > naturalStart + 0.05
+        ? Math.min(state.trimEnd, duration)
+        : duration;
+    // Mark In/Out bound the export region when set.
+    const trimStart =
+      state.markIn !== null ? Math.min(state.markIn, naturalEnd - 0.05) : naturalStart;
     const trimEnd =
-      state.trimEnd > trimStart + 0.05 ? Math.min(state.trimEnd, duration) : duration;
+      state.markOut !== null ? Math.max(trimStart + 0.05, Math.min(state.markOut, duration)) : naturalEnd;
     if (!Number.isFinite(trimEnd) || trimEnd <= trimStart) {
       setExportRun({
         status: "error",
@@ -302,6 +353,7 @@ function EditorView() {
           }),
         width,
         height,
+        bitrate,
         trimStart,
         trimEnd,
         fps: EXPORT_FPS,
@@ -309,14 +361,6 @@ function EditorView() {
         segments: segments && segments.length > 1 ? segments : undefined,
         audioTracks: state.audioTracks,
         speedPoints: segments ? [] : state.speedPoints,
-        // Server-side credit gate: spends the export cost before rendering.
-        authorize: async () => {
-          const result = await useWorkspaceStore
-            .getState()
-            .consumeCredits(EXPORT_CREDIT_COST);
-          creditReason.current = result.ok ? null : (result.reason ?? "error");
-          return result.ok;
-        },
         signal: controller.signal,
         onProgress: (progress) => {
           setExportRun((previous) =>
@@ -327,7 +371,7 @@ function EditorView() {
         },
       });
 
-      const fileName = fileNameFor(project.title, result.extension);
+      const fileName = fileNameFor(project.title, result.extension, label);
       downloadFile(result.blob, fileName);
       void persistExport(project, Math.max(0, trimEnd - trimStart));
       setExportRun({
@@ -346,23 +390,6 @@ function EditorView() {
         setExportRun(null);
         return;
       }
-      if (err instanceof InsufficientCreditsError) {
-        setExportRun(null);
-        if (creditReason.current === "insufficient") {
-          setReferralOpen(true);
-        } else {
-          setExportRun({
-            status: "error",
-            label: "Export blocked",
-            percent: 0,
-            error:
-              useWorkspaceStore.getState().profileError ??
-              "Could not verify your export credits. Please try again.",
-            controller,
-          });
-        }
-        return;
-      }
       setExportRun({
         status: "error",
         label: "Export failed",
@@ -376,7 +403,7 @@ function EditorView() {
   // Batch export: encode + download each selected clip sequentially.
   const handleBatchExport = async (clipIds: string[]) => {
     const store = useEditorStore.getState();
-    const res = ASPECT_RESOLUTIONS[store.aspect];
+    const res = EXPORT_RESOLUTIONS[store.exportResolution];
     for (const clipId of clipIds) {
       const clip = store.sequence.find((c) => c.id === clipId);
       const asset = clip
@@ -429,18 +456,17 @@ function EditorView() {
             }),
           width: res.width,
           height: res.height,
+          bitrate: res.bitrate,
           trimStart,
           trimEnd,
           fps: EXPORT_FPS,
           file,
           speedPoints: [],
-          authorize: async () =>
-            (await useWorkspaceStore.getState().consumeCredits(EXPORT_CREDIT_COST)).ok,
           onProgress: () => {},
         });
         downloadFile(
           result.blob,
-          fileNameFor(asset.name.replace(/\.[^.]+$/, ""), result.extension)
+          fileNameFor(asset.name.replace(/\.[^.]+$/, ""), result.extension, res.label)
         );
       } catch {
         // Skip failed items and continue the queue.
@@ -450,8 +476,8 @@ function EditorView() {
     }
   };
 
-  const resolution = ASPECT_RESOLUTIONS[aspect];
   const exporting = exportRun?.status === "running";
+  const exportPercent = exporting ? exportRun?.percent ?? 0 : 0;
 
   return (
     <div className="flex w-full max-w-full min-w-0 flex-col gap-4 max-md:h-full max-md:min-h-0 max-md:overflow-x-hidden">
@@ -470,45 +496,92 @@ function EditorView() {
             <Skeleton className="h-6 w-48" />
           ) : (
             <>
-              <h1 className="truncate text-xl font-semibold tracking-tight text-zinc-50">
-                {project?.title ?? "Editor"}
-              </h1>
-              {project && (
-                <p className="mt-0.5 truncate text-xs text-zinc-500">
-                  Status: {project.status} · Created{" "}
-                  {new Date(project.created_at).toLocaleDateString()}
-                </p>
+              {project ? (
+                <input
+                  value={titleDraft}
+                  onChange={(e) => {
+                    setTitleDraft(e.target.value);
+                    setSaveState("saving");
+                  }}
+                  onBlur={() => void commitTitle()}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      e.currentTarget.blur();
+                    } else if (e.key === "Escape") {
+                      setTitleDraft(project.title);
+                      e.currentTarget.blur();
+                    }
+                  }}
+                  aria-label="Project title"
+                  spellCheck={false}
+                  className="w-full max-w-md truncate rounded-md border border-transparent bg-transparent text-xl font-semibold tracking-tight text-zinc-50 outline-none transition-colors hover:border-zinc-800 focus:border-violet-500/50 focus:bg-zinc-900/60 focus:px-2"
+                />
+              ) : (
+                <h1 className="truncate text-xl font-semibold tracking-tight text-zinc-50">
+                  Editor
+                </h1>
               )}
+              <p className="mt-0.5 flex items-center gap-1.5 text-xs text-zinc-500">
+                <span
+                  aria-hidden
+                  className={cn(
+                    "h-1.5 w-1.5 shrink-0 rounded-full",
+                    saveState === "saving" ? "animate-pulse bg-amber-400" : "bg-emerald-400"
+                  )}
+                />
+                <span className="shrink-0">
+                  {saveState === "saving" ? "Saving…" : "Saved to Device"}
+                </span>
+                {project && (
+                  <span className="truncate text-zinc-600">
+                    · Created {new Date(project.created_at).toLocaleDateString()}
+                  </span>
+                )}
+              </p>
             </>
           )}
         </div>
 
-        <span className="hidden shrink-0 rounded-full bg-zinc-900 px-3 py-1.5 text-[11px] tabular-nums text-zinc-400 ring-1 ring-inset ring-zinc-800 sm:inline-block">
-          {aspect} · {resolution.width}×{resolution.height}
-        </span>
-
-        {profile && (
-          <button
-            type="button"
-            onClick={() => setReferralOpen(true)}
-            title="Daily export credits — click for referrals & rewards"
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-zinc-900 px-3 py-1.5 text-[11px] font-medium text-zinc-300 ring-1 ring-inset ring-zinc-800 transition-colors hover:ring-zinc-600"
+        {/* Resolution selector */}
+        <label className="inline-flex shrink-0 items-center gap-2">
+          <span className="sr-only">Export resolution</span>
+          <select
+            value={exportResolution}
+            onChange={(e) => setExportResolution(e.target.value as ExportResolutionId)}
+            aria-label="Export resolution"
+            className="rounded-lg border border-zinc-800 bg-zinc-900/60 px-2.5 py-2 text-xs font-medium text-zinc-200 transition-colors hover:border-zinc-600 focus:border-violet-500 focus:outline-none"
           >
-            <Coins className="h-3.5 w-3.5 text-amber-400" aria-hidden />
-            <span className="tabular-nums">{profile.daily_credits}</span>
-            <span className="text-zinc-500">credits</span>
-            <Gift className="h-3.5 w-3.5 text-violet-400" aria-hidden />
-          </button>
-        )}
+            {(Object.keys(EXPORT_RESOLUTIONS) as ExportResolutionId[]).map((id) => {
+              const option = EXPORT_RESOLUTIONS[id];
+              return (
+                <option key={id} value={id}>
+                  {option.label} · {option.width}×{option.height}
+                </option>
+              );
+            })}
+          </select>
+        </label>
 
         <button
           type="button"
           onClick={() => void handleExport()}
           disabled={!hasVideo || exporting}
-          className="inline-flex shrink-0 items-center gap-2 rounded-lg brand-gradient brand-gradient-hover px-4 py-2.5 text-sm font-medium text-white transition-transform hover:scale-[1.03] disabled:cursor-not-allowed disabled:opacity-50"
+          className="brand-gradient brand-gradient-hover relative inline-flex shrink-0 items-center gap-2 overflow-hidden rounded-lg px-4 py-2.5 text-sm font-medium text-white transition-transform hover:scale-[1.03] disabled:cursor-not-allowed disabled:opacity-50"
         >
-          <Download className="h-4 w-4" aria-hidden />
-          Export 1080p Video
+          {exporting && (
+            <span
+              aria-hidden
+              className="absolute inset-y-0 left-0 bg-white/25 transition-[width] duration-150"
+              style={{ width: `${Math.max(2, exportPercent)}%` }}
+            />
+          )}
+          <span className="relative inline-flex items-center gap-2">
+            <Download className="h-4 w-4" aria-hidden />
+            {exporting
+              ? `Rendering ${exportPercent}%…`
+              : `Export ${preset.label} Video`}
+          </span>
         </button>
       </div>
 
@@ -548,7 +621,6 @@ function EditorView() {
           {/* Desktop: Premiere-style 4-panel workspace */}
           <div className="hidden md:flex md:min-h-0 md:flex-1 md:flex-col">
             <DesktopEditor
-              onRequireCredits={() => setReferralOpen(true)}
               onBatchExport={(ids) => void handleBatchExport(ids)}
             />
           </div>
@@ -559,10 +631,6 @@ function EditorView() {
       )}
 
       <ExportDialog run={exportRun} onClose={() => setExportRun(null)} />
-      <ReferralModal
-        open={referralOpen}
-        onClose={() => setReferralOpen(false)}
-      />
     </div>
   );
 }
