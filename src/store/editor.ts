@@ -119,24 +119,61 @@ export type ColorAdjustments = {
   exposure: number;
   /** -100..100 (%) */
   contrast: number;
+  /** -100..100 (%) — recover/boost the bright end. */
+  highlights: number;
+  /** -100..100 (%) — lift/crush the dark end. */
+  shadows: number;
+  /** -100..100 (%) — clip point of the brightest tones. */
+  whites: number;
+  /** -100..100 (%) — clip point of the darkest tones. */
+  blacks: number;
+  /** -100..100 (%) — saturation weighted toward muted colours. */
+  vibrance: number;
   /** -100..100 (%) */
   saturation: number;
-  /** -180..180 (degrees) — a.k.a. temperature tilt. */
+  /** -100..100 — cool (blue) ↔ warm (orange). */
   hue: number;
-  /** -100..100 — green/magenta tint (folded into hue-rotate). */
+  /** -100..100 — green ↔ magenta. */
   tint: number;
   /** 0..20 (px) */
   blur: number;
+  /** 0..100 — edge sharpening (unsharp mask). */
+  sharpness: number;
+  /** 0..100 — local midtone contrast. */
+  clarity: number;
 };
 
 export const DEFAULT_COLOR_ADJUSTMENTS: ColorAdjustments = {
   brightness: 0,
   exposure: 0,
   contrast: 0,
+  highlights: 0,
+  shadows: 0,
+  whites: 0,
+  blacks: 0,
+  vibrance: 0,
   saturation: 0,
   hue: 0,
   tint: 0,
   blur: 0,
+  sharpness: 0,
+  clarity: 0,
+};
+
+/** One colour-wheel handle position (-1..1 on each axis). */
+export type WheelPoint = { x: number; y: number };
+
+/** Lift / Gamma / Gain colour wheels (shadows / midtones / highlights). */
+export type ColorWheels = {
+  lift: WheelPoint;
+  gamma: WheelPoint;
+  gain: WheelPoint;
+};
+
+export const DEFAULT_COLOR_WHEELS: ColorWheels = {
+  lift: { x: 0, y: 0 },
+  gamma: { x: 0, y: 0 },
+  gain: { x: 0, y: 0 },
 };
 
 /**
@@ -465,6 +502,7 @@ export type EditSnapshot = {
   trimStart: number;
   trimEnd: number;
   colorAdjustments: ColorAdjustments;
+  colorWheels: ColorWheels;
   activeEffects: VideoEffect[];
   aspect: AspectRatio;
   speedPoints: SpeedPoint[];
@@ -546,6 +584,8 @@ type EditorState = {
   exportResolution: ExportResolutionId;
   /** Colour grading applied to the video frame. */
   colorAdjustments: ColorAdjustments;
+  /** Lift / Gamma / Gain colour wheels. */
+  colorWheels: ColorWheels;
   /** External audio tracks / sound effects layered on the timeline. */
   audioTracks: AudioTrack[];
   /** Last audio-import failure, if any. */
@@ -660,7 +700,9 @@ type EditorState = {
   clearAutoCaptions: () => void;
   /** Merges a partial colour-grading update. */
   setColorAdjustment: (patch: Partial<ColorAdjustments>) => void;
-  /** Restores neutral colour grading. */
+  /** Sets one colour wheel's handle position (-1..1 per axis). */
+  setColorWheel: (region: keyof ColorWheels, point: WheelPoint) => void;
+  /** Restores neutral colour grading (sliders + wheels). */
   resetColorAdjustments: () => void;
   /** Decodes and appends one or more uploaded audio files. */
   addAudioFiles: (files: FileList | File[]) => Promise<void>;
@@ -777,6 +819,7 @@ function snapshotOf(state: EditorState): EditSnapshot {
     trimStart: state.trimStart,
     trimEnd: state.trimEnd,
     colorAdjustments: state.colorAdjustments,
+    colorWheels: state.colorWheels,
     activeEffects: state.activeEffects,
     aspect: state.aspect,
     speedPoints: state.speedPoints,
@@ -843,6 +886,7 @@ export const useEditorStore = create<EditorState>()(
   history: [],
   future: [],
   colorAdjustments: DEFAULT_COLOR_ADJUSTMENTS,
+  colorWheels: DEFAULT_COLOR_WHEELS,
   audioTracks: [],
   audioTrackError: null,
 
@@ -1416,6 +1460,7 @@ export const useEditorStore = create<EditorState>()(
       trimStart: snapshot.trimStart,
       trimEnd: snapshot.trimEnd,
       colorAdjustments: snapshot.colorAdjustments,
+      colorWheels: snapshot.colorWheels,
       activeEffects: snapshot.activeEffects,
       aspect: snapshot.aspect,
       speedPoints: snapshot.speedPoints,
@@ -1550,6 +1595,7 @@ export const useEditorStore = create<EditorState>()(
       history: [],
       future: [],
       colorAdjustments: DEFAULT_COLOR_ADJUSTMENTS,
+      colorWheels: DEFAULT_COLOR_WHEELS,
       audioTracks: [],
       audioTrackError: null,
       speedPreset: "none",
@@ -1842,8 +1888,22 @@ export const useEditorStore = create<EditorState>()(
   setColorAdjustment: (patch) =>
     set({ colorAdjustments: { ...get().colorAdjustments, ...patch } }),
 
+  setColorWheel: (region, point) =>
+    set({
+      colorWheels: {
+        ...get().colorWheels,
+        [region]: {
+          x: Math.min(Math.max(point.x, -1), 1),
+          y: Math.min(Math.max(point.y, -1), 1),
+        },
+      },
+    }),
+
   resetColorAdjustments: () =>
-    set({ colorAdjustments: DEFAULT_COLOR_ADJUSTMENTS }),
+    set({
+      colorAdjustments: DEFAULT_COLOR_ADJUSTMENTS,
+      colorWheels: DEFAULT_COLOR_WHEELS,
+    }),
 
   addAudioFiles: async (files) => {
     const list = Array.from(files).filter(
@@ -2237,6 +2297,7 @@ useEditorStore.subscribe(
     trimStart: state.trimStart,
     trimEnd: state.trimEnd,
     colorAdjustments: state.colorAdjustments,
+    colorWheels: state.colorWheels,
     activeEffects: state.activeEffects,
     aspect: state.aspect,
     speedPoints: state.speedPoints,

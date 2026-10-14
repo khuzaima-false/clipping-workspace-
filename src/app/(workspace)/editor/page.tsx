@@ -289,6 +289,7 @@ function EditorView() {
       crisp: state.hdRendering,
       chromaKey: state.chromaKey,
       canvasFill: state.canvasFill,
+      colorWheels: state.colorWheels,
     };
 
     // Multi-clip: build a decoder per sequence clip so the exporter can merge
@@ -453,6 +454,7 @@ function EditorView() {
               activeEffects: [],
               crisp: store.hdRendering,
               sceneTime: time,
+              colorWheels: store.colorWheels,
             }),
           width: res.width,
           height: res.height,

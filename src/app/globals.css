@@ -59,6 +59,24 @@ body {
   background-clip: padding-box;
 }
 
+/* Compact scrollbar for the cinematic-presets gallery drawer */
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(139 92 246 / 0.5) transparent;
+}
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgb(139 92 246 / 0.45);
+  border: 1px solid transparent;
+  border-radius: 999px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgb(167 139 250 / 0.7);
+}
+
 /* --- Surfaces ------------------------------------------------------------ */
 .glass-card {
   border: 1px solid rgb(39 39 42 / 0.8);

@@ -112,10 +112,19 @@ function AdjustPanel() {
   const setColorAdjustment = useEditorStore((s) => s.setColorAdjustment);
   const resetColorAdjustments = useEditorStore((s) => s.resetColorAdjustments);
   const rows = [
-    ["Brightness", "brightness", -100, 100],
     ["Exposure", "exposure", -100, 100],
+    ["Brightness", "brightness", -100, 100],
     ["Contrast", "contrast", -100, 100],
+    ["Highlights", "highlights", -100, 100],
+    ["Shadows", "shadows", -100, 100],
+    ["Whites", "whites", -100, 100],
+    ["Blacks", "blacks", -100, 100],
+    ["Vibrance", "vibrance", -100, 100],
     ["Saturation", "saturation", -100, 100],
+    ["Temperature", "hue", -100, 100],
+    ["Tint", "tint", -100, 100],
+    ["Sharpness", "sharpness", 0, 100],
+    ["Clarity", "clarity", 0, 100],
   ] as const;
   return (
     <div className="space-y-4">
@@ -331,6 +340,7 @@ function MobilePreview({ wrapRef }: { wrapRef: React.RefObject<HTMLDivElement | 
           sceneTime: video ? video.currentTime : state.currentTime,
           clipEnd: state.trimEnd > 0 ? state.trimEnd : undefined,
           chromaKey: state.chromaKey,
+          colorWheels: state.colorWheels,
         },
         { placeholder: true }
       );

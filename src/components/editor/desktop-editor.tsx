@@ -82,12 +82,36 @@ const EFFECT_CARDS: { type: VideoEffectType; label: string; Icon: typeof Wand2 }
   { type: "blur-vignette", label: "Blur Vignette", Icon: EyeOff },
 ];
 
-const CINEMATIC_PRESETS: { id: string; label: string; patch: Record<string, number> }[] = [
-  { id: "none", label: "Neutral", patch: { brightness: 0, contrast: 0, saturation: 0, hue: 0, tint: 0, blur: 0 } },
-  { id: "tealorange", label: "Teal & Orange", patch: { saturation: 22, contrast: 16, hue: 6, tint: 10 } },
-  { id: "noir", label: "Moody Noir", patch: { saturation: -70, contrast: 30, brightness: -6 } },
-  { id: "cyberpunk", label: "Cyberpunk", patch: { saturation: 48, contrast: 26, hue: -55, tint: 36 } },
-  { id: "golden", label: "Golden Hour", patch: { saturation: 18, contrast: 8, brightness: 6, hue: 14, tint: 8 } },
+type CinematicPreset = {
+  id: string;
+  label: string;
+  group: "quick" | "more";
+  swatch: string;
+  patch: Record<string, number>;
+};
+
+/** 5 quick picks + 15 more = 20 cinematic presets. */
+const CINEMATIC_PRESETS: CinematicPreset[] = [
+  { id: "none", label: "Neutral", group: "quick", swatch: "linear-gradient(135deg,#52525b,#18181b)", patch: {} },
+  { id: "tealorange", label: "Teal & Orange", group: "quick", swatch: "linear-gradient(135deg,#0ea5e9,#f97316)", patch: { saturation: 22, contrast: 16, hue: 6, tint: 10, highlights: 8, shadows: -10 } },
+  { id: "noir", label: "Moody Noir", group: "quick", swatch: "linear-gradient(135deg,#111827,#6b7280)", patch: { saturation: -70, contrast: 30, brightness: -6, blacks: -18, whites: 10 } },
+  { id: "cyberpunk", label: "Cyberpunk", group: "quick", swatch: "linear-gradient(135deg,#d946ef,#22d3ee)", patch: { saturation: 48, contrast: 26, hue: -55, tint: 36, vibrance: 20 } },
+  { id: "golden", label: "Golden Hour", group: "quick", swatch: "linear-gradient(135deg,#f59e0b,#fde68a)", patch: { saturation: 18, contrast: 8, brightness: 6, hue: 14, tint: 8, highlights: 12 } },
+  { id: "vintage", label: "Vintage Film", group: "more", swatch: "linear-gradient(135deg,#a16207,#78350f)", patch: { saturation: -18, contrast: 12, hue: 12, tint: 14, shadows: 12, highlights: -8, clarity: 12 } },
+  { id: "matrix", label: "Matrix Green", group: "more", swatch: "linear-gradient(135deg,#166534,#052e16)", patch: { saturation: 22, contrast: 24, hue: -40, tint: -45, shadows: -10 } },
+  { id: "bleach", label: "Bleach Bypass", group: "more", swatch: "linear-gradient(135deg,#e5e7eb,#78716c)", patch: { saturation: -42, contrast: 36, clarity: 22, whites: 10, blacks: -14 } },
+  { id: "sunset", label: "Sunset Glow", group: "more", swatch: "linear-gradient(135deg,#fb7185,#f59e0b)", patch: { saturation: 24, brightness: 6, hue: 18, tint: 16, highlights: 14, vibrance: 18 } },
+  { id: "crisp", label: "Crisp High-Contrast", group: "more", swatch: "linear-gradient(135deg,#f8fafc,#0f172a)", patch: { contrast: 38, clarity: 28, sharpness: 34, blacks: -10, whites: 12 } },
+  { id: "anamorphic", label: "Anamorphic Blue", group: "more", swatch: "linear-gradient(135deg,#1d4ed8,#0ea5e9)", patch: { saturation: 16, hue: -40, tint: -18, contrast: 18, shadows: -8, highlights: 8 } },
+  { id: "pastel", label: "Pastel Dream", group: "more", swatch: "linear-gradient(135deg,#fbcfe8,#bfdbfe)", patch: { saturation: -8, brightness: 10, contrast: -8, highlights: 14, shadows: 16, blur: 1 } },
+  { id: "monosoft", label: "Monochrome Soft", group: "more", swatch: "linear-gradient(135deg,#d4d4d8,#3f3f46)", patch: { saturation: -100, contrast: 10, clarity: 16, brightness: 4 } },
+  { id: "desat", label: "Desaturated Action", group: "more", swatch: "linear-gradient(135deg,#94a3b8,#334155)", patch: { saturation: -34, contrast: 22, clarity: 24, sharpness: 20 } },
+  { id: "kodak", label: "Warm Kodak", group: "more", swatch: "linear-gradient(135deg,#fbbf24,#b45309)", patch: { saturation: 14, hue: 12, tint: 10, highlights: 8, shadows: 6, contrast: 10 } },
+  { id: "fuji", label: "Fuji Chrome", group: "more", swatch: "linear-gradient(135deg,#34d399,#0f766e)", patch: { saturation: 10, contrast: 16, hue: -6, tint: -10, clarity: 14 } },
+  { id: "nordic", label: "Nordic Cold", group: "more", swatch: "linear-gradient(135deg,#7dd3fc,#1e3a8a)", patch: { saturation: -14, hue: -28, tint: -16, contrast: 14, whites: 8, blacks: -10 } },
+  { id: "hollywood", label: "Hollywood Pop", group: "more", swatch: "linear-gradient(135deg,#fb923c,#7c3aed)", patch: { saturation: 26, contrast: 20, vibrance: 24, highlights: 10, clarity: 12 } },
+  { id: "retro80", label: "Retro 80s", group: "more", swatch: "linear-gradient(135deg,#f472b6,#22d3ee)", patch: { saturation: 34, hue: -30, tint: 34, contrast: 20, exposure: 4, blur: 1 } },
+  { id: "cineteal", label: "Cinematic Teal", group: "more", swatch: "linear-gradient(135deg,#2dd4bf,#155e75)", patch: { saturation: 18, hue: -22, tint: 18, contrast: 18, shadows: -10, highlights: 8 } },
 ];
 
 /** Platform framing presets — aspect ratio + automatic canvas fill. */
@@ -119,8 +143,10 @@ function formatTimecode(seconds: number, fps: number): string {
 const panelTitle =
   "border-b border-zinc-800 px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-zinc-400";
 
-type WheelKey = "master" | "shadows" | "midtones" | "highlights";
 type WheelValue = { x: number; y: number };
+
+/** Shared handle to the Program Monitor canvas so scopes can sample it live. */
+const programCanvasRef: { current: HTMLCanvasElement | null } = { current: null };
 
 /** Premiere-style round color wheel (hue around, saturation outward). */
 function ColorWheel({
@@ -1638,6 +1664,13 @@ function ProjectBinPanel({
 function ProgramPreview() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayDrag = useOverlayCanvasDrag(canvasRef);
+  // Expose the graded canvas so the Lumetri scopes can sample it live.
+  useEffect(() => {
+    programCanvasRef.current = canvasRef.current;
+    return () => {
+      programCanvasRef.current = null;
+    };
+  }, []);
   const loopRef = useRef(true);
   const [loop, setLoop] = useState(true);
 
@@ -1750,6 +1783,7 @@ function ProgramPreview() {
           sceneTime: video ? video.currentTime : state.currentTime,
           clipEnd: state.trimEnd > 0 ? state.trimEnd : undefined,
           chromaKey: state.chromaKey,
+          colorWheels: state.colorWheels,
         },
         { placeholder: true }
       );
@@ -1946,17 +1980,14 @@ function ProgramPreview() {
 function LumetriPanel() {
   const adjustments = useEditorStore((s) => s.colorAdjustments);
   const setColorAdjustment = useEditorStore((s) => s.setColorAdjustment);
+  const colorWheels = useEditorStore((s) => s.colorWheels);
+  const setColorWheel = useEditorStore((s) => s.setColorWheel);
   const resetColorAdjustments = useEditorStore((s) => s.resetColorAdjustments);
   const scopeRef = useRef<HTMLCanvasElement>(null);
 
-  const [wheels, setWheels] = useState<Record<WheelKey, WheelValue>>({
-    master: { x: 0, y: 0 },
-    shadows: { x: 0, y: 0 },
-    midtones: { x: 0, y: 0 },
-    highlights: { x: 0, y: 0 },
-  });
   const [presetId, setPresetId] = useState("none");
   const [presetIntensity, setPresetIntensity] = useState(100);
+  const [showMore, setShowMore] = useState(false);
 
   const applyPreset = (id: string, intensity: number) => {
     const preset = CINEMATIC_PRESETS.find((item) => item.id === id);
@@ -1970,65 +2001,45 @@ function LumetriPanel() {
     setColorAdjustment(patch);
   };
 
-  // Fold the wheels into the render's hue/tint colour model.
-  useEffect(() => {
-    const angleOf = (v: WheelValue) => (Math.atan2(v.y, v.x) * 180) / Math.PI;
-    const radOf = (v: WheelValue) => Math.min(1, Math.hypot(v.x, v.y));
-    const hue = Math.max(
-      -180,
-      Math.min(
-        180,
-        angleOf(wheels.master) * radOf(wheels.master) +
-          0.25 *
-            (angleOf(wheels.shadows) * radOf(wheels.shadows) +
-              angleOf(wheels.midtones) * radOf(wheels.midtones) +
-              angleOf(wheels.highlights) * radOf(wheels.highlights))
-      )
-    );
-    const tint = Math.max(
-      -100,
-      Math.min(
-        100,
-        radOf(wheels.master) * 100 +
-          15 *
-            (radOf(wheels.shadows) +
-              radOf(wheels.midtones) +
-              radOf(wheels.highlights))
-      )
-    );
-    setColorAdjustment({ hue: Math.round(hue), tint: Math.round(tint) });
-  }, [wheels, setColorAdjustment]);
-
-  // Lightweight real luminance histogram of the current frame.
+  // Real-time 256-bin luminance histogram sampled from the Program Monitor
+  // canvas, so it reflects colour wheels, sliders and presets live.
   useEffect(() => {
     const canvas = scopeRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
-    if (!ctx) return;
     const sample = document.createElement("canvas");
-    sample.width = 120;
-    sample.height = 68;
-    const sampleCtx = sample.getContext("2d");
+    sample.width = 160;
+    sample.height = 90;
+    const sampleCtx = sample.getContext("2d", { willReadFrequently: true });
+    if (!ctx || !sampleCtx) return;
+    const bins = new Uint32Array(256);
 
     const id = window.setInterval(() => {
-      const video = useEditorStore.getState().videoEl;
-      if (!sampleCtx || !video || video.readyState < 2 || canvas.offsetParent === null) return;
-      sampleCtx.drawImage(video, 0, 0, sample.width, sample.height);
-      const { data } = sampleCtx.getImageData(0, 0, sample.width, sample.height);
-      const bins = new Array(32).fill(0);
-      for (let i = 0; i < data.length; i += 4) {
-        const luma = (0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]) / 255;
-        bins[Math.min(31, Math.floor(luma * 32))] += 1;
+      const source = programCanvasRef.current;
+      if (!source || canvas.offsetParent === null || source.width === 0) return;
+      try {
+        sampleCtx.drawImage(source, 0, 0, sample.width, sample.height);
+      } catch {
+        return;
       }
-      const max = Math.max(1, ...bins);
+      const { data } = sampleCtx.getImageData(0, 0, sample.width, sample.height);
+      bins.fill(0);
+      for (let i = 0; i < data.length; i += 4) {
+        const y = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+        bins[Math.min(255, y | 0)] += 1;
+      }
+      let max = 1;
+      for (let b = 0; b < 256; b += 1) if (bins[b] > max) max = bins[b];
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      const barW = canvas.width / bins.length;
-      bins.forEach((count, index) => {
-        const h = (count / max) * canvas.height;
-        ctx.fillStyle = "#a78bfa";
-        ctx.fillRect(index * barW, canvas.height - h, barW - 1, h);
-      });
-    }, 500);
+      ctx.fillStyle = "#09090b";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      const barW = canvas.width / 256;
+      for (let b = 0; b < 256; b += 1) {
+        const h = (bins[b] / max) * canvas.height;
+        ctx.fillStyle = `hsl(${258 - (b / 255) * 40} 85% ${52 + (b / 255) * 18}%)`;
+        ctx.fillRect(b * barW, canvas.height - h, Math.max(0.75, barW), h);
+      }
+    }, 110);
 
     return () => window.clearInterval(id);
   }, []);
@@ -2037,25 +2048,71 @@ function LumetriPanel() {
     ["Exposure", "exposure", -100, 100],
     ["Brightness", "brightness", -100, 100],
     ["Contrast", "contrast", -100, 100],
+    ["Highlights", "highlights", -100, 100],
+    ["Shadows", "shadows", -100, 100],
+    ["Whites", "whites", -100, 100],
+    ["Blacks", "blacks", -100, 100],
+    ["Vibrance", "vibrance", -100, 100],
     ["Saturation", "saturation", -100, 100],
-    ["Temperature", "hue", -180, 180],
+    ["Temperature", "hue", -100, 100],
     ["Tint", "tint", -100, 100],
+    ["Sharpness", "sharpness", 0, 100],
+    ["Clarity", "clarity", 0, 100],
   ] as const;
+
+  const quickPresets = CINEMATIC_PRESETS.filter((p) => p.group === "quick");
+  const morePresets = CINEMATIC_PRESETS.filter((p) => p.group === "more");
+
+  const presetButton = (preset: CinematicPreset) => (
+    <button
+      key={preset.id}
+      type="button"
+      onClick={() => {
+        setPresetId(preset.id);
+        applyPreset(preset.id, presetIntensity);
+      }}
+      aria-pressed={presetId === preset.id}
+      className={cn(
+        "flex items-center gap-1.5 overflow-hidden rounded-lg border px-1.5 py-1.5 text-left text-[10px] transition-colors",
+        presetId === preset.id
+          ? "border-violet-500 bg-violet-600/15 text-violet-200"
+          : "border-zinc-800 bg-zinc-950/60 text-zinc-300 hover:border-zinc-600"
+      )}
+    >
+      <span
+        className="h-4 w-4 shrink-0 rounded-full ring-1 ring-inset ring-white/20"
+        style={{ background: preset.swatch }}
+        aria-hidden
+      />
+      <span className="min-w-0 flex-1 truncate">{preset.label}</span>
+    </button>
+  );
 
   return (
     <section className="glass-card flex min-h-0 flex-col overflow-hidden rounded-2xl">
       <div className={panelTitle}>Lumetri Color &amp; Scopes</div>
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
         <div>
-          <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-            Color Wheels
-          </p>
-          <div className="grid grid-cols-2 justify-items-center gap-2">
-            <ColorWheel label="Master" value={wheels.master} onChange={(v) => setWheels((p) => ({ ...p, master: v }))} />
-            <ColorWheel label="Shadows" value={wheels.shadows} onChange={(v) => setWheels((p) => ({ ...p, shadows: v }))} />
-            <ColorWheel label="Midtones" value={wheels.midtones} onChange={(v) => setWheels((p) => ({ ...p, midtones: v }))} />
-            <ColorWheel label="Highlights" value={wheels.highlights} onChange={(v) => setWheels((p) => ({ ...p, highlights: v }))} />
+          <div className="mb-1 flex items-center justify-between">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+              Color Wheels
+            </p>
+            <button
+              type="button"
+              onClick={resetColorAdjustments}
+              className="rounded-md border border-zinc-800 bg-zinc-950/60 px-2 py-0.5 text-[10px] text-zinc-400 transition-colors hover:border-zinc-600 hover:text-zinc-100"
+            >
+              Reset
+            </button>
           </div>
+          <div className="grid grid-cols-3 justify-items-center gap-1">
+            <ColorWheel label="Lift" value={colorWheels.lift} onChange={(v) => setColorWheel("lift", v)} />
+            <ColorWheel label="Gamma" value={colorWheels.gamma} onChange={(v) => setColorWheel("gamma", v)} />
+            <ColorWheel label="Gain" value={colorWheels.gain} onChange={(v) => setColorWheel("gain", v)} />
+          </div>
+          <p className="mt-1 text-center text-[9px] text-zinc-600">
+            Lift = shadows · Gamma = midtones · Gain = highlights
+          </p>
         </div>
 
         {sliders.map(([label, key, min, max]) => (
@@ -2086,30 +2143,37 @@ function LumetriPanel() {
           </div>
         ))}
 
+        <button
+          type="button"
+          onClick={resetColorAdjustments}
+          className="w-full rounded-lg border border-zinc-800 bg-zinc-950/60 px-2 py-2 text-[11px] text-zinc-300 transition-colors hover:border-zinc-600"
+        >
+          Reset Color Adjustments
+        </button>
+
         <div className="space-y-2 pt-1">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-            Cinematic Presets
-          </p>
-          <div className="grid grid-cols-2 gap-1.5">
-            {CINEMATIC_PRESETS.map((preset) => (
-              <button
-                key={preset.id}
-                type="button"
-                onClick={() => {
-                  setPresetId(preset.id);
-                  applyPreset(preset.id, presetIntensity);
-                }}
-                aria-pressed={presetId === preset.id}
-                className={cn(
-                  "rounded-lg border px-2 py-1.5 text-[11px] transition-colors",
-                  presetId === preset.id
-                    ? "border-violet-500 bg-violet-600/15 text-violet-200"
-                    : "border-zinc-800 bg-zinc-950/60 text-zinc-300 hover:border-zinc-600"
-                )}
-              >
-                {preset.label}
-              </button>
-            ))}
+          <div className="flex items-center justify-between">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+              Cinematic Presets
+            </p>
+            <button
+              type="button"
+              onClick={() => setShowMore((v) => !v)}
+              className="rounded-md border border-zinc-800 bg-zinc-950/60 px-2 py-0.5 text-[10px] text-violet-300 transition-colors hover:border-zinc-600"
+            >
+              {showMore ? "Less" : "More (+15)"}
+            </button>
+          </div>
+          <div className="grid grid-cols-2 gap-1.5">{quickPresets.map(presetButton)}</div>
+          <div
+            className={cn(
+              "overflow-hidden transition-all duration-300 ease-in-out",
+              showMore ? "max-h-56 opacity-100" : "max-h-0 opacity-0"
+            )}
+          >
+            <div className="custom-scrollbar grid max-h-56 grid-cols-2 gap-1.5 overflow-y-auto pt-1.5 pr-1">
+              {morePresets.map(presetButton)}
+            </div>
           </div>
           <label className="block">
             <span className="flex items-center justify-between text-[10px] text-zinc-500">
@@ -2134,9 +2198,14 @@ function LumetriPanel() {
 
         <div className="pt-1">
           <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-            Luma scopes
+            Luma waveform
           </p>
-          <canvas ref={scopeRef} width={240} height={90} className="h-24 w-full rounded-lg bg-zinc-950 ring-1 ring-inset ring-zinc-800" />
+          <canvas
+            ref={scopeRef}
+            width={512}
+            height={110}
+            className="h-24 w-full rounded-lg bg-zinc-950 ring-1 ring-inset ring-zinc-800"
+          />
         </div>
       </div>
     </section>

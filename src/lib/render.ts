@@ -4,10 +4,12 @@ import type {
   CaptionStyle,
   ChromaKeySettings,
   ColorAdjustments,
+  ColorWheels,
   OverlayKeyframe,
   SpeedPoint,
   TextOverlay,
   VideoEffect,
+  WheelPoint,
 } from "@/store/editor";
 import {
   clampSpeed,
@@ -52,6 +54,8 @@ export type SceneConfig = {
    * Falls back to neutral when omitted.
    */
   colorAdjustments?: ColorAdjustments;
+  /** Lift / Gamma / Gain colour wheels (applied with the grade pass). */
+  colorWheels?: ColorWheels;
   /**
    * Use high-quality (crisp) canvas scaling. Defaults to `true`.
    */
@@ -316,6 +320,186 @@ export function buildCanvasFilter(
   return parts.join(" ");
 }
 
+/* -------------------------------------------------------------------------- */
+/* Per-pixel colour grade (tone curve + lift/gamma/gain + vibrance/clarity)     */
+/* -------------------------------------------------------------------------- */
+
+function clamp01(value: number): number {
+  return value < 0 ? 0 : value > 1 ? 1 : value;
+}
+
+/** Converts a wheel handle into an RGB tint vector (magnitude 0..1). */
+function wheelVector(point: WheelPoint | undefined): [number, number, number] {
+  if (!point) return [0, 0, 0];
+  const magnitude = Math.min(1, Math.hypot(point.x, point.y));
+  if (magnitude < 1e-3) return [0, 0, 0];
+  const angle = Math.atan2(point.y, point.x);
+  const r = Math.cos(angle);
+  const g = Math.cos(angle - (2 * Math.PI) / 3);
+  const b = Math.cos(angle - (4 * Math.PI) / 3);
+  return [r * magnitude, g * magnitude, b * magnitude];
+}
+
+/** True when any control needs the (heavier) per-pixel grade pass. */
+export function needsPixelGrade(
+  adjustments: ColorAdjustments,
+  wheels?: ColorWheels
+): boolean {
+  const tonal =
+    adjustments.highlights !== 0 ||
+    adjustments.shadows !== 0 ||
+    adjustments.whites !== 0 ||
+    adjustments.blacks !== 0 ||
+    adjustments.vibrance !== 0 ||
+    adjustments.sharpness !== 0 ||
+    adjustments.clarity !== 0;
+  if (tonal) return true;
+  if (!wheels) return false;
+  return (
+    wheels.lift.x !== 0 ||
+    wheels.lift.y !== 0 ||
+    wheels.gamma.x !== 0 ||
+    wheels.gamma.y !== 0 ||
+    wheels.gain.x !== 0 ||
+    wheels.gain.y !== 0
+  );
+}
+
+/** Builds a 256-entry per-channel tone curve (LUT) from tone + wheel controls. */
+function buildToneLUT(
+  adj: ColorAdjustments,
+  wheels?: ColorWheels
+): [Uint8ClampedArray, Uint8ClampedArray, Uint8ClampedArray] {
+  const lift = wheelVector(wheels?.lift);
+  const gamma = wheelVector(wheels?.gamma);
+  const gain = wheelVector(wheels?.gain);
+  const shadows = adj.shadows / 100;
+  const highlights = adj.highlights / 100;
+  const blacks = adj.blacks / 100;
+  const whites = adj.whites / 100;
+
+  const channels: Uint8ClampedArray[] = [];
+  for (let channel = 0; channel < 3; channel += 1) {
+    const lut = new Uint8ClampedArray(256);
+    const liftV = lift[channel] * 0.15;
+    const gainV = 1 + gain[channel] * 0.5;
+    const gammaExp = 1 / (1 + gamma[channel] * 0.35);
+    for (let v = 0; v < 256; v += 1) {
+      let c = v / 255;
+      if (blacks !== 0) c += blacks * 0.35 * clamp01((0.25 - c) / 0.25);
+      if (whites !== 0) c += whites * 0.35 * clamp01((c - 0.75) / 0.25);
+      if (shadows !== 0) c += shadows * 0.3 * clamp01((0.5 - c) / 0.5);
+      if (highlights !== 0) c += highlights * 0.3 * clamp01((c - 0.5) / 0.5);
+      c = clamp01(c) + liftV;
+      c = clamp01(c);
+      if (gammaExp !== 1) c = Math.pow(c, gammaExp);
+      c *= gainV;
+      lut[v] = Math.round(clamp01(c) * 255);
+    }
+    channels.push(lut);
+  }
+  return [channels[0], channels[1], channels[2]];
+}
+
+/**
+ * Applies the tonal grade in place on the already-drawn frame. Runs after the
+ * (cheap) CSS-filter grade and before overlays so captions/text stay ungraded.
+ */
+function applyPixelGrade(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  adj: ColorAdjustments,
+  wheels?: ColorWheels
+): void {
+  if (width <= 0 || height <= 0) return;
+  let image: ImageData;
+  try {
+    image = ctx.getImageData(0, 0, width, height);
+  } catch {
+    return;
+  }
+  const data = image.data;
+  const [lr, lg, lb] = buildToneLUT(adj, wheels);
+  const vibrance = adj.vibrance / 100;
+  const clarity = adj.clarity / 100;
+  const sharpness = adj.sharpness / 100;
+  const source = sharpness > 0 ? new Uint8ClampedArray(data) : null;
+  const stride = width * 4;
+
+  for (let i = 0; i < data.length; i += 4) {
+    let r = lr[data[i]];
+    let g = lg[data[i + 1]];
+    let b = lb[data[i + 2]];
+
+    if (vibrance !== 0) {
+      const max = Math.max(r, g, b);
+      const min = Math.min(r, g, b);
+      const sat = max === 0 ? 0 : (max - min) / max;
+      const luma = 0.299 * r + 0.587 * g + 0.114 * b;
+      const amount = 1 + vibrance * 0.9 * (1 - sat);
+      r = luma + (r - luma) * amount;
+      g = luma + (g - luma) * amount;
+      b = luma + (b - luma) * amount;
+    }
+
+    if (clarity !== 0) {
+      const luma = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+      const mid = 1 - Math.abs(2 * luma - 1);
+      const amount = 1 + clarity * 0.6 * mid;
+      r = 128 + (r - 128) * amount;
+      g = 128 + (g - 128) * amount;
+      b = 128 + (b - 128) * amount;
+    }
+
+    if (source) {
+      const pixel = i >> 2;
+      const x = pixel % width;
+      const y = (pixel / width) | 0;
+      let ar = 0;
+      let ag = 0;
+      let ab = 0;
+      let n = 0;
+      if (x > 0) {
+        ar += source[i - 4];
+        ag += source[i - 3];
+        ab += source[i - 2];
+        n += 1;
+      }
+      if (x < width - 1) {
+        ar += source[i + 4];
+        ag += source[i + 5];
+        ab += source[i + 6];
+        n += 1;
+      }
+      if (y > 0) {
+        ar += source[i - stride];
+        ag += source[i - stride + 1];
+        ab += source[i - stride + 2];
+        n += 1;
+      }
+      if (y < height - 1) {
+        ar += source[i + stride];
+        ag += source[i + stride + 1];
+        ab += source[i + stride + 2];
+        n += 1;
+      }
+      if (n > 0) {
+        const k = sharpness * 1.2;
+        r += k * (r - ar / n);
+        g += k * (g - ag / n);
+        b += k * (b - ab / n);
+      }
+    }
+
+    data[i] = r;
+    data[i + 1] = g;
+    data[i + 2] = b;
+  }
+
+  ctx.putImageData(image, 0, 0);
+}
+
 /**
  * Draws one full scene frame: black canvas background, the video frame at the
  * configured fit/offset, then every text overlay. Used by both the preview
@@ -371,6 +555,11 @@ export function drawScene(
     }
     // Reset so captions/overlays are never colour-graded.
     if (filter !== "none") ctx.filter = "none";
+    // Heavier tonal grade (highlights/shadows/whites/blacks/lift-gamma-gain…).
+    const gradeAdjustments = config.colorAdjustments ?? DEFAULT_COLOR_ADJUSTMENTS;
+    if (needsPixelGrade(gradeAdjustments, config.colorWheels)) {
+      applyPixelGrade(ctx, width, height, gradeAdjustments, config.colorWheels);
+    }
   } else if (options.placeholder && !pastOutPoint) {
     drawPlaceholder(ctx, width, height);
   }
