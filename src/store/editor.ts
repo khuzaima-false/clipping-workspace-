@@ -600,23 +600,6 @@ function snapTime(value: number, min: number, max: number): number {
   return Math.min(Math.max(Math.round(value * 10) / 10, min), max);
 }
 
-/**
- * Keeps overlay timing inside a newly known video duration (e.g. an overlay
- * created before import, or after importing a shorter clip).
- */
-function clampOverlaysToDuration(
-  overlays: TextOverlay[],
-  duration: number
-): TextOverlay[] {
-  return overlays.map((overlay) => {
-    const startTime = Math.min(Math.max(overlay.startTime, 0), duration);
-    const endTime = Math.min(Math.max(overlay.endTime, startTime), duration);
-    return startTime === overlay.startTime && endTime === overlay.endTime
-      ? overlay
-      : { ...overlay, startTime, endTime };
-  });
-}
-
 /** Generates a collision-resistant id, falling back when `crypto.randomUUID` is unavailable. */
 export function createId(prefix: string): string {
   return typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -1091,7 +1074,6 @@ export const useEditorStore = create<EditorState>()(
     // Release the previous source before swapping in the new one.
     const previous = get();
     releaseVideo(previous.videoEl, previous.videoUrl);
-    for (const track of previous.audioTracks) URL.revokeObjectURL(track.url);
     set({
       videoEl: null,
       videoUrl: null,
@@ -1110,11 +1092,8 @@ export const useEditorStore = create<EditorState>()(
       transcribingProgress: 0,
       transcribingStatus: "",
       transcriptionError: null,
-      audioTracks: [],
-      audioTrackError: null,
       speedPreset: "none",
       speedPoints: [{ time: 0, speed: 1 }],
-      activeEffects: [],
     });
 
     const url = URL.createObjectURL(blob);
@@ -1158,7 +1137,6 @@ export const useEditorStore = create<EditorState>()(
         currentTime: seekTo,
         pendingTrim: null,
         pendingSeek: null,
-        overlays: clampOverlaysToDuration(get().overlays, value),
         speedPoints,
       });
       if (seekTo > 0) {

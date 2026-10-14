@@ -352,7 +352,7 @@ export function StudioPanel() {
 
   return (
     <div className="space-y-3">
-      <div className="custom-scrollbar grid max-h-56 grid-cols-2 gap-1.5 overflow-y-auto pr-1">
+      <div className="custom-scrollbar flex items-center gap-2 overflow-x-auto whitespace-nowrap pb-1">
         {STUDIO_TEMPLATES.map((item) => (
           <button
             key={item.id}
@@ -360,7 +360,7 @@ export function StudioPanel() {
             onClick={() => setTemplate(item.id)}
             aria-pressed={template === item.id}
             className={cn(
-              "rounded-lg border px-2 py-2 text-left text-[11px] transition-colors",
+              "shrink-0 rounded-full border px-3 py-1.5 text-[11px] transition-colors",
               template === item.id
                 ? "border-violet-500 bg-violet-600/15 text-violet-200"
                 : "border-zinc-800 bg-zinc-950/60 text-zinc-300 hover:border-zinc-600"

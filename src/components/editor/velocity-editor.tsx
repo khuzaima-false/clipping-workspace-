@@ -123,18 +123,22 @@ export function VelocityCurveEditor() {
           </linearGradient>
         </defs>
 
-        {/* grid */}
-        {[0.5, 1, 2, 4].map((speed) => (
-          <line
-            key={speed}
-            x1={PAD_X}
-            x2={W - PAD_X}
-            y1={toY(speed)}
-            y2={toY(speed)}
-            stroke={speed === 1 ? "#3f3f46" : "#27272a"}
-            strokeWidth={speed === 1 ? 1 : 0.5}
-            strokeDasharray={speed === 1 ? "" : "3 3"}
-          />
+        {/* horizontal speed reference lines */}
+        {[0.25, 0.5, 1, 2, 3, 4].map((speed) => (
+          <g key={speed} pointerEvents="none">
+            <line
+              x1={PAD_X}
+              x2={W - PAD_X}
+              y1={toY(speed)}
+              y2={toY(speed)}
+              stroke={speed === 1 ? "#52525b" : "#27272a"}
+              strokeWidth={speed === 1 ? 1.2 : 0.6}
+              strokeDasharray={speed === 1 ? "" : "3 3"}
+            />
+            <text x={2} y={toY(speed) + 3} fontSize="9" fill="#71717a">
+              {speed}x
+            </text>
+          </g>
         ))}
 
         {/* area under curve */}
@@ -151,10 +155,10 @@ export function VelocityCurveEditor() {
         {/* nodes */}
         {points.map((p, index) => (
           <circle
-            key={`${index}-${p.time}`}
+            key={`kf-${index}`}
             cx={toX(p.time)}
             cy={toY(p.speed)}
-            r="5"
+            r="6"
             fill="#0b0b12"
             stroke="#c4b5fd"
             strokeWidth="2"

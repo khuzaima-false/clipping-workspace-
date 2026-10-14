@@ -2287,7 +2287,8 @@ function LumetriPanel() {
   };
 
   // Real-time 256-bin luminance histogram sampled from the Program Monitor
-  // canvas, so it reflects colour wheels, sliders and presets live.
+  // canvas (falling back to the source video), so it reflects colour wheels,
+  // sliders and presets live.
   useEffect(() => {
     const canvas = scopeRef.current;
     if (!canvas) return;
@@ -2300,14 +2301,44 @@ function LumetriPanel() {
     const bins = new Uint32Array(256);
 
     const id = window.setInterval(() => {
-      const source = programCanvasRef.current;
-      if (!source || canvas.offsetParent === null || source.width === 0) return;
-      try {
-        sampleCtx.drawImage(source, 0, 0, sample.width, sample.height);
-      } catch {
+      if (canvas.offsetParent === null) return;
+
+      const state = useEditorStore.getState();
+      const program = programCanvasRef.current;
+      let source: CanvasImageSource | null = null;
+      if (program && program.width > 0) {
+        source = program;
+      } else if (state.videoEl && state.videoEl.readyState >= 2) {
+        source = state.videoEl;
+      }
+
+      const paintBackground = () => {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "#09090b";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      };
+
+      if (!source) {
+        paintBackground();
         return;
       }
-      const { data } = sampleCtx.getImageData(0, 0, sample.width, sample.height);
+
+      try {
+        sampleCtx.clearRect(0, 0, sample.width, sample.height);
+        sampleCtx.drawImage(source, 0, 0, sample.width, sample.height);
+      } catch {
+        paintBackground();
+        return;
+      }
+
+      let data: Uint8ClampedArray;
+      try {
+        data = sampleCtx.getImageData(0, 0, sample.width, sample.height).data;
+      } catch {
+        paintBackground();
+        return;
+      }
+
       bins.fill(0);
       for (let i = 0; i < data.length; i += 4) {
         const y = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
@@ -2315,15 +2346,17 @@ function LumetriPanel() {
       }
       let max = 1;
       for (let b = 0; b < 256; b += 1) if (bins[b] > max) max = bins[b];
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = "#09090b";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      paintBackground();
       const barW = canvas.width / 256;
       for (let b = 0; b < 256; b += 1) {
         const h = (bins[b] / max) * canvas.height;
-        ctx.fillStyle = `hsl(${258 - (b / 255) * 40} 85% ${52 + (b / 255) * 18}%)`;
-        ctx.fillRect(b * barW, canvas.height - h, Math.max(0.75, barW), h);
+        ctx.fillStyle = `hsl(${258 - (b / 255) * 40} 88% ${54 + (b / 255) * 18}%)`;
+        ctx.fillRect(b * barW, canvas.height - h, Math.max(0.9, barW), h);
       }
+      // Baseline so the scope reads as "live" even on a dark frame.
+      ctx.fillStyle = "rgba(167,139,250,0.35)";
+      ctx.fillRect(0, canvas.height - 1, canvas.width, 1);
     }, 110);
 
     return () => window.clearInterval(id);
