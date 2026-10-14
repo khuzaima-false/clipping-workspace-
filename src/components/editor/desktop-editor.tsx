@@ -453,7 +453,7 @@ function ProjectBinPanel({
 
   return (
     <section className="glass-card flex min-h-0 flex-col overflow-hidden rounded-2xl">
-      <div className="flex flex-wrap border-b border-zinc-800">
+      <div className="custom-scrollbar flex items-center gap-1 overflow-x-auto whitespace-nowrap border-b border-zinc-800 px-1 py-1">
         {(
           [
             ["media", "Media"],

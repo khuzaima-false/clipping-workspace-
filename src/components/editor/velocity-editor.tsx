@@ -9,12 +9,42 @@ import {
 } from "@/store/editor";
 
 const W = 320;
-const H = 150;
-const PAD_X = 14;
-const PAD_Y = 16;
+const H = 168;
+const PAD_X = 30;
+const PAD_Y = 12;
+
+/**
+ * Labeled speed breakpoints. They are laid out at *even vertical steps* (a
+ * piecewise-linear axis) so the low multipliers — 0.25x and 0.5x — stay
+ * legible instead of collapsing into each other on a straight linear scale.
+ */
+const SPEED_TICKS = [0.25, 0.5, 1, 2, 3, 4, 5];
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
+}
+
+/** Speed multiplier → 0..1 vertical ratio on the piecewise-linear axis. */
+function speedToRatio(speed: number): number {
+  const s = clamp(speed, MIN_SPEED, MAX_SPEED);
+  if (s <= SPEED_TICKS[0]) return 0;
+  for (let i = 1; i < SPEED_TICKS.length; i += 1) {
+    const hi = SPEED_TICKS[i];
+    if (s <= hi) {
+      const lo = SPEED_TICKS[i - 1];
+      return (i - 1 + (s - lo) / (hi - lo)) / (SPEED_TICKS.length - 1);
+    }
+  }
+  return 1;
+}
+
+/** Inverse of {@link speedToRatio}. */
+function ratioToSpeed(ratio: number): number {
+  const x = clamp(ratio, 0, 1) * (SPEED_TICKS.length - 1);
+  const i = Math.min(Math.floor(x), SPEED_TICKS.length - 2);
+  const lo = SPEED_TICKS[i];
+  const hi = SPEED_TICKS[i + 1];
+  return lo + (x - i) * (hi - lo);
 }
 
 /**
@@ -34,13 +64,18 @@ export function VelocityCurveEditor() {
   const setSpeedPreset = useEditorStore((s) => s.setSpeedPreset);
 
   const span = duration > 0 ? duration : 10;
+  const plotTop = PAD_Y;
+  const plotBottom = H - PAD_Y;
   const toX = (time: number) =>
     PAD_X + (clamp(time, 0, span) / span) * (W - PAD_X * 2);
   const toY = (speed: number) =>
-    H -
-    PAD_Y -
-    ((clamp(speed, MIN_SPEED, MAX_SPEED) - MIN_SPEED) / (MAX_SPEED - MIN_SPEED)) *
-      (H - PAD_Y * 2);
+    plotBottom - speedToRatio(speed) * (plotBottom - plotTop);
+  const yToSpeed = (y: number) =>
+    clamp(
+      ratioToSpeed((plotBottom - y) / (plotBottom - plotTop)),
+      MIN_SPEED,
+      MAX_SPEED
+    );
 
   const clientToPoint = (clientX: number, clientY: number): SpeedPoint => {
     const svg = svgRef.current;
@@ -52,12 +87,7 @@ export function VelocityCurveEditor() {
     const y = ((clientY - rect.top) / rect.height) * H;
     return {
       time: clamp(((x - PAD_X) / (W - PAD_X * 2)) * span, 0, span),
-      speed: clamp(
-        MIN_SPEED +
-          ((H - PAD_Y - y) / (H - PAD_Y * 2)) * (MAX_SPEED - MIN_SPEED),
-        MIN_SPEED,
-        MAX_SPEED
-      ),
+      speed: yToSpeed(y),
     };
   };
 
@@ -123,8 +153,8 @@ export function VelocityCurveEditor() {
           </linearGradient>
         </defs>
 
-        {/* horizontal speed reference lines */}
-        {[0.25, 0.5, 1, 2, 3, 4].map((speed) => (
+        {/* horizontal speed reference lines + labels (evenly stepped axis) */}
+        {SPEED_TICKS.map((speed) => (
           <g key={speed} pointerEvents="none">
             <line
               x1={PAD_X}
@@ -135,7 +165,13 @@ export function VelocityCurveEditor() {
               strokeWidth={speed === 1 ? 1.2 : 0.6}
               strokeDasharray={speed === 1 ? "" : "3 3"}
             />
-            <text x={2} y={toY(speed) + 3} fontSize="9" fill="#71717a">
+            <text
+              x={PAD_X - 6}
+              y={toY(speed) + 3}
+              textAnchor="end"
+              fontSize="8.5"
+              fill={speed === 1 ? "#a1a1aa" : "#71717a"}
+            >
               {speed}x
             </text>
           </g>
