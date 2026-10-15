@@ -51,6 +51,8 @@ import { CAPTION_LANGUAGES } from "@/lib/transcribe";
 import { useOverlayCanvasDrag } from "@/components/editor/use-overlay-drag";
 import { usePointerDrag } from "@/lib/timeline-drag";
 import { audioPreview } from "@/lib/audio-preview";
+import { installMediaRecovery, onMediaRestore } from "@/lib/media-recovery";
+import { visibleLayerFlags } from "@/lib/tracks";
 import { SOUND_EFFECT_CATEGORIES, SOUND_EFFECTS } from "@/lib/sfx";
 import { createDictation, isDictationSupported } from "@/lib/dictation";
 import { STICKER_CATEGORIES, STICKERS, stickerImageSrc, type StickerCategory } from "@/lib/stickers";
@@ -272,8 +274,7 @@ function MobilePreview({ wrapRef }: { wrapRef: React.RefObject<HTMLDivElement | 
 
     let rafId = 0;
     let lastClockSync = 0;
-    const tick = () => {
-      rafId = requestAnimationFrame(tick);
+    const handleFrame = () => {
       if (!canvas.isConnected || canvas.offsetParent === null) return;
 
       const state = useEditorStore.getState();
@@ -339,12 +340,63 @@ function MobilePreview({ wrapRef }: { wrapRef: React.RefObject<HTMLDivElement | 
           clipEnd: state.trimEnd > 0 ? state.trimEnd : undefined,
           chromaKey: state.chromaKey,
           colorWheels: state.colorWheels,
+          // V1/V2/V3 eye + solo decide which layers reach the canvas.
+          ...visibleLayerFlags(state.trackStates),
         },
         { placeholder: true }
       );
     };
+
+    const tick = () => {
+      rafId = requestAnimationFrame(tick);
+      handleFrame();
+    };
+
+    /** Background-tab recovery: re-sync the element, then force one frame. */
+    const resync = () => {
+      const state = useEditorStore.getState();
+      const video = state.videoEl;
+      if (video) {
+        const drift = Math.abs(video.currentTime - state.currentTime);
+        if (state.playing) {
+          if (
+            (video.readyState < 2 || video.currentTime === 0) &&
+            state.currentTime > 0.5
+          ) {
+            try {
+              video.currentTime = state.currentTime;
+            } catch {
+              // Not seekable yet.
+            }
+          } else if (drift > 0.25) {
+            useEditorStore.setState({ currentTime: video.currentTime });
+          }
+          if (video.paused) void video.play().catch(() => {});
+        } else {
+          if (!video.paused) video.pause();
+          if (drift > 0.05) {
+            try {
+              video.currentTime = state.currentTime;
+            } catch {
+              // Not seekable yet.
+            }
+          }
+        }
+        if (video.muted !== state.trackStates.V1.muted) {
+          video.muted = state.trackStates.V1.muted;
+        }
+      }
+      handleFrame();
+    };
+
+    installMediaRecovery();
+    const unsubscribe = onMediaRestore(resync);
+
     rafId = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(rafId);
+    return () => {
+      unsubscribe();
+      cancelAnimationFrame(rafId);
+    };
   }, []);
 
   const setPlaying = useEditorStore((state) => state.setPlaying);

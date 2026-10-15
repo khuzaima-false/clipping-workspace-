@@ -7,6 +7,8 @@
  * re-decoding the source on every render.
  */
 
+import { getSharedAudioContext } from "@/lib/media-recovery";
+
 /** Default peak resolution — enough detail for a wide, zoomed-in block. */
 export const PEAK_BUCKETS = 512;
 
@@ -54,16 +56,14 @@ export async function computePeaksFromBlob(
   blob: Blob,
   buckets: number = PEAK_BUCKETS
 ): Promise<number[]> {
-  if (typeof AudioContext === "undefined") return [];
+  const context = getSharedAudioContext();
+  if (!context) return [];
   const raw = await blob.arrayBuffer();
-  const context = new AudioContext();
   try {
     const buffer = await context.decodeAudioData(raw);
     return computeWaveformPeaks(buffer, buckets);
   } catch {
     return [];
-  } finally {
-    void context.close();
   }
 }
 

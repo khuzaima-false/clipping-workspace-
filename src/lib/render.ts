@@ -66,6 +66,14 @@ export type SceneConfig = {
    */
   activeEffects?: VideoEffect[];
   /**
+   * Track-visibility flags from the timeline. When a flag is `false` the
+   * matching layer is skipped entirely (no video frame, overlays or effects).
+   * All default to `true`.
+   */
+  showVideo?: boolean;
+  showOverlays?: boolean;
+  showEffects?: boolean;
+  /**
    * Source-video out-point (seconds). When set, the video frame is never drawn
    * past this time — the canvas stays black — so a clip's trimmed endpoint is
    * respected even if playback overshoots by a frame.
@@ -735,7 +743,11 @@ export function drawScene(
   ctx.fillStyle = "#000000";
   ctx.fillRect(0, 0, width, height);
 
-  const effects = config.activeEffects ?? [];
+  const showVideo = config.showVideo !== false;
+  const showOverlays = config.showOverlays !== false;
+  const showEffects = config.showEffects !== false;
+
+  const effects = showEffects ? (config.activeEffects ?? []) : [];
   const fx = effects.length > 0 ? computeEffectFrame(effects, config.sceneTime) : null;
 
   // Camera transform (zoom + shake + rotation) moves the video *and* the
@@ -754,7 +766,13 @@ export function drawScene(
   const pastOutPoint =
     typeof config.clipEnd === "number" && config.sceneTime > config.clipEnd + 0.02;
 
-  if (video && video.videoWidth > 0 && video.videoHeight > 0 && !pastOutPoint) {
+  if (
+    showVideo &&
+    video &&
+    video.videoWidth > 0 &&
+    video.videoHeight > 0 &&
+    !pastOutPoint
+  ) {
     // High-quality scaling keeps the frame sharp when up/down-scaled.
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = config.crisp === false ? "low" : "high";
@@ -810,11 +828,12 @@ export function drawScene(
     if (needsPixelGrade(gradeAdjustments, config.colorWheels)) {
       applyPixelGrade(ctx, width, height, gradeAdjustments, config.colorWheels);
     }
-  } else if (options.placeholder && !pastOutPoint) {
+  } else if (showVideo && options.placeholder && !pastOutPoint) {
     drawPlaceholder(ctx, width, height);
   }
 
-  for (const overlay of config.overlays) {
+  const visibleOverlays = showOverlays ? config.overlays : [];
+  for (const overlay of visibleOverlays) {
     if (config.sceneTime < overlay.startTime || config.sceneTime > overlay.endTime) {
       continue;
     }

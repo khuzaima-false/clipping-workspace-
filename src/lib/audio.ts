@@ -7,6 +7,8 @@
  * `OfflineAudioContext`, which is then fed to WebCodecs `AudioEncoder`.
  */
 
+import { getSharedAudioContext } from "@/lib/media-recovery";
+
 /** Export/mix sample rate; AAC at 48 kHz stereo is universally supported. */
 export const MIX_SAMPLE_RATE = 48000;
 
@@ -20,16 +22,14 @@ export type DecodedAudioFile = {
 export async function decodeAudioFile(
   file: File
 ): Promise<DecodedAudioFile | null> {
-  if (typeof AudioContext === "undefined") return null;
+  // Reuse the long-lived context so a suspended one can be resumed on focus
+  // instead of spawning (and closing) a fresh AudioContext per file.
+  const context = getSharedAudioContext();
+  if (!context) return null;
   const raw = await file.arrayBuffer();
-  const context = new AudioContext();
-  try {
-    const buffer = await context.decodeAudioData(raw);
-    if (buffer.length === 0) return null;
-    return { buffer, duration: buffer.duration, sampleRate: buffer.sampleRate };
-  } finally {
-    void context.close();
-  }
+  const buffer = await context.decodeAudioData(raw);
+  if (buffer.length === 0) return null;
+  return { buffer, duration: buffer.duration, sampleRate: buffer.sampleRate };
 }
 
 /** One external track in timeline coordinates. */

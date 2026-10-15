@@ -23,6 +23,7 @@ import {
   type ExportResolutionId,
 } from "@/store/editor";
 import { drawScene } from "@/lib/render";
+import { visibleLayerFlags } from "@/lib/tracks";
 import {
   EXPORT_FPS,
   downloadFile,
@@ -90,6 +91,7 @@ function EditorView() {
         sequence: state.sequence,
         overlays: state.overlays,
         audioTracks: state.audioTracks,
+        trackStates: state.trackStates,
       }),
       markSaving,
       { equalityFn: shallow }
@@ -291,6 +293,8 @@ function EditorView() {
       chromaKey: state.chromaKey,
       canvasFill: state.canvasFill,
       colorWheels: state.colorWheels,
+      // Track visibility (V1/V2/V3 eye + solo) is honoured by the export too.
+      ...visibleLayerFlags(state.trackStates),
     };
 
     // Multi-clip: build a decoder per sequence clip so the exporter can merge

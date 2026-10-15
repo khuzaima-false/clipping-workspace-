@@ -1022,15 +1022,18 @@ function nextLaneIndex(state: EditorState): number {
 }
 
 /** Audio tracks with each lane's mute/solo folded in, so a lane-level M/S in the
- * timeline silences preview *and* export without touching the per-track flags. */
+ * timeline silences preview *and* export without touching the per-track flags.
+ * A lane hidden by its eye toggle is treated as muted. */
 export function effectiveAudioTracks(state: EditorState): AudioTrack[] {
   return state.audioTracks.map((track, index) => {
     const lane = state.trackStates[laneKeyFor(trackLane(track, index))];
-    if (!lane || (!lane.muted && !lane.solo)) return track;
+    const laneMuted = Boolean(lane?.muted) || lane?.isVisible === false;
+    const laneSolo = Boolean(lane?.solo);
+    if (!laneMuted && !laneSolo) return track;
     return {
       ...track,
-      muted: track.muted || Boolean(lane.muted),
-      solo: track.solo || Boolean(lane.solo),
+      muted: track.muted || laneMuted,
+      solo: track.solo || laneSolo,
     };
   });
 }
@@ -1283,6 +1286,54 @@ export const useEditorStore = create<EditorState>()(
     el.src = url;
     el.volume = get().volume;
 
+    // One-shot source recovery for browser-throttling / eviction failures.
+    let recovering = false;
+    let sourceRecovered = false;
+    const recoverSource = async (): Promise<boolean> => {
+      if (get().videoEl !== el) return false;
+      const state = get();
+      const clip = state.activeClipId
+        ? state.sequence.find((item) => item.id === state.activeClipId)
+        : undefined;
+      const asset = clip
+        ? state.assets.find((item) => item.id === clip.assetId)
+        : undefined;
+      let fresh: Blob | null = blob instanceof Blob ? blob : null;
+      if (asset?.blob instanceof Blob) fresh = asset.blob;
+      if (!fresh && asset) {
+        try {
+          fresh = await getMediaFile(asset.mediaId);
+        } catch {
+          fresh = null;
+        }
+      }
+      if (!fresh || get().videoEl !== el) return false;
+
+      const resumeAt = state.currentTime;
+      const wasPlaying = state.playing;
+      const nextUrl = URL.createObjectURL(fresh);
+      const previousUrl = get().videoUrl;
+      el.addEventListener(
+        "loadedmetadata",
+        () => {
+          if (get().videoEl !== el) return;
+          const max = Number.isFinite(el.duration) && el.duration > 0 ? el.duration : resumeAt;
+          try {
+            el.currentTime = Math.min(Math.max(resumeAt, 0), max);
+          } catch {
+            // Not seekable yet; the preview loop settles it.
+          }
+          if (wasPlaying) void el.play().catch(() => {});
+        },
+        { once: true }
+      );
+      el.src = nextUrl;
+      el.load();
+      set({ videoUrl: nextUrl, videoError: null });
+      if (previousUrl && previousUrl !== nextUrl) URL.revokeObjectURL(previousUrl);
+      return true;
+    };
+
     const applyDuration = (value: number) => {
       if (get().videoEl !== el) return;
       // Prefer the active clip's stored velocity curve so custom keyframes
@@ -1371,10 +1422,36 @@ export const useEditorStore = create<EditorState>()(
 
     el.addEventListener("error", () => {
       if (get().videoEl !== el) return;
-      set({
-        playing: false,
-        videoError: "This video could not be decoded by your browser.",
-      });
+      // The browser can drop a backgrounded element's source. Rebuild it once
+      // from the live asset blob (or IndexedDB) instead of failing outright.
+      if (recovering || sourceRecovered) {
+        set({
+          playing: false,
+          videoError: "This video could not be decoded by your browser.",
+        });
+        return;
+      }
+      recovering = true;
+      void recoverSource()
+        .then((ok) => {
+          sourceRecovered = ok;
+          recovering = false;
+          if (!ok && get().videoEl === el) {
+            set({
+              playing: false,
+              videoError: "This video could not be decoded by your browser.",
+            });
+          }
+        })
+        .catch(() => {
+          recovering = false;
+          if (get().videoEl === el) {
+            set({
+              playing: false,
+              videoError: "This video could not be decoded by your browser.",
+            });
+          }
+        });
     });
 
     const file =
@@ -2694,6 +2771,7 @@ useEditorStore.subscribe(
     sequence: state.sequence,
     overlays: state.overlays,
     audioTracks: state.audioTracks,
+    trackStates: state.trackStates,
   }),
   () => {
     persistProject(useEditorStore.getState());

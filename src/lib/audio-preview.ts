@@ -7,9 +7,25 @@ import type { AudioTrack } from "@/store/editor";
  * calls {@link AudioPreview.sync} every frame with the video clock; elements
  * are started, paused and gently re-corrected so the SFX stays in sync without
  * a full Web Audio graph.
+ *
+ * Browsers can pause these elements (or drop their buffered source) when a tab
+ * is backgrounded. If an element reports an `error` we transparently rebuild
+ * its source from the retained `track.file` blob — no IndexedDB round-trip and
+ * no unhandled promise rejection.
  */
 
-type Entry = { el: HTMLAudioElement; track: AudioTrack };
+type Entry = {
+  el: HTMLAudioElement;
+  track: AudioTrack;
+  /** The object URL currently mirrored onto the element. */
+  sourceUrl: string;
+  /** Re-created object URL after an error (revoked on cleanup). */
+  recoveredUrl: string | null;
+  /** Recovery attempts, to avoid an infinite error → rebind loop. */
+  recoveries: number;
+};
+
+const MAX_RECOVERIES = 2;
 
 class AudioPreview {
   private entries = new Map<string, Entry>();
@@ -20,6 +36,7 @@ class AudioPreview {
       if (!tracks.some((track) => track.id === id)) {
         entry.el.pause();
         entry.el.removeAttribute("src");
+        if (entry.recoveredUrl) URL.revokeObjectURL(entry.recoveredUrl);
         this.entries.delete(id);
       }
     }
@@ -31,11 +48,23 @@ class AudioPreview {
         const el = new Audio();
         el.preload = "auto";
         el.src = track.url;
-        entry = { el, track };
+        entry = {
+          el,
+          track,
+          sourceUrl: track.url,
+          recoveredUrl: null,
+          recoveries: 0,
+        };
+        el.addEventListener("error", () => this.recover(track.id));
         this.entries.set(track.id, entry);
       } else {
         entry.track = track;
-        if (entry.el.src !== track.url) entry.el.src = track.url;
+        // Re-bind only when the track's own URL actually changed (a recovered
+        // URL must not be clobbered on every frame).
+        if (!entry.recoveredUrl && entry.sourceUrl !== track.url) {
+          entry.sourceUrl = track.url;
+          entry.el.src = track.url;
+        }
       }
     }
 
@@ -55,13 +84,32 @@ class AudioPreview {
       if (audible) {
         if (el.paused) {
           this.seek(el, localTime);
-          void el.play().catch(() => {});
+          void el.play().catch(() => {
+            // Autoplay/policy rejection: the next frame retries.
+          });
         } else if (Math.abs(el.currentTime - localTime) > 0.25) {
           this.seek(el, localTime);
         }
       } else if (!el.paused) {
         el.pause();
       }
+    }
+  }
+
+  /** Rebuilds a broken element from the retained source blob. */
+  private recover(id: string): void {
+    const entry = this.entries.get(id);
+    if (!entry || entry.recoveries >= MAX_RECOVERIES) return;
+    entry.recoveries += 1;
+    try {
+      if (entry.recoveredUrl) URL.revokeObjectURL(entry.recoveredUrl);
+      const url = URL.createObjectURL(entry.track.file);
+      entry.recoveredUrl = url;
+      entry.sourceUrl = url;
+      entry.el.src = url;
+      entry.el.load();
+    } catch {
+      // The blob is gone; only a fresh import can fix it.
     }
   }
 
@@ -81,6 +129,7 @@ class AudioPreview {
     for (const entry of this.entries.values()) {
       entry.el.pause();
       entry.el.removeAttribute("src");
+      if (entry.recoveredUrl) URL.revokeObjectURL(entry.recoveredUrl);
     }
     this.entries.clear();
   }

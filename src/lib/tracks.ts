@@ -9,17 +9,17 @@
 export type TrackKey = "V3" | "V2" | "V1" | "A1" | "A2" | "A3";
 
 /** The per-track header toggles (mute, solo, lock, visibility). */
-export type TrackField = "muted" | "solo" | "locked" | "hidden";
+export type TrackField = "muted" | "solo" | "locked" | "isVisible";
 
 export type TrackState = {
   /** Mute the lane during preview + export. */
   muted: boolean;
-  /** Solo the lane (every non-soloed lane is silenced). */
+  /** Solo the lane (every non-soloed lane is silenced / hidden). */
   solo: boolean;
   /** Block dragging, resizing, splitting and deletion on this lane. */
   locked: boolean;
-  /** Hide the lane's visuals (video lanes) during preview + export. */
-  hidden: boolean;
+  /** Eye toggle — when false the lane's content is skipped entirely. */
+  isVisible: boolean;
 };
 
 /** Video lanes, bottom-up internally (V1 is the base layer). */
@@ -42,7 +42,7 @@ export const DEFAULT_TRACK_STATE: TrackState = {
   muted: false,
   solo: false,
   locked: false,
-  hidden: false,
+  isVisible: true,
 };
 
 /** A fresh, fully-unlocked set of track states. */
@@ -81,13 +81,78 @@ export function normalizeTrackStates(
   for (const key of TRACK_KEYS) {
     const value = (raw as Record<string, unknown>)[key];
     if (!value || typeof value !== "object") continue;
-    const partial = value as Partial<TrackState>;
+    const partial = value as Partial<TrackState> & { hidden?: unknown };
     base[key] = {
       muted: Boolean(partial.muted),
       solo: Boolean(partial.solo),
       locked: Boolean(partial.locked),
-      hidden: Boolean(partial.hidden),
+      // Back-compat: older projects persisted an inverted `hidden` flag.
+      isVisible:
+        typeof partial.isVisible === "boolean"
+          ? partial.isVisible
+          : partial.hidden !== true,
     };
   }
   return base;
 }
+
+/** Which visual layers are currently allowed to render. */
+export type VisibleLayers = {
+  /** V1 — base video clips. */
+  video: boolean;
+  /** V2 — text / image overlays. */
+  overlays: boolean;
+  /** V3 — timed effects. */
+  effects: boolean;
+};
+
+/**
+ * Resolves the eye + solo state of the three video lanes into a single
+ * "what should the canvas draw" result.
+ *
+ * A lane renders when it is visible **and** either no video lane is soloed or
+ * this lane is one of the soloed ones (so soloing V2 isolates the overlays).
+ */
+export function computeVisibleLayers(
+  states: Record<TrackKey, TrackState>
+): VisibleLayers {
+  const soloActive = VIDEO_TRACK_KEYS.some((key) => states[key]?.solo);
+  const on = (key: TrackKey) => {
+    const state = states[key];
+    const visible = state?.isVisible ?? true;
+    return visible && (!soloActive || Boolean(state?.solo));
+  };
+  return {
+    video: on("V1"),
+    overlays: on("V2"),
+    effects: on("V3"),
+  };
+}
+
+/** True when the lane is hidden by the eye toggle or excluded by a video solo. */
+export function isLaneDimmed(
+  key: TrackKey,
+  states: Record<TrackKey, TrackState>
+): boolean {
+  const state = states[key] ?? DEFAULT_TRACK_STATE;
+  if (!state.isVisible) return true;
+  const isVideo = (VIDEO_TRACK_KEYS as readonly string[]).includes(key);
+  if (!isVideo) return false;
+  const soloActive = VIDEO_TRACK_KEYS.some((item) => states[item]?.solo);
+  return soloActive && !state.solo;
+}
+
+/** `drawScene` visibility flags for the current track states. */
+export function visibleLayerFlags(states: Record<TrackKey, TrackState>): {
+  showVideo: boolean;
+  showOverlays: boolean;
+  showEffects: boolean;
+} {
+  const layers = computeVisibleLayers(states);
+  return {
+    showVideo: layers.video,
+    showOverlays: layers.overlays,
+    showEffects: layers.effects,
+  };
+}
+

@@ -64,6 +64,7 @@ import { useOverlayCanvasDrag } from "@/components/editor/use-overlay-drag";
 import { VelocityCurveEditor } from "@/components/editor/velocity-editor";
 import { clampTimelineStart, usePointerDrag } from "@/lib/timeline-drag";
 import { audioPreview } from "@/lib/audio-preview";
+import { installMediaRecovery, onMediaRestore } from "@/lib/media-recovery";
 import { SOUND_EFFECT_CATEGORIES, SOUND_EFFECTS } from "@/lib/sfx";
 import { createDictation, isDictationSupported } from "@/lib/dictation";
 import { STICKER_CATEGORIES, STICKERS, stickerImageSrc, type StickerCategory } from "@/lib/stickers";
@@ -71,6 +72,8 @@ import { TimelineWaveform, Waveform } from "@/components/editor/waveform";
 import {
   AUDIO_TRACK_KEYS,
   TRACK_KEYS,
+  isLaneDimmed,
+  visibleLayerFlags,
   type TrackField,
   type TrackKey,
 } from "@/lib/tracks";
@@ -1969,8 +1972,7 @@ function ProgramPreview() {
 
     let rafId = 0;
     let lastSync = 0;
-    const tick = () => {
-      rafId = requestAnimationFrame(tick);
+    const handleFrame = () => {
       if (!canvas.isConnected || canvas.offsetParent === null) return;
 
       const state = useEditorStore.getState();
@@ -2049,12 +2051,68 @@ function ProgramPreview() {
           clipEnd: state.trimEnd > 0 ? state.trimEnd : undefined,
           chromaKey: state.chromaKey,
           colorWheels: state.colorWheels,
+          // V1/V2/V3 eye + solo decide which layers reach the canvas.
+          ...visibleLayerFlags(state.trackStates),
         },
         { placeholder: true }
       );
     };
+
+    const tick = () => {
+      rafId = requestAnimationFrame(tick);
+      handleFrame();
+    };
+
+    /**
+     * Background-tab recovery: re-sync the media element with the store, then
+     * force one frame so the program monitor never stays black on return.
+     */
+    const resync = () => {
+      const state = useEditorStore.getState();
+      const video = state.videoEl;
+      if (video) {
+        const drift = Math.abs(video.currentTime - state.currentTime);
+        if (state.playing) {
+          // The element clock is authoritative while playing; only seek when it
+          // was clearly reset (no data / back at the start).
+          if (
+            (video.readyState < 2 || video.currentTime === 0) &&
+            state.currentTime > 0.5
+          ) {
+            try {
+              video.currentTime = state.currentTime;
+            } catch {
+              // Not seekable yet.
+            }
+          } else if (drift > 0.25) {
+            useEditorStore.setState({ currentTime: video.currentTime });
+          }
+          if (video.paused) void video.play().catch(() => {});
+        } else {
+          if (!video.paused) video.pause();
+          if (drift > 0.05) {
+            try {
+              video.currentTime = state.currentTime;
+            } catch {
+              // Not seekable yet.
+            }
+          }
+        }
+        if (video.muted !== state.trackStates.V1.muted) {
+          video.muted = state.trackStates.V1.muted;
+        }
+      }
+      handleFrame();
+    };
+
+    installMediaRecovery();
+    const unsubscribe = onMediaRestore(resync);
+
     rafId = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(rafId);
+    return () => {
+      unsubscribe();
+      cancelAnimationFrame(rafId);
+    };
   }, []);
 
   const res = ASPECT_RESOLUTIONS[aspect];
@@ -3072,6 +3130,7 @@ function PremiereTimeline() {
 
   const TrackHeader = ({ keyName }: { keyName: TrackKey }) => {
     const t = trackStates[keyName];
+    const dimmed = isLaneDimmed(keyName, trackStates);
     const btn =
       "flex h-5 w-5 items-center justify-center rounded text-[9px] font-bold transition-colors";
     const toggle = (field: TrackField) => setTrackFlag(keyName, field);
@@ -3079,6 +3138,7 @@ function PremiereTimeline() {
       <div
         className={cn(
           "relative flex h-12 w-24 shrink-0 items-center gap-1 border-b border-r border-zinc-800 bg-zinc-900/60 px-1.5",
+          dimmed && "opacity-55",
           t.locked && "bg-amber-500/5 ring-1 ring-inset ring-amber-500/30"
         )}
       >
@@ -3106,8 +3166,15 @@ function PremiereTimeline() {
             {voiceRecording ? <Square className="h-3 w-3" aria-hidden /> : <Mic className="h-3 w-3" aria-hidden />}
           </button>
         ) : (
-          <button type="button" aria-label={`${t.hidden ? "Show" : "Hide"} ${keyName}`} aria-pressed={t.hidden} onClick={() => toggle("hidden")} className={cn(btn, t.hidden ? "text-zinc-600" : "text-zinc-500 hover:text-zinc-200")}>
-            {t.hidden ? <EyeOff className="h-3 w-3" aria-hidden /> : <Eye className="h-3 w-3" aria-hidden />}
+          <button
+            type="button"
+            aria-label={`${t.isVisible ? "Hide" : "Show"} ${keyName}`}
+            aria-pressed={!t.isVisible}
+            title={t.isVisible ? "Hide this lane (skip in preview + export)" : "Show this lane"}
+            onClick={() => toggle("isVisible")}
+            className={cn(btn, t.isVisible ? "text-zinc-500 hover:text-zinc-200" : "bg-zinc-500/20 text-amber-300")}
+          >
+            {t.isVisible ? <Eye className="h-3 w-3" aria-hidden /> : <EyeOff className="h-3 w-3" aria-hidden />}
           </button>
         )}
         {keyName === "A2" && voiceRecording && (
@@ -3228,7 +3295,7 @@ function PremiereTimeline() {
             </div>
 
             {/* V3 — adjustment / effect layers (pink) */}
-            <div className="relative h-12 border-b border-zinc-800 bg-zinc-950/40">
+            <div className={cn("relative h-12 border-b border-zinc-800 bg-zinc-950/40", isLaneDimmed("V3", trackStates) && "opacity-40")}>
               {activeEffects.map((fx) => (
                 <div
                   key={fx.id}
@@ -3282,7 +3349,7 @@ function PremiereTimeline() {
             </div>
 
             {/* V2 — text / overlay layers (pink) */}
-            <div className="relative h-12 border-b border-zinc-800 bg-zinc-950/40">
+            <div className={cn("relative h-12 border-b border-zinc-800 bg-zinc-950/40", isLaneDimmed("V2", trackStates) && "opacity-40")}>
               {overlays.map((o) => (
                 <div
                   key={o.id}
@@ -3353,7 +3420,7 @@ function PremiereTimeline() {
             </div>
 
             {/* V1 — video clips (purple/blue) with trim handles */}
-            <div className="relative h-12 border-b border-zinc-800 bg-zinc-950/40">
+            <div className={cn("relative h-12 border-b border-zinc-800 bg-zinc-950/40", isLaneDimmed("V1", trackStates) && "opacity-40")}>
               {videoBlocks.map(({ clip, start, dur }) => {
                 const dragging = clipPreview?.id === clip.id;
                 const displayStart = dragging && clipPreview ? clipPreview.start : start;
@@ -3474,6 +3541,7 @@ function PremiereTimeline() {
                   key={keyName}
                   className={cn(
                     "relative h-12 border-b border-zinc-800 bg-zinc-950/40",
+                    isLaneDimmed(keyName, trackStates) && "opacity-40",
                     laneState.locked && "ring-1 ring-inset ring-amber-500/20"
                   )}
                 >
