@@ -155,6 +155,15 @@ function formatTimecode(seconds: number, fps: number): string {
 const panelTitle =
   "border-b border-zinc-800 px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-zinc-400";
 
+/** The three Lumetri sub-tabs (kept short so all three fit one row). */
+type LumetriTab = "wheels" | "corrections" | "presets";
+
+const LUMETRI_TABS: { id: LumetriTab; label: string; full: string }[] = [
+  { id: "wheels", label: "Wheels", full: "Color Wheels — Lift / Gamma / Gain" },
+  { id: "corrections", label: "Corrections", full: "Color Corrections & Sliders" },
+  { id: "presets", label: "Presets", full: "Cinematic Presets & Scopes" },
+];
+
 type WheelValue = { x: number; y: number };
 
 /** Shared handle to the Program Monitor canvas so scopes can sample it live. */
@@ -2348,6 +2357,7 @@ function LumetriPanel() {
   const [presetId, setPresetId] = useState("none");
   const [presetIntensity, setPresetIntensity] = useState(100);
   const [showMore, setShowMore] = useState(false);
+  const [tab, setTab] = useState<LumetriTab>("wheels");
 
   const applyPreset = (id: string, intensity: number) => {
     const preset = CINEMATIC_PRESETS.find((item) => item.id === id);
@@ -2365,6 +2375,8 @@ function LumetriPanel() {
   // canvas (falling back to the source video), so it reflects colour wheels,
   // sliders and presets live.
   useEffect(() => {
+    // The scope lives in the "Presets" tab; (re)attach whenever we land there.
+    if (tab !== "presets") return;
     const canvas = scopeRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
@@ -2435,7 +2447,7 @@ function LumetriPanel() {
     }, 110);
 
     return () => window.clearInterval(id);
-  }, []);
+  }, [tab]);
 
   const sliders = [
     ["Exposure", "exposure", -100, 100],
@@ -2484,7 +2496,40 @@ function LumetriPanel() {
   return (
     <section className="glass-card flex min-h-0 flex-col overflow-hidden rounded-2xl" data-tour="lumetri-panel">
       <div className={panelTitle}>Lumetri Color &amp; Scopes</div>
-      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
+
+      {/* Three compact sub-tabs so the panel never becomes a wall of sliders. */}
+      <div
+        className="flex items-center gap-1 border-b border-zinc-800 px-2 py-1.5"
+        role="tablist"
+        aria-label="Lumetri sections"
+        data-tour="lumetri-tabs"
+      >
+        {LUMETRI_TABS.map(({ id, label, full }) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={tab === id}
+            aria-label={full}
+            title={full}
+            data-tour={`lumetri-tab-${id}`}
+            onClick={() => setTab(id)}
+            className={cn(
+              "min-w-0 flex-1 truncate rounded-md px-2 py-1.5 text-[10px] font-semibold transition-colors",
+              tab === id
+                ? "bg-violet-600/20 text-violet-200 ring-1 ring-inset ring-violet-500/40"
+                : "text-zinc-400 hover:bg-zinc-900/60 hover:text-zinc-100"
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto p-3">
+        {/* `key={tab}` re-mounts the panel so the switch animates cleanly. */}
+        <div key={tab} className="animate-tab-in space-y-3">
+        {tab === "wheels" && (
         <div data-tour="color-wheels">
           <div className="mb-1 flex items-center justify-between">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
@@ -2506,8 +2551,15 @@ function LumetriPanel() {
           <p className="mt-1 text-center text-[9px] text-zinc-600">
             Lift = shadows · Gamma = midtones · Gain = highlights
           </p>
+          <p className="mt-2 text-center text-[10px] leading-4 text-zinc-500">
+            Drag inside a wheel to tint that tonal range. Use “Reset” to clear the
+            whole grade.
+          </p>
         </div>
+        )}
 
+        {tab === "corrections" && (
+        <>
         <div className="space-y-3" data-tour="color-sliders">
           {sliders.map(([label, key, min, max]) => (
             <div key={key} className="flex items-center gap-2">
@@ -2545,8 +2597,12 @@ function LumetriPanel() {
           Reset Color Adjustments
         </button>
         </div>
+        </>
+        )}
 
-        <div className="space-y-2 pt-1" data-tour="cinematic-presets">
+        {tab === "presets" && (
+        <>
+        <div className="space-y-2" data-tour="cinematic-presets">
           <div className="flex items-center justify-between">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
               Cinematic Presets
@@ -2591,7 +2647,7 @@ function LumetriPanel() {
           </label>
         </div>
 
-        <div className="pt-1" data-tour="luma-scope">
+        <div data-tour="luma-scope">
           <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
             Luma waveform
           </p>
@@ -2601,6 +2657,9 @@ function LumetriPanel() {
             height={110}
             className="h-24 w-full rounded-lg bg-zinc-950 ring-1 ring-inset ring-zinc-800"
           />
+        </div>
+        </>
+        )}
         </div>
       </div>
     </section>
@@ -3827,7 +3886,10 @@ export function DesktopEditor({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
-      <div className="grid min-h-0 gap-3 lg:grid-cols-[280px_minmax(0,1fr)_300px] xl:grid-cols-[320px_minmax(0,1fr)_340px]" style={{ height: "min(58vh, 600px)", minHeight: 380 }}>
+      <div
+        className="grid min-h-0 gap-3 lg:grid-cols-[236px_minmax(0,1fr)_256px] xl:grid-cols-[264px_minmax(0,1fr)_288px] 2xl:grid-cols-[300px_minmax(0,1fr)_320px]"
+        style={{ height: "min(66vh, 780px)", minHeight: 440 }}
+      >
         <ProjectBinPanel onBatchExport={onBatchExport} />
         <ProgramPreview />
         <LumetriPanel />

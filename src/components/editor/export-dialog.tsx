@@ -2,7 +2,6 @@
 
 import { useEffect } from "react";
 import { AlertCircle, CheckCircle2, X } from "lucide-react";
-import { AdSlot } from "@/components/credits/ad-slot";
 
 export type ExportRun = {
   status: "running" | "done" | "error";
@@ -108,9 +107,6 @@ export function ExportDialog({ run, onClose }: ExportDialogProps) {
               Encoding happens entirely in your browser. Keep this tab in the
               foreground until it finishes.
             </p>
-
-            {/* Interstitial ad placement (hidden for ad-free accounts). */}
-            <AdSlot variant="interstitial" className="mt-4" />
           </div>
         )}
 

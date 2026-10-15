@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { SidebarAd } from "@/components/ads/sidebar-ad";
 import { Logo } from "@/components/ui/logo";
 import { NAV_ITEMS } from "./nav-items";
 
@@ -99,11 +98,6 @@ export function Sidebar({ open, onClose }: SidebarProps) {
               No renders in progress.
             </p>
           </div>
-        </div>
-
-        {/* 300x250 SPONSORED slot — full width so the unit renders natively. */}
-        <div className="flex justify-center border-t border-zinc-800 py-4">
-          <SidebarAd />
         </div>
       </aside>
     </>

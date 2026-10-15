@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
+  ArrowLeft,
   ChevronDown,
   LogIn,
   Menu,
@@ -20,9 +21,15 @@ import { useWorkspaceStore } from "@/store/workspace";
 
 type HeaderProps = {
   onMenuClick: () => void;
+  /**
+   * `editor` renders the stripped-back studio bar: brand + "Back to Projects"
+   * only, with the channel switcher, search and nav rail removed.
+   */
+  variant?: "default" | "editor";
 };
 
-export function Header({ onMenuClick }: HeaderProps) {
+export function Header({ onMenuClick, variant = "default" }: HeaderProps) {
+  const isEditor = variant === "editor";
   const [channelOpen, setChannelOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
 
@@ -101,21 +108,31 @@ export function Header({ onMenuClick }: HeaderProps) {
         type="button"
         onClick={onMenuClick}
         aria-label="Open navigation"
-        className="rounded-md p-2 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100 lg:hidden"
+        className={cn(
+          "rounded-md p-2 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100 lg:hidden",
+          isEditor && "hidden"
+        )}
       >
         <Menu className="h-5 w-5" aria-hidden />
       </button>
 
-      {/* Mobile brand — the sidebar lockup is hidden below `lg`. */}
+      {/* Brand — in the studio it is the only left-side element. */}
       <Link
         href="/dashboard"
         aria-label="Forgevyn Clipping home"
-        className="flex items-center lg:hidden"
+        className={cn("flex items-center", !isEditor && "lg:hidden")}
       >
         <Logo size="sm" />
       </Link>
 
-      {/* Active channel switcher — global Zustand state */}
+      {isEditor && (
+        <span className="text-sm font-semibold tracking-tight text-zinc-300">
+          Studio
+        </span>
+      )}
+
+      {/* Active channel switcher — global Zustand state (studio omits it) */}
+      {!isEditor && (
       <div className="relative" ref={channelRef}>
         <button
           type="button"
@@ -202,8 +219,10 @@ export function Header({ onMenuClick }: HeaderProps) {
           </div>
         )}
       </div>
+      )}
 
-      {/* Search placeholder */}
+      {/* Search placeholder (studio omits it) */}
+      {!isEditor && (
       <div className="hidden flex-1 items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900/60 px-3 py-2 md:flex">
         <Search className="h-4 w-4 text-zinc-500" aria-hidden />
         <input
@@ -212,13 +231,26 @@ export function Header({ onMenuClick }: HeaderProps) {
           className="w-full bg-transparent text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none"
         />
       </div>
-      <div className="flex-1 md:hidden" />
+      )}
+      <div className={cn("flex-1", !isEditor && "md:hidden")} />
 
-      {/* Theme badge */}
+      {isEditor && (
+        <Link
+          href="/projects"
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-900/70 px-3 py-2 text-sm font-medium text-zinc-200 transition-colors hover:border-violet-500/60 hover:text-white"
+        >
+          <ArrowLeft className="h-4 w-4" aria-hidden />
+          Back to Projects
+        </Link>
+      )}
+
+      {/* Theme badge (studio omits it) */}
+      {!isEditor && (
       <span className="hidden items-center gap-1.5 rounded-full border border-zinc-800 bg-zinc-900 px-2.5 py-1 text-xs font-medium text-zinc-400 sm:flex">
         <Moon className="h-3.5 w-3.5 text-violet-400" aria-hidden />
         Dark
       </span>
+      )}
 
       {/* User profile menu, or a sign-in CTA when signed out */}
       {authChecked && !user ? (

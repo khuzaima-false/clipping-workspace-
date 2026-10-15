@@ -181,9 +181,25 @@ body {
   animation-delay: 0.5s;
 }
 
+/* Panel sub-tab switch (Lumetri: Wheels / Corrections / Presets). */
+@keyframes tab-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-tab-in {
+  animation: tab-in 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-fade-up,
   .animate-fade-in,
+  .animate-tab-in,
   .animate-float {
     animation: none;
   }

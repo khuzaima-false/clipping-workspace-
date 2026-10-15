@@ -133,31 +133,41 @@ const RIGHT_STEPS: TourStep[] = [
   {
     target: "lumetri-panel",
     title: "🎨 Lumetri color & scopes",
-    body: "The complete grading suite: colour wheels, 13 primary sliders, 20 cinematic presets and a live luma scope — all applied in real time to the Program Monitor and burned into your export.",
+    body: "The complete grading suite, split into three compact sub-tabs — Wheels, Corrections and Presets — so nothing is buried in a wall of sliders. Every change applies in real time to the Program Monitor and is burned into your export.",
+    placement: "left",
+  },
+  {
+    target: "lumetri-tabs",
+    title: "Three sub-tabs",
+    body: "Wheels for three-way tonal colour, Corrections for the 13 primary sliders, and Presets for the 20-look gallery plus the live luma scope. Switching tabs animates smoothly and the panel stays compact.",
     placement: "left",
   },
   {
     target: "color-wheels",
-    title: "Lift / Gamma / Gain wheels",
-    body: "Three-way colour wheels for tonal ranges: Lift shapes the shadows, Gamma the midtones and Gain the highlights. Drag inside a wheel to tint; the Reset button clears the grade.",
+    open: "lumetri-tab-wheels",
+    title: "Tab 1 · Colour wheels",
+    body: "Three-way colour wheels for tonal ranges: Lift shapes the shadows, Gamma the midtones and Gain the highlights. Drag inside a wheel to tint that range, and use Reset to clear the whole grade.",
     placement: "left",
   },
   {
     target: "color-sliders",
-    title: "13 primary sliders",
-    body: "Exposure, Brightness, Contrast, Highlights, Shadows, Whites, Blacks, Vibrance, Saturation, Temperature, Tint, Sharpness and Clarity — each with a slider and a precise numeric field.",
+    open: "lumetri-tab-corrections",
+    title: "Tab 2 · Corrections & sliders",
+    body: "Exposure, Brightness, Contrast, Highlights, Shadows, Whites, Blacks, Vibrance, Saturation, Temperature, Tint, Sharpness and Clarity — each with a slider and a precise numeric field, plus a Reset Color Adjustments button.",
     placement: "left",
   },
   {
     target: "cinematic-presets",
-    title: "20 cinematic presets",
-    body: "Five quick looks (Teal & Orange, Moody Noir, Cyberpunk, Golden Hour…) plus 15 more behind “More”. Pick one, then dial the Intensity slider to blend it in.",
+    open: "lumetri-tab-presets",
+    title: "Tab 3 · Cinematic presets",
+    body: "Five quick looks (Teal & Orange, Moody Noir, Cyberpunk, Golden Hour…) plus 15 more behind “More (+15)”. Pick one, then dial the Intensity slider to blend it in.",
     placement: "left",
   },
   {
     target: "luma-scope",
-    title: "Live luma waveform",
-    body: "A real-time 256-bin luminance histogram sampled from the Program Monitor, so you can see crushing blacks or clipping highlights as you grade.",
+    open: "lumetri-tab-presets",
+    title: "Tab 3 · Live luma waveform",
+    body: "A real-time 256-bin luminance histogram sampled from the Program Monitor, so you can see crushing blacks or clipping highlights as you grade. It lives beside the presets gallery.",
     placement: "left",
   },
 ];
@@ -269,7 +279,7 @@ const MONITOR_STEPS: TourStep[] = [
   {
     target: "program-monitor",
     title: "Program monitor",
-    body: "The live canvas — graded, keyed and composited exactly as it will export. Drag a selected overlay directly on the canvas to reposition it, or grab a corner handle to resize it.",
+    body: "The live canvas — graded, keyed and composited exactly as it will export. The studio layout gives it every spare pixel between the two tool panels. Drag a selected overlay directly on the canvas to reposition it, or grab a corner handle to resize it.",
     placement: "left",
   },
   {
@@ -298,8 +308,8 @@ const MONITOR_STEPS: TourStep[] = [
   },
   {
     target: "header-bar",
-    title: "Workspace header",
-    body: "The global bar above the studio: switch channels, search your library, and open your profile menu. The Tutorial button lives here too, so you can replay any tour at any time.",
+    title: "Studio header & exit",
+    body: "In the studio the header is stripped back to the Forgevyn brand plus a prominent “Back to Projects” button — the dashboard / channels / sponsorships nav rail is hidden while you edit so nothing distracts from the canvas.",
     placement: "bottom",
   },
 ];

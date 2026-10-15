@@ -1,6 +1,5 @@
 import { create } from "zustand";
 import { createClient } from "@/lib/supabase/client";
-import { isAdFree } from "@/lib/credits";
 import type { Channel, Profile } from "@/types/database";
 
 type WorkspaceState = {
@@ -124,7 +123,3 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }
   },
 }));
-
-/** Derived selector: true when ads should be hidden for the current profile. */
-export const selectIsAdFree = (state: WorkspaceState): boolean =>
-  isAdFree(state.profile);
