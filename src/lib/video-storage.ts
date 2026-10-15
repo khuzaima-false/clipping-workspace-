@@ -132,6 +132,10 @@ export type StoredAudio = {
   fadeIn?: number;
   fadeOut?: number;
   synth?: boolean;
+  /** Zero-based audio lane (A1 = 0, A2 = 1, A3 = 2). */
+  lane?: number;
+  /** Pre-computed normalized waveform peaks (see `waveform-peaks.ts`). */
+  peaks?: number[];
 };
 
 export type ProjectMedia = {
@@ -142,6 +146,8 @@ export type ProjectMedia = {
   overlays: unknown[];
   /** Audio track metadata. */
   audio: StoredAudio[];
+  /** Per-lane mute/solo/lock/hide state (loosely typed, see `lib/tracks`). */
+  trackStates?: Record<string, unknown>;
 };
 
 const EMPTY_MEDIA: ProjectMedia = {

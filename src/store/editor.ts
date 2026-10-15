@@ -20,6 +20,17 @@ import {
 } from "@/lib/media-storage";
 import { renderSoundEffect, SOUND_EFFECTS, type SoundEffectId } from "@/lib/sfx";
 import { audioPreview } from "@/lib/audio-preview";
+import {
+  AUDIO_TRACK_KEYS,
+  DEFAULT_TRACK_STATE,
+  defaultTrackStates,
+  laneKeyFor,
+  normalizeTrackStates,
+  type TrackField,
+  type TrackKey,
+  type TrackState,
+} from "@/lib/tracks";
+import { computeWaveformPeaks } from "@/lib/waveform-peaks";
 import type { CaptionLanguageId } from "@/lib/transcribe";
 
 export type AspectRatio = "9:16" | "16:9" | "1:1" | "21:9";
@@ -286,6 +297,10 @@ export type AudioTrack = {
   fadeOut: number;
   /** True for built-in synthesized sound effects. */
   synth?: boolean;
+  /** Zero-based audio lane this track lives on (A1 = 0, A2 = 1, A3 = 2). */
+  lane?: number;
+  /** Normalized 0..1 waveform peaks, pre-computed at import for the lanes. */
+  peaks?: number[];
 };
 
 export type TextOverlay = {
@@ -745,6 +760,15 @@ type EditorState = {
   /** Last audio-import failure, if any. */
   audioTrackError: string | null;
 
+  /** Per-lane mute / solo / lock / hide state for the timeline workspace. */
+  trackStates: Record<TrackKey, TrackState>;
+  /** Toggles (or explicitly sets) a lane flag. */
+  setTrackFlag: (key: TrackKey, field: TrackField, value?: boolean) => void;
+  /** Splits a sequence clip at a source time into two independent clips. */
+  splitClip: (clipId: string, sourceTime: number) => void;
+  /** Deletes a clip and shifts later clips on the track left to close the gap. */
+  rippleDeleteClip: (clipId: string) => void;
+
   /** Active speed (velocity) preset. */
   speedPreset: SpeedPreset;
   /** Speed keyframes along the source-video timeline. */
@@ -940,7 +964,7 @@ function persistProject(state: EditorState): void {
     })
   );
   const audioMeta: StoredAudio[] = state.audioTracks.map(
-    ({ id, mediaId, name, startTime, volume, trimStart, duration, muted, solo, fadeIn, fadeOut, synth }) => ({
+    ({ id, mediaId, name, startTime, volume, trimStart, duration, muted, solo, fadeIn, fadeOut, synth, lane, peaks }) => ({
       id,
       mediaId,
       name,
@@ -953,6 +977,8 @@ function persistProject(state: EditorState): void {
       fadeIn,
       fadeOut,
       synth,
+      lane,
+      peaks,
     })
   );
   void saveProjectMedia(state.projectId, {
@@ -960,9 +986,61 @@ function persistProject(state: EditorState): void {
     sequence: state.sequence,
     overlays: state.overlays,
     audio: audioMeta,
+    trackStates: state.trackStates,
   }).catch(() => {
     // IndexedDB can fail (quota / private mode); the session still works.
   });
+}
+
+/** True when the lane hosting `key` is locked (edits are blocked). */
+export function isTrackLocked(state: EditorState, key: TrackKey): boolean {
+  return state.trackStates[key]?.locked ?? false;
+}
+
+/**
+ * Resolves the lane an audio track lives on. Legacy projects (saved before
+ * lanes existed) alternate A1/A2 by index, which is how they were displayed.
+ */
+export function trackLane(track: AudioTrack, index: number): number {
+  if (typeof track.lane === "number" && Number.isFinite(track.lane)) {
+    return Math.max(0, Math.min(AUDIO_TRACK_KEYS.length - 1, Math.round(track.lane)));
+  }
+  return index % 2;
+}
+
+/** The next lane a newly-added track should land on (round-robin). */
+function nextLaneIndex(state: EditorState): number {
+  const counts = AUDIO_TRACK_KEYS.map(() => 0);
+  state.audioTracks.forEach((track, index) => {
+    counts[trackLane(track, index)] += 1;
+  });
+  let best = 0;
+  for (let i = 1; i < counts.length; i += 1) {
+    if (counts[i] < counts[best]) best = i;
+  }
+  return best;
+}
+
+/** Audio tracks with each lane's mute/solo folded in, so a lane-level M/S in the
+ * timeline silences preview *and* export without touching the per-track flags. */
+export function effectiveAudioTracks(state: EditorState): AudioTrack[] {
+  return state.audioTracks.map((track, index) => {
+    const lane = state.trackStates[laneKeyFor(trackLane(track, index))];
+    if (!lane || (!lane.muted && !lane.solo)) return track;
+    return {
+      ...track,
+      muted: track.muted || Boolean(lane.muted),
+      solo: track.solo || Boolean(lane.solo),
+    };
+  });
+}
+
+/** True when the lane hosting the given audio track is locked. */
+function isAudioTrackLocked(state: EditorState, trackId: string): boolean {
+  const index = state.audioTracks.findIndex((track) => track.id === trackId);
+  if (index < 0) return false;
+  const track = state.audioTracks[index];
+  return state.trackStates[laneKeyFor(trackLane(track, index))]?.locked ?? false;
 }
 
 /** Writes the current global velocity curve onto the active clip (persisted). */
@@ -1067,6 +1145,81 @@ export const useEditorStore = create<EditorState>()(
   colorWheels: DEFAULT_COLOR_WHEELS,
   audioTracks: [],
   audioTrackError: null,
+  trackStates: defaultTrackStates(),
+
+  setTrackFlag: (key, field, value) =>
+    set((state) => {
+      const current = state.trackStates[key] ?? { ...DEFAULT_TRACK_STATE };
+      const next = { ...current, [field]: value ?? !current[field] };
+      return { trackStates: { ...state.trackStates, [key]: next } };
+    }),
+
+  splitClip: (clipId, sourceTime) => {
+    const { sequence, trackStates } = get();
+    if (trackStates.V1.locked) return;
+    const index = sequence.findIndex((clip) => clip.id === clipId);
+    if (index < 0) return;
+    const clip = sequence[index];
+    const at = Math.min(
+      Math.max(sourceTime, clip.trimStart + 0.05),
+      clip.trimEnd - 0.05
+    );
+    if (at <= clip.trimStart + 0.01 || at >= clip.trimEnd - 0.01) return;
+    const start = computeClipStarts(sequence)[index]?.start ?? 0;
+    const first: TimelineClip = { ...clip, trimEnd: at };
+    const second: TimelineClip = {
+      id: createId("clip"),
+      assetId: clip.assetId,
+      trimStart: at,
+      trimEnd: clip.trimEnd,
+      // Keep the cut halves touching even when the source clip was free-placed.
+      timelineStart: start + (at - clip.trimStart),
+      ...(clip.chromaKey ? { chromaKey: clip.chromaKey } : {}),
+      ...(clip.speedPreset ? { speedPreset: clip.speedPreset } : {}),
+      ...(clip.speedPoints ? { speedPoints: clip.speedPoints } : {}),
+    };
+    const next = [
+      ...sequence.slice(0, index),
+      first,
+      second,
+      ...sequence.slice(index + 1),
+    ];
+    set({
+      sequence: next,
+      activeClipId: second.id,
+      trimStart: second.trimStart,
+      trimEnd: second.trimEnd,
+      pendingTrim: { trimStart: second.trimStart, trimEnd: second.trimEnd },
+      ...speedPatchForClip(second),
+    });
+    persistProject(get());
+  },
+
+  rippleDeleteClip: (clipId) => {
+    const { sequence, trackStates } = get();
+    if (trackStates.V1.locked) return;
+    const blocks = computeClipStarts(sequence);
+    const index = blocks.findIndex((block) => block.clip.id === clipId);
+    if (index < 0) return;
+    const removed = blocks[index];
+    const next = blocks
+      .filter((_, i) => i !== index)
+      .map((block, i) => {
+        // Everything after the cut slides left to close the gap.
+        if (i < index) return block.clip;
+        return {
+          ...block.clip,
+          timelineStart: Math.max(0, block.start - removed.dur),
+        };
+      });
+    set({ sequence: next });
+    persistProject(get());
+    if (get().activeClipId === clipId) {
+      const fallback = next[Math.min(index, next.length - 1)];
+      if (fallback) get().selectClip(fallback.id);
+      else get().removeClip(clipId);
+    }
+  },
 
   speedPreset: "none",
   speedPoints: [{ time: 0, speed: 1 }],
@@ -1345,10 +1498,23 @@ export const useEditorStore = create<EditorState>()(
           fadeIn: raw.fadeIn ?? 0,
           fadeOut: raw.fadeOut ?? 0,
           synth: raw.synth,
+          lane: raw.lane,
+          // Reuse persisted peaks; otherwise rebuild them from the decoded PCM.
+          peaks:
+            raw.peaks && raw.peaks.length > 0
+              ? raw.peaks
+              : computeWaveformPeaks(buffer),
         });
       }
 
-      set({ assets, sequence, overlays, audioTracks, assetsLoading: false });
+      set({
+        assets,
+        sequence,
+        overlays,
+        audioTracks,
+        trackStates: normalizeTrackStates(media.trackStates),
+        assetsLoading: false,
+      });
 
       const firstClip = sequence[0];
       const asset = firstClip
@@ -1529,6 +1695,7 @@ export const useEditorStore = create<EditorState>()(
   },
 
   removeClip: (clipId) => {
+    if (get().trackStates.V1.locked) return;
     const sequence = get().sequence.filter((clip) => clip.id !== clipId);
     set({ sequence });
     // Garbage-collect assets whose clips are all gone (frees media storage).
@@ -1574,6 +1741,7 @@ export const useEditorStore = create<EditorState>()(
   },
 
   moveClipTo: (clipId, timelineStart) => {
+    if (get().trackStates.V1.locked) return;
     set({
       sequence: get().sequence.map((clip) =>
         clip.id === clipId
@@ -1604,6 +1772,7 @@ export const useEditorStore = create<EditorState>()(
   },
 
   setClipTrim: (clipId, patch) => {
+    if (get().trackStates.V1.locked) return;
     const sequence = get().sequence.map((clip) => {
       if (clip.id !== clipId) return clip;
       const next = { ...clip, ...patch };
@@ -1684,39 +1853,13 @@ export const useEditorStore = create<EditorState>()(
   },
 
   splitActiveClip: () => {
-    const { activeClipId, sequence, currentTime } = get();
-    if (!activeClipId || sequence.length === 0) return;
-    const index = sequence.findIndex((clip) => clip.id === activeClipId);
-    if (index < 0) return;
-    const clip = sequence[index];
-    const at = Math.min(
-      Math.max(currentTime, clip.trimStart + 0.05),
-      clip.trimEnd - 0.05
-    );
-    if (at <= clip.trimStart + 0.01 || at >= clip.trimEnd - 0.01) return;
-    const first: TimelineClip = { ...clip, trimEnd: at };
-    const second: TimelineClip = {
-      id: createId("clip"),
-      assetId: clip.assetId,
-      trimStart: at,
-      trimEnd: clip.trimEnd,
-    };
-    const next = [
-      ...sequence.slice(0, index),
-      first,
-      second,
-      ...sequence.slice(index + 1),
-    ];
-    set({
-      sequence: next,
-      activeClipId: second.id,
-      trimStart: second.trimStart,
-      trimEnd: second.trimEnd,
-    });
-    persistProject(get());
+    const { activeClipId, currentTime } = get();
+    if (!activeClipId) return;
+    get().splitClip(activeClipId, currentTime);
   },
 
   duplicateActiveClip: () => {
+    if (get().trackStates.V1.locked) return;
     const { activeClipId, sequence } = get();
     if (!activeClipId) return;
     const index = sequence.findIndex((clip) => clip.id === activeClipId);
@@ -1786,6 +1929,7 @@ export const useEditorStore = create<EditorState>()(
       colorWheels: DEFAULT_COLOR_WHEELS,
       audioTracks: [],
       audioTrackError: null,
+      trackStates: defaultTrackStates(),
       speedPreset: "none",
       speedPoints: [{ time: 0, speed: 1 }],
       activeEffects: [],
@@ -1945,6 +2089,7 @@ export const useEditorStore = create<EditorState>()(
     }),
 
   setOverlayStartTime: (id, time) => {
+    if (get().trackStates.V2.locked) return;
     const { overlays, duration } = get();
     const overlay = overlays.find((item) => item.id === id);
     if (!overlay) return;
@@ -1960,6 +2105,7 @@ export const useEditorStore = create<EditorState>()(
   },
 
   setOverlayEndTime: (id, time) => {
+    if (get().trackStates.V2.locked) return;
     const { overlays, duration } = get();
     const overlay = overlays.find((item) => item.id === id);
     if (!overlay) return;
@@ -1974,6 +2120,7 @@ export const useEditorStore = create<EditorState>()(
   },
 
   moveOverlayTo: (id, startTime) => {
+    if (get().trackStates.V2.locked) return;
     const { overlays, duration } = get();
     const overlay = overlays.find((item) => item.id === id);
     if (!overlay) return;
@@ -1987,11 +2134,13 @@ export const useEditorStore = create<EditorState>()(
     });
   },
 
-  removeOverlay: (id) =>
+  removeOverlay: (id) => {
+    if (get().trackStates.V2.locked) return;
     set({
       overlays: get().overlays.filter((overlay) => overlay.id !== id),
       selectedId: get().selectedId === id ? null : get().selectedId,
-    }),
+    });
+  },
 
   selectOverlay: (id) => set({ selectedId: id }),
 
@@ -2130,6 +2279,8 @@ export const useEditorStore = create<EditorState>()(
           solo: false,
           fadeIn: 0,
           fadeOut: 0,
+          lane: nextLaneIndex(get()),
+          peaks: computeWaveformPeaks(decoded?.buffer),
         };
         set({ audioTracks: [...get().audioTracks, track], audioTrackError: null });
       }
@@ -2173,6 +2324,9 @@ export const useEditorStore = create<EditorState>()(
         solo: false,
         fadeIn: 0,
         fadeOut: 0,
+        // Voiceovers land on A2 by default.
+        lane: 1,
+        peaks: computeWaveformPeaks(decoded?.buffer),
       };
       set({ audioTracks: [...get().audioTracks, track], audioTrackError: null });
     } catch (error) {
@@ -2185,7 +2339,14 @@ export const useEditorStore = create<EditorState>()(
     }
   },
 
-  updateAudioTrack: (id, patch) =>
+  updateAudioTrack: (id, patch) => {
+    // A locked lane keeps its position/size; volume, fades and mute/solo are fine.
+    if (
+      isAudioTrackLocked(get(), id) &&
+      ("trimStart" in patch || "duration" in patch)
+    ) {
+      return;
+    }
     set({
       audioTracks: get().audioTracks.map((track) => {
         if (track.id !== id) return track;
@@ -2199,16 +2360,20 @@ export const useEditorStore = create<EditorState>()(
         next.fadeOut = Math.max(0, Math.min(next.fadeOut ?? 0, next.duration));
         return next;
       }),
-    }),
+    });
+  },
 
-  moveAudioTrackTo: (id, startTime) =>
+  moveAudioTrackTo: (id, startTime) => {
+    if (isAudioTrackLocked(get(), id)) return;
     set({
       audioTracks: get().audioTracks.map((track) =>
         track.id === id ? { ...track, startTime: Math.max(0, startTime) } : track
       ),
-    }),
+    });
+  },
 
   removeAudioTrack: (id) => {
+    if (isAudioTrackLocked(get(), id)) return;
     const track = get().audioTracks.find((item) => item.id === id);
     if (track) {
       URL.revokeObjectURL(track.url);
@@ -2287,14 +2452,23 @@ export const useEditorStore = create<EditorState>()(
     set({ activeEffects: [...get().activeEffects, effect] });
   },
 
-  updateEffect: (id, patch) =>
+  updateEffect: (id, patch) => {
+    // Locked V3 still allows value tweaks; timing edits are blocked.
+    if (
+      get().trackStates.V3.locked &&
+      ("startTime" in patch || "duration" in patch)
+    ) {
+      return;
+    }
     set({
       activeEffects: get().activeEffects.map((effect) =>
         effect.id === id ? { ...effect, ...patch } : effect
       ),
-    }),
+    });
+  },
 
   moveEffectTo: (id, startTime) => {
+    if (get().trackStates.V3.locked) return;
     const { activeEffects, duration } = get();
     set({
       activeEffects: activeEffects.map((effect) => {
@@ -2308,10 +2482,12 @@ export const useEditorStore = create<EditorState>()(
     });
   },
 
-  removeEffect: (id) =>
+  removeEffect: (id) => {
+    if (get().trackStates.V3.locked) return;
     set({
       activeEffects: get().activeEffects.filter((effect) => effect.id !== id),
-    }),
+    });
+  },
 
   clearEffects: () => set({ activeEffects: [] }),
 
@@ -2464,6 +2640,8 @@ export const useEditorStore = create<EditorState>()(
       fadeIn: 0.01,
       fadeOut: 0.12,
       synth: true,
+      lane: nextLaneIndex(get()),
+      peaks: computeWaveformPeaks(rendered.buffer),
     };
     set({ audioTracks: [...get().audioTracks, track], audioTrackError: null });
   },

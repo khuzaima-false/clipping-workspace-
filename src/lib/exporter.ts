@@ -74,6 +74,8 @@ export type ExportVideoOptions = {
   segments?: ExportSegment[];
   /** External audio tracks / SFX mixed into the exported audio. */
   audioTracks?: AudioMixTrack[];
+  /** Drop the source video's own audio (V1 lane muted). */
+  muteBase?: boolean;
   /** Velocity curve; when ramped, output frames step variable source deltas. */
   speedPoints?: SpeedPoint[];
   /** Target average bitrate in bits/sec; defaults to a size-based estimate. */
@@ -418,6 +420,8 @@ async function exportWithWebCodecs(
   } else {
     baseBuffer = opts.file ? (await decodeAudio(opts.file))?.buffer ?? null : null;
   }
+  // V1 muted → the source's own audio is dropped from the mix.
+  if (opts.muteBase) baseBuffer = null;
   const mixedAudio = await mixTimelineAudio({
     baseBuffer,
     tracks: opts.audioTracks ?? [],

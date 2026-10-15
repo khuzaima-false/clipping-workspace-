@@ -18,6 +18,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   EXPORT_RESOLUTIONS,
   computeClipStarts,
+  effectiveAudioTracks,
   useEditorStore,
   type ExportResolutionId,
 } from "@/store/editor";
@@ -360,7 +361,8 @@ function EditorView() {
         fps: EXPORT_FPS,
         file: state.videoFile,
         segments: segments && segments.length > 1 ? segments : undefined,
-        audioTracks: state.audioTracks,
+        audioTracks: effectiveAudioTracks(state),
+        muteBase: state.trackStates.V1.muted,
         speedPoints: segments ? [] : state.speedPoints,
         signal: controller.signal,
         onProgress: (progress) => {
@@ -464,6 +466,7 @@ function EditorView() {
           fps: EXPORT_FPS,
           file,
           speedPoints: [],
+          muteBase: store.trackStates.V1.muted,
           onProgress: () => {},
         });
         downloadFile(
