@@ -464,8 +464,8 @@ function ProjectBinPanel({
   };
 
   return (
-    <section className="glass-card flex min-h-0 flex-col overflow-hidden rounded-2xl">
-      <div className="custom-scrollbar flex items-center gap-1 overflow-x-auto whitespace-nowrap border-b border-zinc-800 px-1 py-1">
+    <section className="glass-card flex min-h-0 flex-col overflow-hidden rounded-2xl" data-tour="left-panel">
+      <div className="custom-scrollbar flex items-center gap-1 overflow-x-auto whitespace-nowrap border-b border-zinc-800 px-1 py-1" data-tour="tab-strip">
         {(
           [
             ["media", "Media"],
@@ -483,6 +483,7 @@ function ProjectBinPanel({
           <button
             key={id}
             type="button"
+            data-tour={`tab-${id}`}
             onClick={() => setTab(id)}
             aria-pressed={tab === id}
             className={cn(
@@ -497,7 +498,7 @@ function ProjectBinPanel({
         ))}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-3">
+      <div className="min-h-0 flex-1 overflow-y-auto p-3" data-tour="left-panel-body">
         {tab === "media" && (
           <div className="space-y-2">
             <button
@@ -2118,13 +2119,13 @@ function ProgramPreview() {
   const res = ASPECT_RESOLUTIONS[aspect];
 
   return (
-    <section className="glass-card flex min-h-0 flex-col overflow-hidden rounded-2xl">
+    <section className="glass-card flex min-h-0 flex-col overflow-hidden rounded-2xl" data-tour="program-monitor">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-800 px-3 py-2">
         <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
           Program Monitor
         </span>
         {/* Aspect-ratio switcher: 16:9 ↔ 9:16 ↔ 1:1 */}
-        <div className="flex items-center gap-1" role="group" aria-label="Aspect ratio">
+        <div className="flex items-center gap-1" role="group" aria-label="Aspect ratio" data-tour="aspect-group">
           {(["9:16", "16:9", "1:1", "21:9"] as const).map((option) => (
             <button
               key={option}
@@ -2142,6 +2143,7 @@ function ProgramPreview() {
             </button>
           ))}
         </div>
+        <div className="flex items-center gap-2" data-tour="monitor-meta">
         <span className="text-[10px] tabular-nums text-zinc-500">
           {res.width}×{res.height} · {fps}fps
         </span>
@@ -2173,6 +2175,7 @@ function ProgramPreview() {
         >
           Blur Fill
         </button>
+        </div>
       </div>
 
       <div
@@ -2224,7 +2227,7 @@ function ProgramPreview() {
       </div>
 
       {/* Transport */}
-      <div className="space-y-2 border-t border-zinc-800 px-3 py-2">
+      <div className="space-y-2 border-t border-zinc-800 px-3 py-2" data-tour="transport">
         <div className="flex flex-wrap items-center gap-2">
           <span className="shrink-0 rounded bg-zinc-950 px-2 py-1 font-mono text-[11px] tabular-nums text-emerald-300 ring-1 ring-inset ring-zinc-800">
             {formatTimecode(currentTime, fps)} / {formatTimecode(duration, fps)}
@@ -2282,6 +2285,7 @@ function ProgramPreview() {
           </button>
           <button
             type="button"
+            data-tour="marks"
             onClick={() => setMarkIn(currentTime)}
             disabled={!hasVideo}
             title="Mark In (I)"
@@ -2478,10 +2482,10 @@ function LumetriPanel() {
   );
 
   return (
-    <section className="glass-card flex min-h-0 flex-col overflow-hidden rounded-2xl">
+    <section className="glass-card flex min-h-0 flex-col overflow-hidden rounded-2xl" data-tour="lumetri-panel">
       <div className={panelTitle}>Lumetri Color &amp; Scopes</div>
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
-        <div>
+        <div data-tour="color-wheels">
           <div className="mb-1 flex items-center justify-between">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
               Color Wheels
@@ -2504,8 +2508,9 @@ function LumetriPanel() {
           </p>
         </div>
 
-        {sliders.map(([label, key, min, max]) => (
-          <div key={key} className="flex items-center gap-2">
+        <div className="space-y-3" data-tour="color-sliders">
+          {sliders.map(([label, key, min, max]) => (
+            <div key={key} className="flex items-center gap-2">
             <div className="min-w-0 flex-1">
               <span className="block text-[10px] text-zinc-500">{label}</span>
               <input
@@ -2539,8 +2544,9 @@ function LumetriPanel() {
         >
           Reset Color Adjustments
         </button>
+        </div>
 
-        <div className="space-y-2 pt-1">
+        <div className="space-y-2 pt-1" data-tour="cinematic-presets">
           <div className="flex items-center justify-between">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
               Cinematic Presets
@@ -2585,7 +2591,7 @@ function LumetriPanel() {
           </label>
         </div>
 
-        <div className="pt-1">
+        <div className="pt-1" data-tour="luma-scope">
           <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
             Luma waveform
           </p>
@@ -3187,9 +3193,9 @@ function PremiereTimeline() {
   };
 
   return (
-    <section className="glass-card flex min-h-0 flex-col overflow-hidden rounded-2xl">
+    <section className="glass-card flex min-h-0 flex-col overflow-hidden rounded-2xl" data-tour="timeline">
       {/* Timeline toolbar */}
-      <div className="flex items-center gap-2 border-b border-zinc-800 px-3 py-2">
+      <div className="flex items-center gap-2 border-b border-zinc-800 px-3 py-2" data-tour="timeline-toolbar">
         <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
           Timeline
         </span>
@@ -3203,6 +3209,7 @@ function PremiereTimeline() {
             type="button"
             title="Split at playhead (S)"
             aria-label="Split clip at playhead"
+            data-tour="timeline-split"
             disabled={trackStates.V1.locked}
             onClick={() => {
               if (activeClipId) splitClip(activeClipId, currentTime);
@@ -3215,6 +3222,7 @@ function PremiereTimeline() {
             type="button"
             title="Ripple delete the selected clip (Shift+Delete)"
             aria-label="Ripple delete clip"
+            data-tour="timeline-ripple"
             disabled={trackStates.V1.locked || !activeClipId}
             onClick={() => {
               if (activeClipId) rippleDeleteClip(activeClipId);
@@ -3225,7 +3233,7 @@ function PremiereTimeline() {
           </button>
         </div>
 
-        <div className="ml-auto flex items-center gap-1.5">
+        <div className="ml-auto flex items-center gap-1.5" data-tour="timeline-zoom">
           <button type="button" aria-label="Zoom out" onClick={() => zoomTo(pps - 12)} className="rounded-lg border border-zinc-800 bg-zinc-950/60 p-1.5 text-zinc-300 hover:border-zinc-600">
             <ZoomOut className="h-3.5 w-3.5" aria-hidden />
           </button>
@@ -3238,7 +3246,7 @@ function PremiereTimeline() {
 
       <div className="flex min-h-0 flex-1">
         {/* Track headers column */}
-        <div className="flex shrink-0 flex-col">
+        <div className="flex shrink-0 flex-col" data-tour="track-headers">
           <div className="h-6 w-24 border-b border-r border-zinc-800 bg-zinc-900/60" />
           {TRACK_KEYS.map((keyName) => (
             <TrackHeader key={keyName} keyName={keyName} />
@@ -3251,6 +3259,7 @@ function PremiereTimeline() {
             {/* Ruler */}
             <div
               className="relative h-6 select-none border-b border-zinc-800 bg-zinc-900/40"
+              data-tour="timeline-ruler"
               onPointerDown={onScrubPointerDown}
               onPointerMove={onScrubPointerMove}
             >
@@ -3295,7 +3304,7 @@ function PremiereTimeline() {
             </div>
 
             {/* V3 — adjustment / effect layers (pink) */}
-            <div className={cn("relative h-12 border-b border-zinc-800 bg-zinc-950/40", isLaneDimmed("V3", trackStates) && "opacity-40")}>
+            <div className={cn("relative h-12 border-b border-zinc-800 bg-zinc-950/40", isLaneDimmed("V3", trackStates) && "opacity-40")} data-tour="v3-lane">
               {activeEffects.map((fx) => (
                 <div
                   key={fx.id}
@@ -3349,7 +3358,7 @@ function PremiereTimeline() {
             </div>
 
             {/* V2 — text / overlay layers (pink) */}
-            <div className={cn("relative h-12 border-b border-zinc-800 bg-zinc-950/40", isLaneDimmed("V2", trackStates) && "opacity-40")}>
+            <div className={cn("relative h-12 border-b border-zinc-800 bg-zinc-950/40", isLaneDimmed("V2", trackStates) && "opacity-40")} data-tour="v2-lane">
               {overlays.map((o) => (
                 <div
                   key={o.id}
@@ -3420,7 +3429,7 @@ function PremiereTimeline() {
             </div>
 
             {/* V1 — video clips (purple/blue) with trim handles */}
-            <div className={cn("relative h-12 border-b border-zinc-800 bg-zinc-950/40", isLaneDimmed("V1", trackStates) && "opacity-40")}>
+            <div className={cn("relative h-12 border-b border-zinc-800 bg-zinc-950/40", isLaneDimmed("V1", trackStates) && "opacity-40")} data-tour="v1-lane">
               {videoBlocks.map(({ clip, start, dur }) => {
                 const dragging = clipPreview?.id === clip.id;
                 const displayStart = dragging && clipPreview ? clipPreview.start : start;
@@ -3539,6 +3548,7 @@ function PremiereTimeline() {
               return (
                 <div
                   key={keyName}
+                  data-tour={keyName === "A1" ? "a1-lane" : undefined}
                   className={cn(
                     "relative h-12 border-b border-zinc-800 bg-zinc-950/40",
                     isLaneDimmed(keyName, trackStates) && "opacity-40",

@@ -24,6 +24,7 @@ import {
 } from "@/store/editor";
 import { drawScene } from "@/lib/render";
 import { visibleLayerFlags } from "@/lib/tracks";
+import { TutorialLauncher } from "@/components/tutorial/guided-tour";
 import {
   EXPORT_FPS,
   downloadFile,
@@ -500,7 +501,7 @@ function EditorView() {
           Back to projects
         </Link>
 
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1" data-tour="editor-title">
           {loading ? (
             <Skeleton className="h-6 w-48" />
           ) : (
@@ -531,7 +532,7 @@ function EditorView() {
                   Editor
                 </h1>
               )}
-              <p className="mt-0.5 flex items-center gap-1.5 text-xs text-zinc-500">
+              <p className="mt-0.5 flex items-center gap-1.5 text-xs text-zinc-500" data-tour="save-indicator">
                 <span
                   aria-hidden
                   className={cn(
@@ -553,7 +554,7 @@ function EditorView() {
         </div>
 
         {/* Resolution selector */}
-        <label className="inline-flex shrink-0 items-center gap-2">
+        <label className="inline-flex shrink-0 items-center gap-2" data-tour="export-resolution">
           <span className="sr-only">Export resolution</span>
           <select
             value={exportResolution}
@@ -572,8 +573,11 @@ function EditorView() {
           </select>
         </label>
 
+        <TutorialLauncher />
+
         <button
           type="button"
+          data-tour="export-button"
           onClick={() => void handleExport()}
           disabled={!hasVideo || exporting}
           className="brand-gradient brand-gradient-hover relative inline-flex shrink-0 items-center gap-2 overflow-hidden rounded-lg px-4 py-2.5 text-sm font-medium text-white transition-transform hover:scale-[1.03] disabled:cursor-not-allowed disabled:opacity-50"
