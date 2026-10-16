@@ -66,6 +66,7 @@ import { VelocityCurveEditor } from "@/components/editor/velocity-editor";
 import { clampTimelineStart, usePointerDrag } from "@/lib/timeline-drag";
 import { audioPreview } from "@/lib/audio-preview";
 import { installMediaRecovery, onMediaRestore } from "@/lib/media-recovery";
+import { applyElementAudio } from "@/lib/element-audio";
 import { SOUND_EFFECT_CATEGORIES, SOUND_EFFECTS } from "@/lib/sfx";
 import { createDictation, isDictationSupported } from "@/lib/dictation";
 import { STICKER_CATEGORIES, STICKERS, stickerImageSrc, type StickerCategory } from "@/lib/stickers";
@@ -2297,9 +2298,12 @@ function ProgramPreview() {
         }
       }
 
-      // V1 lane mute gates the source video's own audio.
-      const v1Muted = isBaseVideoAudioMuted(state);
-      if (video && video.muted !== v1Muted) video.muted = v1Muted;
+      // The preview <video> doubles as a canvas source, so its sound is routed
+      // through the Web Audio graph (a gain node) instead of toggling `.muted`,
+      // which would also silence the graph input.
+      if (video) {
+        applyElementAudio(video, isBaseVideoAudioMuted(state), state.volume);
+      }
 
       audioPreview.sync(
         effectiveAudioTracks(state),
@@ -2372,10 +2376,7 @@ function ProgramPreview() {
             }
           }
         }
-        const v1Muted = isBaseVideoAudioMuted(state);
-        if (video.muted !== v1Muted) {
-          video.muted = v1Muted;
-        }
+        applyElementAudio(video, isBaseVideoAudioMuted(state), state.volume);
       }
       handleFrame();
     };

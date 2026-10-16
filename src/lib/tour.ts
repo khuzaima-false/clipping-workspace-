@@ -107,7 +107,7 @@ const LEFT_STEPS: TourStep[] = [
     target: "left-panel-body",
     open: "tab-record",
     title: "Record — screen, camera & narration",
-    body: "Capture your screen, a window or your webcam directly in the browser. Keep “Capture microphone (narration)” ticked and watch the input-level meter to be sure audio is live — the video lands in the media bin while the audio is recorded separately and dropped onto its own timeline track (A1–A3) with a real waveform, so it always plays back and exports. Badges show whether the microphone and tab audio were captured, and a warning appears if the mic was blocked.",
+    body: "Capture your screen, a window or your webcam directly in the browser. Keep “Capture microphone (narration)” ticked and watch the input-level meter to be sure audio is live. The result is a single combined WebM with its audio baked in, so it drops onto V1 as one clip that plays and exports with sound. Badges show whether the microphone and tab audio were captured, and a warning appears if the mic was blocked.",
     placement: "right",
   },
   {

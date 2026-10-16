@@ -21,6 +21,7 @@ import {
 import { renderSoundEffect, SOUND_EFFECTS, type SoundEffectId } from "@/lib/sfx";
 import { audioPreview } from "@/lib/audio-preview";
 import { unlockAudio } from "@/lib/media-recovery";
+import { applyElementAudio } from "@/lib/element-audio";
 import { mountPreviewMedia, unmountPreviewMedia } from "@/lib/preview-media";
 import { type MotionPresetId } from "@/lib/motion-presets";
 import {
@@ -2269,8 +2270,9 @@ export const useEditorStore = create<EditorState>()(
       // policy. The rAF loop then only keeps the already-started media synced.
       unlockAudio();
       set({ playing: true });
-      videoEl.muted = isBaseVideoAudioMuted(get());
-      videoEl.volume = Math.min(Math.max(get().volume, 0), 1);
+      // Route the element's audio through the Web Audio graph (gain node) so it
+      // plays to the speakers while its frames are drawn to the canvas.
+      applyElementAudio(videoEl, isBaseVideoAudioMuted(get()), get().volume);
       audioPreview.sync(effectiveAudioTracks(get()), videoEl.currentTime, true);
       videoEl.play().catch(() => {
         if (get().videoEl === videoEl) set({ playing: false });

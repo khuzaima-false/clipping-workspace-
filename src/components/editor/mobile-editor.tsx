@@ -53,6 +53,7 @@ import { useOverlayCanvasDrag } from "@/components/editor/use-overlay-drag";
 import { usePointerDrag } from "@/lib/timeline-drag";
 import { audioPreview } from "@/lib/audio-preview";
 import { installMediaRecovery, onMediaRestore } from "@/lib/media-recovery";
+import { applyElementAudio } from "@/lib/element-audio";
 import { visibleLayerFlags } from "@/lib/tracks";
 import { SOUND_EFFECT_CATEGORIES, SOUND_EFFECTS } from "@/lib/sfx";
 import { createDictation, isDictationSupported } from "@/lib/dictation";
@@ -313,9 +314,11 @@ function MobilePreview({ wrapRef }: { wrapRef: React.RefObject<HTMLDivElement | 
         }
       }
 
-      // V1 lane mute gates the source video's own audio.
-      const v1Muted = isBaseVideoAudioMuted(state);
-      if (video && video.muted !== v1Muted) video.muted = v1Muted;
+      // Route the preview <video>'s sound through Web Audio (it is also a
+      // canvas source, so `.muted` must stay false).
+      if (video) {
+        applyElementAudio(video, isBaseVideoAudioMuted(state), state.volume);
+      }
 
       audioPreview.sync(
         effectiveAudioTracks(state),
@@ -383,10 +386,7 @@ function MobilePreview({ wrapRef }: { wrapRef: React.RefObject<HTMLDivElement | 
             }
           }
         }
-        const v1Muted = isBaseVideoAudioMuted(state);
-        if (video.muted !== v1Muted) {
-          video.muted = v1Muted;
-        }
+        applyElementAudio(video, isBaseVideoAudioMuted(state), state.volume);
       }
       handleFrame();
     };
