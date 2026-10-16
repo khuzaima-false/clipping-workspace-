@@ -65,6 +65,12 @@ export function resumeAudioContexts(): void {
   }
 }
 
+/** Creates (when needed) and resumes the shared context during a user gesture. */
+export function unlockAudio(): void {
+  getSharedAudioContext();
+  resumeAudioContexts();
+}
+
 /** Registers a callback fired whenever the tab/window is restored. */
 export function onMediaRestore(handler: RestoreHandler): () => void {
   handlers.add(handler);

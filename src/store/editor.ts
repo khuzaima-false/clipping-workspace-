@@ -20,6 +20,7 @@ import {
 } from "@/lib/media-storage";
 import { renderSoundEffect, SOUND_EFFECTS, type SoundEffectId } from "@/lib/sfx";
 import { audioPreview } from "@/lib/audio-preview";
+import { unlockAudio } from "@/lib/media-recovery";
 import { type MotionPresetId } from "@/lib/motion-presets";
 import {
   AUDIO_TRACK_KEYS,
@@ -1059,17 +1060,48 @@ function nextLaneIndex(state: EditorState): number {
  * timeline silences preview *and* export without touching the per-track flags.
  * A lane hidden by its eye toggle is treated as muted. */
 export function effectiveAudioTracks(state: EditorState): AudioTrack[] {
+  const audioSoloActive = hasActiveAudioSolo(state);
+  // A V1 solo isolates the base video audio unless an audio lane/clip is
+  // explicitly soloed too. This keeps V1 and A1–A3 in one routing model.
+  const muteForV1Solo = state.trackStates.V1.solo && !audioSoloActive;
   return state.audioTracks.map((track, index) => {
     const lane = state.trackStates[laneKeyFor(trackLane(track, index))];
     const laneMuted = Boolean(lane?.muted) || lane?.isVisible === false;
     const laneSolo = Boolean(lane?.solo);
-    if (!laneMuted && !laneSolo) return track;
+    if (!laneMuted && !laneSolo && !muteForV1Solo) return track;
     return {
       ...track,
-      muted: track.muted || laneMuted,
+      muted: track.muted || laneMuted || muteForV1Solo,
       solo: track.solo || laneSolo,
     };
   });
+}
+
+/** Whether any audible A1–A3 lane or clip is currently soloed. */
+function hasActiveAudioSolo(state: EditorState): boolean {
+  const laneIsSoloed = AUDIO_TRACK_KEYS.some((key) => {
+    const lane = state.trackStates[key];
+    return Boolean(lane?.solo) && !lane?.muted && lane?.isVisible !== false;
+  });
+  if (laneIsSoloed) return true;
+
+  return state.audioTracks.some((track, index) => {
+    const lane = state.trackStates[laneKeyFor(trackLane(track, index))];
+    return (
+      track.solo &&
+      !track.muted &&
+      !lane?.muted &&
+      lane?.isVisible !== false
+    );
+  });
+}
+
+/** The single mute decision for V1's native HTMLVideoElement audio output. */
+export function isBaseVideoAudioMuted(state: EditorState): boolean {
+  const v1 = state.trackStates.V1;
+  if (v1.muted || v1.isVisible === false) return true;
+  // An audio solo excludes V1 unless V1 is also soloed.
+  return !v1.solo && hasActiveAudioSolo(state);
 }
 
 /** True when the lane hosting the given audio track is locked. */
@@ -2226,12 +2258,19 @@ export const useEditorStore = create<EditorState>()(
     if (!videoEl) return;
 
     if (playing) {
+      // This runs in the Play-click call stack, which is the reliable moment
+      // to unlock Web Audio and start every HTML audio track under autoplay
+      // policy. The rAF loop then only keeps the already-started media synced.
+      unlockAudio();
       set({ playing: true });
+      videoEl.muted = isBaseVideoAudioMuted(get());
+      audioPreview.sync(effectiveAudioTracks(get()), videoEl.currentTime, true);
       videoEl.play().catch(() => {
         if (get().videoEl === videoEl) set({ playing: false });
       });
     } else {
       videoEl.pause();
+      audioPreview.sync(effectiveAudioTracks(get()), videoEl.currentTime, false);
       set({ playing: false, currentTime: videoEl.currentTime });
     }
   },

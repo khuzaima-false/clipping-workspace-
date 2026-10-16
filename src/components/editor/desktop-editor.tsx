@@ -52,6 +52,7 @@ import {
   computeClipStarts,
   effectiveAudioTracks,
   effectLabel,
+  isBaseVideoAudioMuted,
   trackLane,
   useEditorStore,
   type AspectRatio,
@@ -2322,7 +2323,7 @@ function ProgramPreview() {
       }
 
       // V1 lane mute gates the source video's own audio.
-      const v1Muted = state.trackStates.V1.muted;
+      const v1Muted = isBaseVideoAudioMuted(state);
       if (video && video.muted !== v1Muted) video.muted = v1Muted;
 
       audioPreview.sync(
@@ -2396,8 +2397,9 @@ function ProgramPreview() {
             }
           }
         }
-        if (video.muted !== state.trackStates.V1.muted) {
-          video.muted = state.trackStates.V1.muted;
+        const v1Muted = isBaseVideoAudioMuted(state);
+        if (video.muted !== v1Muted) {
+          video.muted = v1Muted;
         }
       }
       handleFrame();

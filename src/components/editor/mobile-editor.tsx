@@ -44,6 +44,7 @@ import {
   TRANSITION_PRESETS,
   effectiveAudioTracks,
   effectLabel,
+  isBaseVideoAudioMuted,
   useEditorStore,
   type AspectRatio,
 } from "@/store/editor";
@@ -313,7 +314,7 @@ function MobilePreview({ wrapRef }: { wrapRef: React.RefObject<HTMLDivElement | 
       }
 
       // V1 lane mute gates the source video's own audio.
-      const v1Muted = state.trackStates.V1.muted;
+      const v1Muted = isBaseVideoAudioMuted(state);
       if (video && video.muted !== v1Muted) video.muted = v1Muted;
 
       audioPreview.sync(
@@ -382,8 +383,9 @@ function MobilePreview({ wrapRef }: { wrapRef: React.RefObject<HTMLDivElement | 
             }
           }
         }
-        if (video.muted !== state.trackStates.V1.muted) {
-          video.muted = state.trackStates.V1.muted;
+        const v1Muted = isBaseVideoAudioMuted(state);
+        if (video.muted !== v1Muted) {
+          video.muted = v1Muted;
         }
       }
       handleFrame();

@@ -23,6 +23,8 @@ type Entry = {
   recoveredUrl: string | null;
   /** Recovery attempts, to avoid an infinite error → rebind loop. */
   recoveries: number;
+  /** A play request is in flight; do not repeatedly seek/restart it per frame. */
+  playRequest: Promise<void> | null;
 };
 
 const MAX_RECOVERIES = 2;
@@ -54,7 +56,12 @@ class AudioPreview {
           sourceUrl: track.url,
           recoveredUrl: null,
           recoveries: 0,
+          playRequest: null,
         };
+        // These elements use the browser's normal media output, rather than a
+        // Web Audio graph. Keep them explicitly unmuted; routing decisions are
+        // represented by pausing an inactive track and setting its volume.
+        el.muted = false;
         el.addEventListener("error", () => this.recover(track.id));
         this.entries.set(track.id, entry);
       } else {
@@ -82,16 +89,25 @@ class AudioPreview {
       el.volume = Math.min(Math.max(track.volume, 0), 1) * this.fadeGain(track, localTime);
 
       if (audible) {
-        if (el.paused) {
+        if (el.muted) el.muted = false;
+        if (el.paused && !entry.playRequest) {
           this.seek(el, localTime);
-          void el.play().catch(() => {
-            // Autoplay/policy rejection: the next frame retries.
+          const request = el
+            .play()
+            .catch(() => {
+              // A policy rejection can be retried on the next user-triggered
+              // play; avoid a per-frame retry loop after the gesture expires.
+            })
+          entry.playRequest = request;
+          void request.finally(() => {
+            if (entry.playRequest === request) entry.playRequest = null;
           });
-        } else if (Math.abs(el.currentTime - localTime) > 0.25) {
+        } else if (!el.paused && Math.abs(el.currentTime - localTime) > 0.25) {
           this.seek(el, localTime);
         }
       } else if (!el.paused) {
         el.pause();
+        entry.playRequest = null;
       }
     }
   }
