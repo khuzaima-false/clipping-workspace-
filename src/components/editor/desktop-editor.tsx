@@ -83,6 +83,7 @@ import {
   isCaptureSupported,
   startCapture,
   type ActiveCapture,
+  type CaptureAudioReport,
   type CaptureKind,
 } from "@/lib/recorder";
 import { CAPTION_LANGUAGES, type CaptionLanguageId } from "@/lib/transcribe";
@@ -263,12 +264,31 @@ function ScreenCamRecorder() {
   const captureRef = useRef<ActiveCapture | null>(null);
   const [recording, setRecording] = useState<CaptureKind | null>(null);
   const [seconds, setSeconds] = useState(0);
+  const [level, setLevel] = useState(0);
+  const [audio, setAudio] = useState<CaptureAudioReport | null>(null);
+  const [useMic, setUseMic] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!recording) return;
     const id = window.setInterval(() => setSeconds((value) => value + 1), 1000);
     return () => window.clearInterval(id);
+  }, [recording]);
+
+  // Live input meter so the user can confirm audio is actually being captured
+  // *before* they record a silent take.
+  useEffect(() => {
+    if (!recording) {
+      setLevel(0);
+      return;
+    }
+    let raf = 0;
+    const tick = () => {
+      setLevel(captureRef.current?.getLevel?.() ?? 0);
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
   }, [recording]);
 
   const stop = async () => {
@@ -288,15 +308,19 @@ function ScreenCamRecorder() {
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Recording failed.");
+    } finally {
+      setAudio(null);
     }
   };
 
   const start = async (kind: CaptureKind) => {
     setError(null);
+    setAudio(null);
     setSeconds(0);
     try {
-      const active = await startCapture(kind);
+      const active = await startCapture(kind, { microphone: useMic });
       captureRef.current = active;
+      setAudio(active.audio);
       setRecording(kind);
       if (videoRef.current && kind !== "voice") {
         videoRef.current.srcObject = active.stream;
@@ -313,12 +337,14 @@ function ScreenCamRecorder() {
   useEffect(() => () => captureRef.current?.cancel(), []);
 
   const supported = isCaptureSupported("screen") || isCaptureSupported("webcam");
+  const silentVideo = recording !== null && recording !== "voice" && audio?.hasAudio === false;
 
   return (
     <div className="space-y-3">
       <p className="text-[10px] leading-4 text-zinc-500">
         Record your screen or webcam and drop the result straight into the media
-        bin — ready for the timeline.
+        bin — ready for the timeline. Screen recordings mix in your microphone so
+        they always carry narration.
       </p>
       {!supported && (
         <p className="text-[10px] text-amber-300">
@@ -328,6 +354,68 @@ function ScreenCamRecorder() {
       <div className="overflow-hidden rounded-xl border border-zinc-800 bg-black">
         <video ref={videoRef} muted playsInline className="aspect-video w-full object-contain" />
       </div>
+
+      {/* Live audio meter — proves the mic/system audio is actually being captured. */}
+      <div className="space-y-1">
+        <div className="flex items-center justify-between text-[10px] text-zinc-500">
+          <span>Input level</span>
+          <span className="tabular-nums">{Math.round(level * 100)}%</span>
+        </div>
+        <div className="h-1.5 overflow-hidden rounded-full bg-zinc-800">
+          <div
+            className={cn(
+              "h-full rounded-full transition-[width] duration-75",
+              level > 0.02 ? "bg-emerald-400" : "bg-zinc-700"
+            )}
+            style={{ width: `${Math.max(2, Math.round(level * 100))}%` }}
+          />
+        </div>
+      </div>
+
+      <label className="flex items-center gap-2 text-[11px] text-zinc-300">
+        <input
+          type="checkbox"
+          checked={useMic}
+          disabled={!!recording}
+          onChange={(e) => setUseMic(e.target.checked)}
+          className="accent-violet-500"
+        />
+        Capture microphone (narration)
+      </label>
+
+      {audio && (
+        <div className="flex flex-wrap gap-1.5 text-[10px]">
+          <span
+            className={cn(
+              "rounded-full px-2 py-0.5",
+              audio.hasMic ? "bg-emerald-500/15 text-emerald-300" : "bg-zinc-800 text-zinc-500"
+            )}
+          >
+            {audio.hasMic ? "Microphone ✓" : "Microphone ✕"}
+          </span>
+          {recording === "screen" && (
+            <span
+              className={cn(
+                "rounded-full px-2 py-0.5",
+                audio.hasSystemAudio
+                  ? "bg-emerald-500/15 text-emerald-300"
+                  : "bg-zinc-800 text-zinc-500"
+              )}
+            >
+              {audio.hasSystemAudio ? "Tab audio ✓" : "Tab audio ✕"}
+            </span>
+          )}
+        </div>
+      )}
+
+      {silentVideo && (
+        <p className="text-[10px] leading-4 text-amber-300">
+          This recording has no audio tracks. Enable “Capture microphone”, or when
+          sharing a <span className="font-medium">Chrome tab</span> tick
+          &ldquo;Also share tab audio&rdquo; in the picker.
+        </p>
+      )}
+
       <div className="grid grid-cols-2 gap-2">
         <button
           type="button"
