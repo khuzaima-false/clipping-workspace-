@@ -884,8 +884,9 @@ export function MobileEditor() {
       setVoiceLevel(0);
       if (!current) return;
       try {
-        const blob = await current.capture.stop();
+        const result = await current.capture.stop();
         current.meter?.close();
+        const blob = result.audio ?? result.video;
         if (blob && blob.size > 0) {
           await addAudioTrackFromBlob(blob, `Voiceover ${new Date().toLocaleTimeString()}`);
         }

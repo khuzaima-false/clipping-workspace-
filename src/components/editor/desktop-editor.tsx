@@ -260,6 +260,7 @@ function ColorWheel({
 /* ------------------------------------------------------------------ */
 function ScreenCamRecorder() {
   const addVideoAssets = useEditorStore((s) => s.addVideoAssets);
+  const addAudioTrackFromBlob = useEditorStore((s) => s.addAudioTrackFromBlob);
   const videoRef = useRef<HTMLVideoElement>(null);
   const captureRef = useRef<ActiveCapture | null>(null);
   const [recording, setRecording] = useState<CaptureKind | null>(null);
@@ -268,6 +269,7 @@ function ScreenCamRecorder() {
   const [audio, setAudio] = useState<CaptureAudioReport | null>(null);
   const [useMic, setUseMic] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [micWarning, setMicWarning] = useState<string | null>(null);
 
   useEffect(() => {
     if (!recording) return;
@@ -296,13 +298,43 @@ function ScreenCamRecorder() {
     if (videoRef.current) videoRef.current.srcObject = null;
     if (!active) return;
     try {
-      const blob = await active.stop();
-      if (blob && blob.size > 0) {
-        const extension = blob.type.includes("mp4") ? "mp4" : "webm";
-        const file = new File([blob], `recording-${Date.now()}.${extension}`, {
-          type: blob.type || "video/webm",
+      const result = await active.stop();
+      const stamp = Date.now();
+
+      // 1. Video-only clip into the media bin / timeline.
+      let clipStart = 0;
+      if (result.video && result.video.size > 0) {
+        const before = new Set(useEditorStore.getState().sequence.map((c) => c.id));
+        const file = new File([result.video], `recording-${stamp}.webm`, {
+          type: result.video.type || "video/webm",
         });
         await addVideoAssets([file]);
+        const state = useEditorStore.getState();
+        const added = state.sequence.find((clip) => !before.has(clip.id));
+        if (added) {
+          clipStart =
+            computeClipStarts(state.sequence).find((b) => b.clip.id === added.id)
+              ?.start ?? 0;
+        }
+      }
+
+      // 2. The captured audio becomes a real timeline track (A1/A2/A3) with a
+      //    decoded waveform, so it plays in the preview *and* the export.
+      if (result.audio && result.audio.size > 0) {
+        const before = new Set(
+          useEditorStore.getState().audioTracks.map((t) => t.id)
+        );
+        const audioFile = new File([result.audio], `recording-${stamp}.webm`, {
+          type: result.audio.type || "audio/webm",
+        });
+        await addAudioTrackFromBlob(audioFile, `Recording audio ${new Date(stamp).toLocaleTimeString()}`);
+        const state = useEditorStore.getState();
+        const added = state.audioTracks.find((track) => !before.has(track.id));
+        if (added) state.moveAudioTrackTo(added.id, clipStart);
+      }
+
+      if ((!result.video || result.video.size === 0) && (!result.audio || result.audio.size === 0)) {
+        setError("Nothing was recorded — try again.");
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Recording failed.");
@@ -313,6 +345,7 @@ function ScreenCamRecorder() {
 
   const start = async (kind: CaptureKind) => {
     setError(null);
+    setMicWarning(null);
     setAudio(null);
     setSeconds(0);
     setLevel(0);
@@ -320,6 +353,7 @@ function ScreenCamRecorder() {
       const active = await startCapture(kind, { microphone: useMic });
       captureRef.current = active;
       setAudio(active.audio);
+      if (active.audio.micError) setMicWarning(active.audio.micError);
       setRecording(kind);
       if (videoRef.current && kind !== "voice") {
         videoRef.current.srcObject = active.stream;
@@ -341,9 +375,9 @@ function ScreenCamRecorder() {
   return (
     <div className="space-y-3">
       <p className="text-[10px] leading-4 text-zinc-500">
-        Record your screen or webcam and drop the result straight into the media
-        bin — ready for the timeline. Screen recordings mix in your microphone so
-        they always carry narration.
+        Record your screen or webcam and drop the result straight into the
+        timeline. Audio is captured separately and placed on its own track, so it
+        always plays back and exports.
       </p>
       {!supported && (
         <p className="text-[10px] text-amber-300">
@@ -405,6 +439,15 @@ function ScreenCamRecorder() {
             </span>
           )}
         </div>
+      )}
+
+      {micWarning && (
+        <p
+          role="alert"
+          className="rounded-lg border border-amber-900/60 bg-amber-950/30 px-2 py-1.5 text-[10px] leading-4 text-amber-200"
+        >
+          {micWarning}
+        </p>
       )}
 
       {silentVideo && (
@@ -3387,8 +3430,9 @@ function PremiereTimeline() {
       setVoiceLevel(0);
       if (!current) return;
       try {
-        const blob = await current.capture.stop();
+        const result = await current.capture.stop();
         current.meter?.close();
+        const blob = result.audio ?? result.video;
         if (blob && blob.size > 0) {
           await addAudioTrackFromBlob(blob, `Voiceover ${new Date().toLocaleTimeString()}`);
         }

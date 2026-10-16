@@ -1,37 +1,56 @@
 /**
  * Client-side media recorders built on `MediaRecorder` and `getUserMedia` /
  * `getDisplayMedia`. Everything stays on the device — recordings become local
- * Blobs that feed straight into the editor (media bin, or the A2 audio track).
+ * Blobs that feed straight into the editor (media bin + an audio lane).
  *
- * ## Why recordings used to be silent
+ * ## Why recordings were silent
  *
- * `getDisplayMedia({ audio: true })` only yields a track when the user shares a
- * **browser tab** *and* ticks "Also share tab audio" — sharing a window or the
- * whole screen produces **no audio at all**, and the microphone is never part
- * of a display capture. Screen recordings were therefore silent by default.
+ * Two independent traps made built-in recordings lose their audio:
  *
- * This module now mixes a microphone stream straight into the capture with a
- * Web Audio `MediaStreamAudioDestinationNode`, so:
- *   - screen recordings always carry narration (plus tab audio when granted),
- *   - webcam recordings fall back to video-only instead of failing when no
- *     microphone exists,
- *   - the UI can report exactly what was captured.
+ * 1. `getDisplayMedia({ audio: true })` only yields a track when the user shares
+ *    a **browser tab** *and* ticks “Also share tab audio”. Sharing a window or
+ *    the whole screen produces **no audio at all**, and the microphone is never
+ *    part of a display capture.
+ * 2. Recording one combined `video + audio` stream means a single container has
+ *    to carry both. If the audio half is missing (or comes from a *suspended*
+ *    `AudioContext`, whose destination track is silently empty) the `.webm`
+ *    ends up with a video track and no audible audio.
+ *
+ * The fix is to never rely on a combined container:
+ *   - the **video** is recorded video-only,
+ *   - the **audio** is recorded separately (mic, and system audio mixed in when
+ *     the browser grants it) so it can be attached to its own timeline lane,
+ *   - the mixing `AudioContext` is explicitly `resume()`d before recording so
+ *     its destination stream is never silent,
+ *   - microphone failures are reported instead of swallowed.
  */
 
 export type CaptureKind = "screen" | "webcam" | "voice";
 
 export type CaptureAudioReport = {
-  /** True when the recorded stream contains at least one audio track. */
+  /** True when an audio track was captured (mic and/or system audio). */
   hasAudio: boolean;
-  /** True when a microphone was successfully mixed in. */
+  /** True when the microphone contributed to the recording. */
   hasMic: boolean;
   /** True when the shared tab/screen provided its own audio. */
   hasSystemAudio: boolean;
+  /** Human-readable reason the microphone was unavailable (null when fine). */
+  micError: string | null;
+};
+
+/** What a finished capture produced. */
+export type CaptureResult = {
+  /** Video-only WebM (screen / webcam captures). */
+  video: Blob | null;
+  /** Audio-only WebM/Opus (all captures that had audio). */
+  audio: Blob | null;
 };
 
 export type ActiveCapture = {
-  stop: () => Promise<Blob | null>;
+  /** Stops recording and returns the finalized blobs. */
+  stop: () => Promise<CaptureResult>;
   cancel: () => void;
+  /** Live preview stream for the monitor `<video>` (video + mixed audio). */
   stream: MediaStream;
   /** Resolves when the source ends on its own (e.g. the user stops sharing). */
   ended: Promise<void>;
@@ -57,28 +76,28 @@ const MIC_CONSTRAINTS: MediaTrackConstraints = {
   autoGainControl: true,
 };
 
-function pickMime(kind: CaptureKind, hasAudio: boolean): string {
-  const videoWithAudio = [
-    "video/webm;codecs=vp9,opus",
-    "video/webm;codecs=vp8,opus",
-    "video/webm;codecs=vp9",
-    "video/webm",
-    "video/mp4",
-  ];
-  const videoOnly = [
-    "video/webm;codecs=vp9",
-    "video/webm;codecs=vp8",
-    "video/webm",
-    "video/mp4",
-  ];
-  const audioCandidates = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
+const VIDEO_CONSTRAINTS: MediaTrackConstraints = {
+  width: { ideal: 1920 },
+  height: { ideal: 1080 },
+  frameRate: 30,
+};
+
+const VIDEO_ONLY_CANDIDATES = [
+  "video/webm;codecs=vp9",
+  "video/webm;codecs=vp8",
+  "video/webm",
+  "video/mp4",
+];
+
+const AUDIO_CANDIDATES = [
+  "audio/webm;codecs=opus",
+  "audio/webm",
+  "audio/ogg;codecs=opus",
+  "audio/mp4",
+];
+
+function pickSupported(candidates: string[]): string {
   if (typeof MediaRecorder === "undefined") return "";
-  const candidates =
-    kind === "voice"
-      ? audioCandidates
-      : hasAudio
-        ? videoWithAudio
-        : videoOnly;
   for (const candidate of candidates) {
     if (MediaRecorder.isTypeSupported(candidate)) return candidate;
   }
@@ -92,60 +111,58 @@ export function isCaptureSupported(kind: CaptureKind): boolean {
   return typeof navigator.mediaDevices.getUserMedia === "function";
 }
 
-/** Merges a display stream (video ± system audio) with an optional mic stream. */
-function mergeStreams(
-  display: MediaStream,
-  mic: MediaStream | null
-): { stream: MediaStream; cleanup: () => void; hasMic: boolean; hasSystemAudio: boolean } {
-  const videoTracks = display.getVideoTracks();
-  const systemTracks = display.getAudioTracks();
-  const micTracks = mic?.getAudioTracks() ?? [];
-  const hasMic = micTracks.length > 0;
-  const hasSystemAudio = systemTracks.length > 0;
-
-  // No mic (or the browser can't do Web Audio): keep whatever we were given.
-  if (!hasMic || typeof AudioContext === "undefined") {
-    return {
-      stream: new MediaStream([...videoTracks, ...systemTracks, ...micTracks]),
-      cleanup: () => {},
-      hasMic,
-      hasSystemAudio,
-    };
+/** Turns a `getUserMedia` failure into an actionable message. */
+function describeMicError(error: unknown): string {
+  const name = error instanceof DOMException ? error.name : "";
+  if (name === "NotAllowedError" || name === "SecurityError") {
+    return "Microphone access was blocked. Click the camera/mic icon in the address bar and allow it, then record again.";
   }
+  if (name === "NotFoundError" || name === "OverconstrainedError") {
+    return "No microphone was found on this device.";
+  }
+  if (name === "NotReadableError") {
+    return "The microphone is busy in another app.";
+  }
+  return error instanceof Error && error.message
+    ? error.message
+    : "Microphone could not be started.";
+}
 
-  // Mix system audio + microphone into one destination track.
-  const context = new AudioContext();
-  const destination = context.createMediaStreamDestination();
-  const nodes: MediaStreamAudioSourceNode[] = [];
-  const connect = (source: MediaStream) => {
-    if (source.getAudioTracks().length === 0) return;
-    const node = context.createMediaStreamSource(source);
-    node.connect(destination);
-    nodes.push(node);
-  };
-  connect(new MediaStream(systemTracks));
-  connect(new MediaStream(micTracks));
-
+/** Wraps a stream in a MediaRecorder and resolves with its blob on stop. */
+function createRecorder(stream: MediaStream, mimeType: string) {
+  const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+  const chunks: BlobPart[] = [];
+  recorder.addEventListener("dataavailable", (event) => {
+    if (event.data.size > 0) chunks.push(event.data);
+  });
+  const stopped = new Promise<void>((resolve) => {
+    recorder.addEventListener("stop", () => resolve(), { once: true });
+  });
   return {
-    stream: new MediaStream([...videoTracks, ...destination.stream.getAudioTracks()]),
-    cleanup: () => {
-      for (const node of nodes) {
-        try {
-          node.disconnect();
-        } catch {
-          // Already torn down.
-        }
-      }
-      void context.close().catch(() => {});
+    start: () => recorder.start(250),
+    finish: async (): Promise<Blob | null> => {
+      if (recorder.state !== "inactive") recorder.stop();
+      await stopped;
+      if (chunks.length === 0) return null;
+      return new Blob(chunks, {
+        type:
+          mimeType ||
+          (stream.getVideoTracks().length > 0 ? "video/webm" : "audio/webm"),
+      });
     },
-    hasMic,
-    hasSystemAudio,
+    cancel: () => {
+      try {
+        if (recorder.state !== "inactive") recorder.stop();
+      } catch {
+        // Already stopped.
+      }
+    },
   };
 }
 
 /**
  * Starts capturing a screen, webcam or microphone. Resolves with an active
- * capture handle whose `stop()` returns the recorded Blob.
+ * capture handle whose `stop()` returns the finalized video/audio blobs.
  */
 export async function startCapture(
   kind: CaptureKind,
@@ -154,10 +171,10 @@ export async function startCapture(
   if (!navigator.mediaDevices) throw new Error("Media capture is not supported here.");
 
   const owned: MediaStream[] = [];
-  let stream: MediaStream;
-  let cleanupMix: () => void = () => {};
-  let hasMic = false;
-  let hasSystemAudio = false;
+  let videoTracks: MediaStreamTrack[] = [];
+  let micStream: MediaStream | null = null;
+  let systemStream: MediaStream | null = null;
+  let micError: string | null = null;
 
   if (kind === "screen") {
     const display = await navigator.mediaDevices.getDisplayMedia({
@@ -166,105 +183,157 @@ export async function startCapture(
       audio: true,
     });
     owned.push(display);
+    videoTracks = display.getVideoTracks();
+    const systemTracks = display.getAudioTracks();
+    if (systemTracks.length > 0) systemStream = new MediaStream(systemTracks);
 
-    // Always try to add narration so a plain screen share isn't silent.
-    let mic: MediaStream | null = null;
     if (options.microphone !== false) {
       try {
-        mic = await navigator.mediaDevices.getUserMedia({ audio: MIC_CONSTRAINTS });
-        owned.push(mic);
-      } catch {
-        mic = null;
+        micStream = await navigator.mediaDevices.getUserMedia({ audio: MIC_CONSTRAINTS });
+        owned.push(micStream);
+      } catch (error) {
+        micStream = null;
+        micError = describeMicError(error);
       }
     }
-
-    const merged = mergeStreams(display, mic);
-    stream = merged.stream;
-    cleanupMix = merged.cleanup;
-    hasMic = merged.hasMic;
-    hasSystemAudio = merged.hasSystemAudio;
   } else if (kind === "webcam") {
+    // One call requesting BOTH tracks at once, exactly as the browser expects.
     try {
       const cam = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: 30 },
+        video: VIDEO_CONSTRAINTS,
         audio: MIC_CONSTRAINTS,
       });
       owned.push(cam);
-      stream = cam;
-      hasMic = cam.getAudioTracks().length > 0;
+      videoTracks = cam.getVideoTracks();
+      const micTracks = cam.getAudioTracks();
+      if (micTracks.length > 0) micStream = new MediaStream(micTracks);
+      else micError = "This camera feed has no microphone channel.";
     } catch (error) {
-      // A machine without a microphone throws NotFoundError for {audio:true} —
-      // fall back to a silent camera feed instead of failing the recording.
       const name = error instanceof DOMException ? error.name : "";
       if (name !== "NotFoundError" && name !== "OverconstrainedError") throw error;
+      // No microphone on this machine: still allow a silent camera take.
+      micError = describeMicError(error);
       const cam = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: 30 },
+        video: VIDEO_CONSTRAINTS,
       });
       owned.push(cam);
-      stream = cam;
-      hasMic = false;
+      videoTracks = cam.getVideoTracks();
     }
   } else {
     const mic = await navigator.mediaDevices.getUserMedia({ audio: MIC_CONSTRAINTS });
     owned.push(mic);
-    stream = mic;
-    hasMic = mic.getAudioTracks().length > 0;
+    micStream = mic;
   }
 
-  const hasAudio = stream.getAudioTracks().length > 0;
-  const mimeType = pickMime(kind, hasAudio);
-  const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
-  const chunks: BlobPart[] = [];
-  recorder.addEventListener("dataavailable", (event) => {
-    if (event.data.size > 0) chunks.push(event.data);
-  });
+  // --- Build the audio source -------------------------------------------
+  // Mic only → record the mic directly (most reliable). Mic + tab audio →
+  // mix through an AudioContext whose context is explicitly resumed, because a
+  // *suspended* context produces a silent destination track.
+  const micTracks = micStream?.getAudioTracks() ?? [];
+  const systemTracks = systemStream?.getAudioTracks() ?? [];
+  const mixNodes: MediaStreamAudioSourceNode[] = [];
+  let mixContext: AudioContext | null = null;
+  let audioStream: MediaStream | null = null;
 
-  const stopped = new Promise<void>((resolve) => {
-    recorder.addEventListener("stop", () => resolve(), { once: true });
-  });
+  if (micTracks.length > 0 && systemTracks.length > 0) {
+    mixContext = new AudioContext();
+    try {
+      await mixContext.resume();
+    } catch {
+      // Autoplay policy; the first gesture should already have unlocked it.
+    }
+    const destination = mixContext.createMediaStreamDestination();
+    for (const source of [micStream, systemStream]) {
+      if (!source) continue;
+      const node = mixContext.createMediaStreamSource(source);
+      node.connect(destination);
+      mixNodes.push(node);
+    }
+    audioStream = destination.stream;
+  } else if (micTracks.length > 0) {
+    audioStream = new MediaStream(micTracks);
+  } else if (systemTracks.length > 0) {
+    audioStream = new MediaStream(systemTracks);
+  }
+
+  const hasMic = micTracks.length > 0;
+  const hasSystemAudio = systemTracks.length > 0;
+  const hasAudio = hasMic || hasSystemAudio;
+
+  // --- Recorders ---------------------------------------------------------
+  // Screen/webcam record VIDEO ONLY; the audio gets its own recorder so it can
+  // also be attached to a timeline audio lane. Voice records audio only.
+  const isVoice = kind === "voice";
+  const videoStream = videoTracks.length > 0 ? new MediaStream(videoTracks) : null;
+
+  const primaryStream = isVoice ? audioStream : videoStream;
+  if (!primaryStream) throw new Error("Nothing to record — no media tracks were granted.");
+
+  const primaryMime = isVoice
+    ? pickSupported(AUDIO_CANDIDATES)
+    : pickSupported(VIDEO_ONLY_CANDIDATES);
+  const primary = createRecorder(primaryStream, primaryMime);
+
+  const secondary =
+    !isVoice && audioStream
+      ? createRecorder(audioStream, pickSupported(AUDIO_CANDIDATES))
+      : null;
+
+  primary.start();
+  secondary?.start();
+
+  const previewStream = new MediaStream([
+    ...videoTracks,
+    ...(audioStream?.getAudioTracks() ?? []),
+  ]);
 
   const trackEnded = new Promise<void>((resolve) => {
-    for (const track of stream.getTracks()) {
+    for (const track of previewStream.getTracks()) {
       track.addEventListener("ended", () => resolve(), { once: true });
     }
   });
 
-  recorder.start(250);
-
   const teardown = () => {
-    cleanupMix();
+    for (const node of mixNodes) {
+      try {
+        node.disconnect();
+      } catch {
+        // Already disconnected.
+      }
+    }
+    void mixContext?.close().catch(() => {});
     for (const ownedStream of owned) {
       for (const track of ownedStream.getTracks()) track.stop();
     }
   };
 
-  const stop = async (): Promise<Blob | null> => {
-    if (recorder.state !== "inactive") recorder.stop();
-    await stopped;
+  const stop = async (): Promise<CaptureResult> => {
+    const [primaryBlob, secondaryBlob] = await Promise.all([
+      primary.finish(),
+      secondary ? secondary.finish() : Promise.resolve(null),
+    ]);
     teardown();
-    if (chunks.length === 0) return null;
-    return new Blob(chunks, { type: mimeType || "video/webm" });
+    return isVoice
+      ? { video: null, audio: primaryBlob }
+      : { video: primaryBlob, audio: secondaryBlob };
   };
 
   const cancel = () => {
-    try {
-      if (recorder.state !== "inactive") recorder.stop();
-    } catch {
-      // already stopped
-    }
+    primary.cancel();
+    secondary?.cancel();
     teardown();
   };
 
-  // Meter the mixed output so the user can see the level before recording.
-  const meter = hasAudio ? createLevelMeter(stream) : null;
+  // Meter the audio source directly so the level reflects real input.
+  const meter = audioStream ? createLevelMeter(audioStream) : null;
 
   return {
     stop,
     cancel,
-    stream,
+    stream: previewStream,
     ended: trackEnded,
     kind,
-    audio: { hasAudio, hasMic, hasSystemAudio },
+    audio: { hasAudio, hasMic, hasSystemAudio, micError },
     getLevel: meter ? meter.getLevel : null,
   };
 }
