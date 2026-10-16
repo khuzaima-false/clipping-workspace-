@@ -261,7 +261,6 @@ function ColorWheel({
 /* ------------------------------------------------------------------ */
 function ScreenCamRecorder() {
   const addVideoAssets = useEditorStore((s) => s.addVideoAssets);
-  const addAudioTrackFromBlob = useEditorStore((s) => s.addAudioTrackFromBlob);
   const videoRef = useRef<HTMLVideoElement>(null);
   const captureRef = useRef<ActiveCapture | null>(null);
   const [recording, setRecording] = useState<CaptureKind | null>(null);
@@ -302,39 +301,16 @@ function ScreenCamRecorder() {
       const result = await active.stop();
       const stamp = Date.now();
 
-      // 1. Video-only clip into the media bin / timeline.
-      let clipStart = 0;
+      // The recorder returns one WebM containing both video and audio, so this
+      // becomes a normal V1 clip and must not create a duplicate A-lane track.
       if (result.video && result.video.size > 0) {
-        const before = new Set(useEditorStore.getState().sequence.map((c) => c.id));
         const file = new File([result.video], `recording-${stamp}.webm`, {
           type: result.video.type || "video/webm",
         });
         await addVideoAssets([file]);
-        const state = useEditorStore.getState();
-        const added = state.sequence.find((clip) => !before.has(clip.id));
-        if (added) {
-          clipStart =
-            computeClipStarts(state.sequence).find((b) => b.clip.id === added.id)
-              ?.start ?? 0;
-        }
       }
 
-      // 2. The captured audio becomes a real timeline track (A1/A2/A3) with a
-      //    decoded waveform, so it plays in the preview *and* the export.
-      if (result.audio && result.audio.size > 0) {
-        const before = new Set(
-          useEditorStore.getState().audioTracks.map((t) => t.id)
-        );
-        const audioFile = new File([result.audio], `recording-${stamp}.webm`, {
-          type: result.audio.type || "audio/webm",
-        });
-        await addAudioTrackFromBlob(audioFile, `Recording audio ${new Date(stamp).toLocaleTimeString()}`);
-        const state = useEditorStore.getState();
-        const added = state.audioTracks.find((track) => !before.has(track.id));
-        if (added) state.moveAudioTrackTo(added.id, clipStart);
-      }
-
-      if ((!result.video || result.video.size === 0) && (!result.audio || result.audio.size === 0)) {
+      if (!result.video || result.video.size === 0) {
         setError("Nothing was recorded — try again.");
       }
     } catch (err) {
@@ -377,8 +353,7 @@ function ScreenCamRecorder() {
     <div className="space-y-3">
       <p className="text-[10px] leading-4 text-zinc-500">
         Record your screen or webcam and drop the result straight into the
-        timeline. Audio is captured separately and placed on its own track, so it
-        always plays back and exports.
+        timeline as one video-and-audio clip.
       </p>
       {!supported && (
         <p className="text-[10px] text-amber-300">

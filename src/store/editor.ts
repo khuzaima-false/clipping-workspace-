@@ -2264,6 +2264,7 @@ export const useEditorStore = create<EditorState>()(
       unlockAudio();
       set({ playing: true });
       videoEl.muted = isBaseVideoAudioMuted(get());
+      videoEl.volume = Math.min(Math.max(get().volume, 0), 1);
       audioPreview.sync(effectiveAudioTracks(get()), videoEl.currentTime, true);
       videoEl.play().catch(() => {
         if (get().videoEl === videoEl) set({ playing: false });

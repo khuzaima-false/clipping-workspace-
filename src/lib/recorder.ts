@@ -1,28 +1,10 @@
 /**
  * Client-side media recorders built on `MediaRecorder` and `getUserMedia` /
  * `getDisplayMedia`. Everything stays on the device — recordings become local
- * Blobs that feed straight into the editor (media bin + an audio lane).
- *
- * ## Why recordings were silent
- *
- * Two independent traps made built-in recordings lose their audio:
- *
- * 1. `getDisplayMedia({ audio: true })` only yields a track when the user shares
- *    a **browser tab** *and* ticks “Also share tab audio”. Sharing a window or
- *    the whole screen produces **no audio at all**, and the microphone is never
- *    part of a display capture.
- * 2. Recording one combined `video + audio` stream means a single container has
- *    to carry both. If the audio half is missing (or comes from a *suspended*
- *    `AudioContext`, whose destination track is silently empty) the `.webm`
- *    ends up with a video track and no audible audio.
- *
- * The fix is to never rely on a combined container:
- *   - the **video** is recorded video-only,
- *   - the **audio** is recorded separately (mic, and system audio mixed in when
- *     the browser grants it) so it can be attached to its own timeline lane,
- *   - the mixing `AudioContext` is explicitly `resume()`d before recording so
- *     its destination stream is never silent,
- *   - microphone failures are reported instead of swallowed.
+ * Blobs that feed straight into the editor. Screen and webcam recordings use a
+ * single WebM container with their video and mixed audio tracks together, so
+ * they behave exactly like an imported video on V1. Voiceovers remain audio
+ * only, because they intentionally belong on an A lane.
  */
 
 export type CaptureKind = "screen" | "webcam" | "voice";
@@ -40,9 +22,9 @@ export type CaptureAudioReport = {
 
 /** What a finished capture produced. */
 export type CaptureResult = {
-  /** Video-only WebM (screen / webcam captures). */
+  /** Combined video + audio WebM (screen / webcam captures). */
   video: Blob | null;
-  /** Audio-only WebM/Opus (all captures that had audio). */
+  /** Audio-only WebM/Opus (voice captures only). */
   audio: Blob | null;
 };
 
@@ -82,11 +64,10 @@ const VIDEO_CONSTRAINTS: MediaTrackConstraints = {
   frameRate: 30,
 };
 
-const VIDEO_ONLY_CANDIDATES = [
-  "video/webm;codecs=vp9",
-  "video/webm;codecs=vp8",
+const VIDEO_CANDIDATES = [
+  "video/webm;codecs=vp9,opus",
+  "video/webm;codecs=vp8,opus",
   "video/webm",
-  "video/mp4",
 ];
 
 const AUDIO_CANDIDATES = [
@@ -162,7 +143,8 @@ function createRecorder(stream: MediaStream, mimeType: string) {
 
 /**
  * Starts capturing a screen, webcam or microphone. Resolves with an active
- * capture handle whose `stop()` returns the finalized video/audio blobs.
+ * capture handle whose `stop()` returns the finalized combined video/audio
+ * blob (or an audio-only blob for voiceover capture).
  */
 export async function startCapture(
   kind: CaptureKind,
@@ -260,27 +242,28 @@ export async function startCapture(
   const hasSystemAudio = systemTracks.length > 0;
   const hasAudio = hasMic || hasSystemAudio;
 
-  // --- Recorders ---------------------------------------------------------
-  // Screen/webcam record VIDEO ONLY; the audio gets its own recorder so it can
-  // also be attached to a timeline audio lane. Voice records audio only.
+  // --- Recorder ----------------------------------------------------------
+  // Screen/webcam use one MediaStream containing both video and mixed audio,
+  // which MediaRecorder writes into one WebM container. Do not split the
+  // tracks: the editor previews this as ordinary V1 media. Voice is the only
+  // intentionally audio-only capture.
   const isVoice = kind === "voice";
-  const videoStream = videoTracks.length > 0 ? new MediaStream(videoTracks) : null;
-
-  const primaryStream = isVoice ? audioStream : videoStream;
+  const primaryStream = isVoice
+    ? audioStream
+    : videoTracks.length > 0
+      ? new MediaStream([...videoTracks, ...(audioStream?.getAudioTracks() ?? [])])
+      : null;
   if (!primaryStream) throw new Error("Nothing to record — no media tracks were granted.");
 
   const primaryMime = isVoice
     ? pickSupported(AUDIO_CANDIDATES)
-    : pickSupported(VIDEO_ONLY_CANDIDATES);
+    : pickSupported(VIDEO_CANDIDATES);
+  if (!isVoice && !primaryMime) {
+    throw new Error("This browser cannot record a WebM video with audio.");
+  }
   const primary = createRecorder(primaryStream, primaryMime);
 
-  const secondary =
-    !isVoice && audioStream
-      ? createRecorder(audioStream, pickSupported(AUDIO_CANDIDATES))
-      : null;
-
   primary.start();
-  secondary?.start();
 
   const previewStream = new MediaStream([
     ...videoTracks,
@@ -308,19 +291,15 @@ export async function startCapture(
   };
 
   const stop = async (): Promise<CaptureResult> => {
-    const [primaryBlob, secondaryBlob] = await Promise.all([
-      primary.finish(),
-      secondary ? secondary.finish() : Promise.resolve(null),
-    ]);
+    const primaryBlob = await primary.finish();
     teardown();
     return isVoice
       ? { video: null, audio: primaryBlob }
-      : { video: primaryBlob, audio: secondaryBlob };
+      : { video: primaryBlob, audio: null };
   };
 
   const cancel = () => {
     primary.cancel();
-    secondary?.cancel();
     teardown();
   };
 
