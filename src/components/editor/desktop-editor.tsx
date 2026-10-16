@@ -278,10 +278,7 @@ function ScreenCamRecorder() {
   // Live input meter so the user can confirm audio is actually being captured
   // *before* they record a silent take.
   useEffect(() => {
-    if (!recording) {
-      setLevel(0);
-      return;
-    }
+    if (!recording) return;
     let raf = 0;
     const tick = () => {
       setLevel(captureRef.current?.getLevel?.() ?? 0);
@@ -295,6 +292,7 @@ function ScreenCamRecorder() {
     const active = captureRef.current;
     captureRef.current = null;
     setRecording(null);
+    setLevel(0);
     if (videoRef.current) videoRef.current.srcObject = null;
     if (!active) return;
     try {
@@ -317,6 +315,7 @@ function ScreenCamRecorder() {
     setError(null);
     setAudio(null);
     setSeconds(0);
+    setLevel(0);
     try {
       const active = await startCapture(kind, { microphone: useMic });
       captureRef.current = active;
