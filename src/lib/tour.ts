@@ -64,8 +64,8 @@ const LEFT_STEPS: TourStep[] = [
   {
     target: "left-panel-body",
     open: "tab-properties",
-    title: "Props — overlay text, keyframes & AI",
-    body: "Select a text or image overlay to edit its text, font, fill/background colour, alignment, size, position, rotation and opacity. Add keyframes at the playhead to animate scale/position/opacity (the renderer interpolates between them), run AI background removal, and tune the global caption animation (pop, bounce, karaoke, typewriter, neon) with word-highlight and outline toggles.",
+    title: "Props — overlay text, keyframes, motion & AI",
+    body: "Select a text or image overlay to edit its text, font, fill/background colour, alignment, size, position, rotation and opacity. Add keyframes at the playhead to animate scale/position/opacity (the renderer interpolates between them), pick an in/out Motion preset (Typewriter, Drop-in, Bounce, Fade Spin, Slide Up), run AI background removal, and tune the global caption animation (pop, bounce, karaoke, typewriter, neon) with word-highlight and outline toggles.",
     placement: "right",
   },
   {
@@ -85,8 +85,8 @@ const LEFT_STEPS: TourStep[] = [
   {
     target: "left-panel-body",
     open: "tab-captions",
-    title: "Captions — on-device AI & styles",
-    body: "Choose the spoken language and auto-generate AI captions on-device (with a live progress bar), or type/dictate a script and generate timed captions from it. 23 caption styles are one click away, and you can clear the AI captions at any time.",
+    title: "Captions — AI captions, styles & the transcript",
+    body: "Choose the spoken language and auto-generate AI captions on-device (with a live progress bar), or type/dictate a script and generate timed captions from it. 23 caption styles are one click away. Once AI captions exist you get an editable Transcript: click words to select them and hit “Delete & ripple” to cut that exact range out of the clip while every caption stays in sync.",
     placement: "right",
   },
   {
@@ -260,9 +260,16 @@ const MONITOR_STEPS: TourStep[] = [
   },
   {
     target: "save-indicator",
-    title: "Autosave status",
-    body: "Every edit is saved to your device automatically. The dot pulses amber while saving and settles green once it's stored.",
+    title: "Autosave checkpoints",
+    body: "Your project is checkpointed to IndexedDB automatically — a debounced save after every edit, plus a 60-second heartbeat — and the playhead is restored if the tab ever crashes. This dot shows the live state: grey “Unsaved changes”, pulsing amber “Auto-saving…”, green “All changes saved”.",
     placement: "bottom",
+  },
+  {
+    target: "storage-button",
+    title: "Storage & cache",
+    body: "Open the storage utility to see how much of your browser quota Forgevyn is using, with a breakdown of media blobs, project autosaves and source backups. From there you can clear unused cache, purge project blobs or delete old checkpoints — all failure-safe.",
+    placement: "bottom",
+    advanceOnClick: true,
   },
   {
     target: "export-resolution",

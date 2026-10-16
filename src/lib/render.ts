@@ -17,6 +17,7 @@ import {
   DEFAULT_COLOR_ADJUSTMENTS,
 } from "@/store/editor";
 import type { TransitionType } from "@/lib/video-storage";
+import { resolveMotion } from "@/lib/motion-presets";
 
 /** Target output resolution for each supported aspect ratio (1080p-class). */
 export const ASPECT_RESOLUTIONS: Record<
@@ -1298,8 +1299,35 @@ function drawOverlay(
   style: CaptionStyle
 ): void {
   const transform = resolveOverlayTransform(overlay, sceneTime);
+  const motion = resolveMotion(
+    overlay.motion,
+    sceneTime - overlay.startTime,
+    Math.max(0.0001, overlay.endTime - overlay.startTime)
+  );
+  const motionActive =
+    motion.alpha < 1 ||
+    motion.offsetXRatio !== 0 ||
+    motion.offsetYRatio !== 0 ||
+    motion.rotation !== 0 ||
+    motion.scale !== 1;
+
   if (overlay.imageSrc) {
+    if (!motionActive) {
+      drawImageOverlay(ctx, overlay, width, height, transform);
+      return;
+    }
+    // Image overlays get the same in/out motion, wrapped around their anchor.
+    const ax = (transform.x / 100) * width;
+    const ay = (transform.y / 100) * height;
+    ctx.save();
+    if (motion.alpha < 1) ctx.globalAlpha *= Math.max(0, motion.alpha);
+    ctx.translate(motion.offsetXRatio * width, motion.offsetYRatio * height);
+    ctx.translate(ax, ay);
+    if (motion.rotation) ctx.rotate((motion.rotation * Math.PI) / 180);
+    ctx.scale(motion.scale, motion.scale);
+    ctx.translate(-ax, -ay);
     drawImageOverlay(ctx, overlay, width, height, transform);
+    ctx.restore();
     return;
   }
   const text = overlay.text.trim();
@@ -1384,6 +1412,25 @@ function drawOverlay(
       ctx.scale(scale, scale);
       ctx.translate(-cx, -cy);
     }
+  }
+
+  // In/out motion preset (runs on top of the caption block animation).
+  if (motion.alpha < 1) ctx.globalAlpha *= Math.max(0, motion.alpha);
+  if (
+    motion.offsetXRatio !== 0 ||
+    motion.offsetYRatio !== 0 ||
+    motion.rotation !== 0 ||
+    motion.scale !== 1
+  ) {
+    const mcx = boxX + boxW / 2;
+    const mcy = boxY + boxH / 2;
+    ctx.translate(
+      mcx + motion.offsetXRatio * width,
+      mcy + motion.offsetYRatio * height
+    );
+    if (motion.rotation) ctx.rotate((motion.rotation * Math.PI) / 180);
+    ctx.scale(motion.scale, motion.scale);
+    ctx.translate(-mcx, -mcy);
   }
 
   if (overlay.bgColor) {
@@ -1472,6 +1519,13 @@ function drawOverlay(
         offsetY = Math.sin(sceneTime * 4 + wordCounter * 0.9) * 5;
       } else if (anim === "outlinePulse") {
         wordStroke = strokeWidth + Math.max(0, Math.sin(sceneTime * 6)) * 3;
+      }
+
+      // Typewriter motion preset: hide words the reveal hasn't reached yet.
+      if (overlay.motion === "typewriter" && motion.reveal < 1) {
+        const totalWords = Math.max(1, textWords.length);
+        const visible = Math.max(0, Math.ceil(motion.reveal * totalWords));
+        if (wordCounter >= visible) alpha = 0;
       }
 
       // Chromatic fringe for the glitch look.

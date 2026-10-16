@@ -20,6 +20,7 @@ import {
 } from "@/lib/media-storage";
 import { renderSoundEffect, SOUND_EFFECTS, type SoundEffectId } from "@/lib/sfx";
 import { audioPreview } from "@/lib/audio-preview";
+import { type MotionPresetId } from "@/lib/motion-presets";
 import {
   AUDIO_TRACK_KEYS,
   DEFAULT_TRACK_STATE,
@@ -349,6 +350,11 @@ export type TextOverlay = {
   keyframes?: OverlayKeyframe[];
   /** Uniform size multiplier (mainly for image/sticker overlays). */
   scale?: number;
+  /**
+   * In/out motion preset applied on top of the overlay's own transform while
+   * rendering (see `lib/motion-presets`).
+   */
+  motion?: MotionPresetId;
 };
 
 /** A keyframe on the speed (velocity) curve. `time` is in source-video seconds. */
@@ -682,7 +688,12 @@ export type EditSnapshot = {
   offsetY: number;
   canvasFill: CanvasFill;
   chromaKey: ChromaKeySettings;
+  /** Lane mute/solo/lock/visibility state (track-lock changes are undoable). */
+  trackStates: Record<TrackKey, TrackState>;
 };
+
+/** Autosave lifecycle shown in the editor header. */
+export type SaveStatus = "saved" | "saving" | "unsaved";
 
 type EditorState = {
   /** Current preview/export video element (owned by the store, not React). */
@@ -766,6 +777,12 @@ type EditorState = {
   setTrackFlag: (key: TrackKey, field: TrackField, value?: boolean) => void;
   /** Splits a sequence clip at a source time into two independent clips. */
   splitClip: (clipId: string, sourceTime: number) => void;
+  /**
+   * Text-based editing: removes the source-time range `[from, to]` from the
+   * active clip, closes the resulting timeline gap (ripple) and re-times every
+   * caption word, overlay, effect and audio track so nothing drifts.
+   */
+  deleteTranscriptRange: (from: number, to: number) => void;
   /** Deletes a clip and shifts later clips on the track left to close the gap. */
   rippleDeleteClip: (clipId: string) => void;
 
@@ -833,6 +850,11 @@ type EditorState = {
   future: EditSnapshot[];
   undo: () => void;
   redo: () => void;
+  /** Debounced-persist status shown in the editor header. */
+  saveStatus: SaveStatus;
+  setSaveStatus: (status: SaveStatus) => void;
+  /** Forces an immediate IndexedDB checkpoint of the active project. */
+  checkpoint: () => Promise<void>;
   resetEditor: () => void;
   seek: (time: number) => void;
   /** Moves the playhead by `delta` frames (negative steps backwards). */
@@ -951,8 +973,9 @@ function isVideoFile(file: File): boolean {
 }
 
 /** Serializes the project's media metadata to IndexedDB (best-effort). */
-function persistProject(state: EditorState): void {
-  if (!state.projectId) return;
+function persistProject(state: EditorState): Promise<void> {
+  if (!state.projectId) return Promise.resolve();
+  const token = ++checkpointToken;
   const assetMeta: StoredAssetMeta[] = state.assets.map(
     ({ id, mediaId, name, type, size, updatedAt }) => ({
       id,
@@ -981,15 +1004,26 @@ function persistProject(state: EditorState): void {
       peaks,
     })
   );
-  void saveProjectMedia(state.projectId, {
+  return saveProjectMedia(state.projectId, {
     assets: assetMeta,
     sequence: state.sequence,
     overlays: state.overlays,
     audio: audioMeta,
     trackStates: state.trackStates,
-  }).catch(() => {
-    // IndexedDB can fail (quota / private mode); the session still works.
-  });
+    currentTime: state.currentTime,
+    savedAt: Date.now(),
+  })
+    .then(() => {
+      if (token === checkpointToken) {
+        useEditorStore.setState({ saveStatus: "saved" });
+      }
+    })
+    .catch(() => {
+      // IndexedDB can fail (quota / private mode); the session still works.
+      if (token === checkpointToken) {
+        useEditorStore.setState({ saveStatus: "unsaved" });
+      }
+    });
 }
 
 /** True when the lane hosting `key` is locked (edits are blocked). */
@@ -1089,11 +1123,15 @@ function snapshotOf(state: EditorState): EditSnapshot {
     offsetY: state.offsetY,
     canvasFill: state.canvasFill,
     chromaKey: state.chromaKey,
+    trackStates: state.trackStates,
   };
 }
 
 /** Suppresses history capture while an undo/redo is being applied. */
 let historyPaused = false;
+
+/** Monotonic checkpoint id so only the newest write may set the save status. */
+let checkpointToken = 0;
 
 export const useEditorStore = create<EditorState>()(
   subscribeWithSelector((set, get) => ({
@@ -1144,6 +1182,16 @@ export const useEditorStore = create<EditorState>()(
   exportResolution: "1080p",
   history: [],
   future: [],
+  saveStatus: "saved",
+  setSaveStatus: (status) => set({ saveStatus: status }),
+  checkpoint: async () => {
+    const state = get();
+    if (!state.projectId) {
+      set({ saveStatus: "saved" });
+      return;
+    }
+    await persistProject(state);
+  },
   colorAdjustments: DEFAULT_COLOR_ADJUSTMENTS,
   colorWheels: DEFAULT_COLOR_WHEELS,
   audioTracks: [],
@@ -1221,6 +1269,138 @@ export const useEditorStore = create<EditorState>()(
       const fallback = next[Math.min(index, next.length - 1)];
       if (fallback) get().selectClip(fallback.id);
       else get().removeClip(clipId);
+    }
+  },
+
+  deleteTranscriptRange: (from, to) => {
+    const state = get();
+    if (state.trackStates.V1.locked) return;
+    const { sequence, activeClipId } = state;
+    if (!activeClipId) return;
+    const index = sequence.findIndex((clip) => clip.id === activeClipId);
+    if (index < 0) return;
+    const clip = sequence[index];
+
+    const cutFrom = Math.min(Math.max(from, clip.trimStart), clip.trimEnd);
+    const cutTo = Math.min(Math.max(to, cutFrom), clip.trimEnd);
+    const cut = cutTo - cutFrom;
+    if (cut < 0.05) return;
+
+    const blockStart = computeClipStarts(sequence)[index]?.start ?? 0;
+    // Ripple time-mapping: anything after the cut slides left by `cut`, and
+    // anything inside the cut collapses onto its start.
+    const mapTime = (t: number) =>
+      t <= cutFrom ? t : t >= cutTo ? t - cut : cutFrom;
+
+    // --- 1. Split the clip around the deleted words -------------------
+    const head: TimelineClip | null =
+      cutFrom > clip.trimStart + 0.05 ? { ...clip, trimEnd: cutFrom } : null;
+    const tail: TimelineClip | null =
+      clip.trimEnd > cutTo + 0.05
+        ? {
+            id: createId("clip"),
+            assetId: clip.assetId,
+            trimStart: cutTo,
+            trimEnd: clip.trimEnd,
+            timelineStart: blockStart + Math.max(0, cutFrom - clip.trimStart),
+            ...(clip.chromaKey ? { chromaKey: clip.chromaKey } : {}),
+            ...(clip.speedPreset ? { speedPreset: clip.speedPreset } : {}),
+            ...(clip.speedPoints ? { speedPoints: clip.speedPoints } : {}),
+          }
+        : null;
+
+    const removedEnd = blockStart + (cutTo - clip.trimStart);
+    const next = [
+      ...sequence.slice(0, index),
+      ...(head ? [head] : []),
+      ...(tail ? [tail] : []),
+      ...sequence.slice(index + 1),
+    ].map((item) => {
+      if (item === head || (tail && item.id === tail.id)) return item;
+      // Free-positioned clips sitting after the cut slide left to close the gap.
+      if (
+        typeof item.timelineStart === "number" &&
+        item.timelineStart >= removedEnd - 0.001
+      ) {
+        return { ...item, timelineStart: Math.max(0, item.timelineStart - cut) };
+      }
+      return item;
+    });
+
+    // --- 2. Re-time captions, overlays, effects and audio -------------
+    const overlays: TextOverlay[] = [];
+    for (const overlay of state.overlays) {
+      const startTime = mapTime(overlay.startTime);
+      const endTime = mapTime(overlay.endTime);
+      if (endTime - startTime < 0.05) continue;
+
+      let words = overlay.words;
+      let text = overlay.text;
+      if (words && words.length > 0) {
+        // Keep only the surviving words and rebuild the text so the renderer's
+        // word-count guard still matches.
+        const survivors = words
+          .map((word) => ({
+            text: word.text,
+            start: mapTime(word.start),
+            end: mapTime(word.end),
+          }))
+          .filter((word) => word.end - word.start > 0.001);
+        if (survivors.length === 0) continue;
+        words = survivors;
+        text = survivors.map((word) => word.text).join(" ");
+      }
+
+      overlays.push({ ...overlay, startTime, endTime, words, text });
+    }
+
+    const activeEffects = state.activeEffects.map((effect) => {
+      const startTime = mapTime(effect.startTime);
+      const end = mapTime(effect.startTime + effect.duration);
+      return { ...effect, startTime, duration: Math.max(0.1, end - startTime) };
+    });
+
+    const audioTracks = state.audioTracks
+      .map((track) => {
+        const startTime = mapTime(track.startTime);
+        const end = mapTime(track.startTime + track.duration);
+        return { ...track, startTime, duration: Math.max(0, end - startTime) };
+      })
+      .filter((track) => track.duration > 0.05);
+
+    set({
+      sequence: next,
+      overlays,
+      activeEffects,
+      audioTracks,
+      currentTime: mapTime(state.currentTime),
+    });
+    persistProject(get());
+
+    // Reload a surviving clip so the preview reflects the cut immediately and
+    // the playhead lands where the gap closed up.
+    const resumeId =
+      tail?.id ?? head?.id ?? next[Math.min(index, next.length - 1)]?.id;
+    const resumeTarget = next.find((item) => item.id === resumeId);
+    const resumeAsset = resumeTarget
+      ? get().assets.find((asset) => asset.id === resumeTarget.assetId)
+      : undefined;
+    if (resumeTarget && resumeAsset) {
+      const at = Math.min(
+        Math.max(mapTime(state.currentTime), resumeTarget.trimStart),
+        resumeTarget.trimEnd
+      );
+      set({
+        activeClipId: resumeTarget.id,
+        pendingTrim: {
+          trimStart: resumeTarget.trimStart,
+          trimEnd: resumeTarget.trimEnd,
+        },
+        pendingSeek: at,
+        chromaKey: resumeTarget.chromaKey ?? DEFAULT_CHROMA_KEY,
+        ...speedPatchForClip(resumeTarget),
+      });
+      get().loadVideoBlob(resumeAsset.blob, resumeAsset.name);
     }
   },
 
@@ -1598,13 +1778,22 @@ export const useEditorStore = create<EditorState>()(
         ? assets.find((item) => item.id === firstClip.assetId)
         : undefined;
       if (firstClip && asset) {
+        // Crash recovery: resume at the last checkpointed playhead when it
+        // still falls inside the restored clip.
+        const resumeAt =
+          typeof media.currentTime === "number" && media.currentTime > 0
+            ? Math.min(
+                Math.max(media.currentTime, firstClip.trimStart),
+                firstClip.trimEnd
+              )
+            : null;
         set({
           activeClipId: firstClip.id,
           pendingTrim: {
             trimStart: firstClip.trimStart,
             trimEnd: firstClip.trimEnd,
           },
-          pendingSeek: null,
+          pendingSeek: resumeAt,
           chromaKey: firstClip.chromaKey ?? DEFAULT_CHROMA_KEY,
           ...speedPatchForClip(firstClip),
         });
@@ -1905,6 +2094,7 @@ export const useEditorStore = create<EditorState>()(
       offsetY: snapshot.offsetY,
       canvasFill: snapshot.canvasFill,
       chromaKey: snapshot.chromaKey,
+      trackStates: snapshot.trackStates,
     }),
 
   undo: () => {
@@ -2748,6 +2938,7 @@ useEditorStore.subscribe(
     offsetY: state.offsetY,
     canvasFill: state.canvasFill,
     chromaKey: state.chromaKey,
+    trackStates: state.trackStates,
   }),
   (_current, previous) => {
     if (historyPaused) return;
@@ -2774,7 +2965,9 @@ useEditorStore.subscribe(
     trackStates: state.trackStates,
   }),
   () => {
-    persistProject(useEditorStore.getState());
+    // Mark dirty only — the debounced autosave hook (plus the 60s heartbeat)
+    // performs the actual write so rapid drags don't hammer IndexedDB.
+    if (!historyPaused) useEditorStore.setState({ saveStatus: "unsaved" });
   },
   { equalityFn: shallow }
 );

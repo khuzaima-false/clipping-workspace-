@@ -69,6 +69,7 @@ import { SOUND_EFFECT_CATEGORIES, SOUND_EFFECTS } from "@/lib/sfx";
 import { createDictation, isDictationSupported } from "@/lib/dictation";
 import { STICKER_CATEGORIES, STICKERS, stickerImageSrc, type StickerCategory } from "@/lib/stickers";
 import { TimelineWaveform, Waveform } from "@/components/editor/waveform";
+import { MOTION_PRESETS } from "@/lib/motion-presets";
 import {
   AUDIO_TRACK_KEYS,
   TRACK_KEYS,
@@ -460,6 +461,29 @@ function ProjectBinPanel({
   const dictationRef = useRef<ReturnType<typeof createDictation> | null>(null);
   const dictationSupported = useMemo(() => isDictationSupported(), []);
   const [selectedClips, setSelectedClips] = useState<string[]>([]);
+  // Text-based editing: keys are `${overlayId}:${wordIndex}`.
+  const [selectedWords, setSelectedWords] = useState<Set<string>>(new Set());
+
+  const deleteTranscriptRange = useEditorStore((s) => s.deleteTranscriptRange);
+
+  // Captions that carry word-level timings form the editable transcript.
+  const transcriptCaptions = overlays.filter(
+    (overlay) => overlay.auto && (overlay.words?.length ?? 0) > 0
+  );
+  let transcriptSelection: { from: number; to: number } | null = null;
+  if (selectedWords.size > 0) {
+    let from = Number.POSITIVE_INFINITY;
+    let to = 0;
+    for (const overlay of transcriptCaptions) {
+      (overlay.words ?? []).forEach((word, index) => {
+        if (selectedWords.has(`${overlay.id}:${index}`)) {
+          from = Math.min(from, word.start);
+          to = Math.max(to, word.end);
+        }
+      });
+    }
+    if (Number.isFinite(from) && to > from) transcriptSelection = { from, to };
+  }
 
   const handleAutoCaptions = async () => {
     if (transcribing) return;
@@ -904,6 +928,43 @@ function ProjectBinPanel({
             )}
 
             <AiStudioSection selected={selected} />
+
+            {selected && (
+              <div className="space-y-2 border-t border-zinc-800 pt-3" data-tour="motion-presets">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                  Motion preset
+                </p>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {MOTION_PRESETS.map((preset) => {
+                    const active = (selected.motion ?? "none") === preset.id;
+                    return (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        title={preset.blurb}
+                        aria-pressed={active}
+                        onClick={() => patchSelected({ motion: preset.id })}
+                        className={cn(
+                          "rounded-lg border px-2 py-1.5 text-left text-[11px] transition-colors",
+                          active
+                            ? "border-violet-500 bg-violet-600/15 text-violet-200"
+                            : "border-zinc-800 bg-zinc-950/60 text-zinc-300 hover:border-zinc-600"
+                        )}
+                      >
+                        {preset.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-[10px] leading-4 text-zinc-600">
+                  {
+                    MOTION_PRESETS.find(
+                      (preset) => preset.id === (selected.motion ?? "none")
+                    )?.blurb
+                  }
+                </p>
+              </div>
+            )}
 
             {/* Global caption animation + style (applies to AI captions) */}
             <div className="space-y-2 border-t border-zinc-800 pt-3">
@@ -1430,6 +1491,90 @@ function ProjectBinPanel({
                 ))}
               </ul>
             )}
+
+            {transcriptCaptions.length > 0 && (
+              <div className="space-y-2 border-t border-zinc-800 pt-3" data-tour="transcript">
+                <div className="flex items-center justify-between">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                    Transcript · edit like text
+                  </p>
+                  {selectedWords.size > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedWords(new Set())}
+                      className="rounded-md border border-zinc-800 bg-zinc-950/60 px-2 py-0.5 text-[10px] text-zinc-400 transition-colors hover:border-zinc-600 hover:text-zinc-100"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+                <p className="text-[10px] leading-4 text-zinc-600">
+                  Select the words you want gone, then delete them — the clip is
+                  cut and the timeline ripples to match, and every caption stays
+                  in sync.
+                </p>
+                <div className="custom-scrollbar max-h-48 space-y-2 overflow-y-auto rounded-lg border border-zinc-800 bg-zinc-950/40 p-2">
+                  {transcriptCaptions.map((overlay) => (
+                    <p
+                      key={overlay.id}
+                      className="text-[11px] leading-6 text-zinc-300"
+                    >
+                      {(overlay.words ?? []).map((word, index) => {
+                        const key = `${overlay.id}:${index}`;
+                        const active = selectedWords.has(key);
+                        return (
+                          <button
+                            key={key}
+                            type="button"
+                            title={`${word.start.toFixed(2)}s → ${word.end.toFixed(2)}s`}
+                            onClick={() =>
+                              setSelectedWords((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(key)) next.delete(key);
+                                else next.add(key);
+                                return next;
+                              })
+                            }
+                            className={cn(
+                              "mr-1 rounded px-1 transition-colors",
+                              active
+                                ? "bg-red-500/30 text-red-100 line-through"
+                                : "hover:bg-zinc-800"
+                            )}
+                          >
+                            {word.text}
+                          </button>
+                        );
+                      })}
+                    </p>
+                  ))}
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] tabular-nums text-zinc-500">
+                    {selectedWords.size} word
+                    {selectedWords.size === 1 ? "" : "s"} selected
+                    {transcriptSelection
+                      ? ` · ${(transcriptSelection.to - transcriptSelection.from).toFixed(2)}s`
+                      : ""}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={!transcriptSelection}
+                    onClick={() => {
+                      if (!transcriptSelection) return;
+                      deleteTranscriptRange(
+                        transcriptSelection.from,
+                        transcriptSelection.to
+                      );
+                      setSelectedWords(new Set());
+                    }}
+                    className="ml-auto inline-flex items-center gap-1 rounded-lg border border-red-900/60 bg-red-950/30 px-2 py-1 text-[10px] font-medium text-red-200 transition-colors hover:border-red-700 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <Scissors className="h-3 w-3" aria-hidden /> Delete &amp; ripple
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -1851,6 +1996,8 @@ function ProgramPreview() {
   const setCanvasFill = useEditorStore((s) => s.setCanvasFill);
   const undo = useEditorStore((s) => s.undo);
   const redo = useEditorStore((s) => s.redo);
+  const canUndo = useEditorStore((s) => s.history.length > 0);
+  const canRedo = useEditorStore((s) => s.future.length > 0);
   const setPlaying = useEditorStore((s) => s.setPlaying);
   const seek = useEditorStore((s) => s.seek);
   const markIn = useEditorStore((s) => s.markIn);
@@ -2268,18 +2415,20 @@ function ProgramPreview() {
           <button
             type="button"
             onClick={undo}
+            disabled={!canUndo}
             aria-label="Undo"
             title="Undo (Ctrl+Z)"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-950/60 text-zinc-300 transition-colors hover:border-zinc-600"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-950/60 text-zinc-300 transition-colors hover:border-zinc-600 disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Undo2 className="h-3.5 w-3.5" aria-hidden />
           </button>
           <button
             type="button"
             onClick={redo}
+            disabled={!canRedo}
             aria-label="Redo"
             title="Redo (Ctrl+Y)"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-950/60 text-zinc-300 transition-colors hover:border-zinc-600"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-950/60 text-zinc-300 transition-colors hover:border-zinc-600 disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Redo2 className="h-3.5 w-3.5" aria-hidden />
           </button>
@@ -3835,10 +3984,9 @@ export function DesktopEditor({
 }: {
   onBatchExport?: (clipIds: string[]) => void;
 }) {
-  // Desktop-only keyboard shortcuts: undo/redo, play/pause, frame step, marks.
+  // Global keyboard shortcuts: undo/redo, play/pause, frame step, marks, razor.
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      if (!window.matchMedia("(min-width: 768px)").matches) return;
       const target = event.target as HTMLElement | null;
       if (target) {
         const tag = target.tagName;
@@ -3856,6 +4004,7 @@ export function DesktopEditor({
       const lower = key.toLowerCase();
 
       if (event.ctrlKey || event.metaKey) {
+        // Undo/redo are truly global (work on every screen size).
         if (lower === "z" && !event.shiftKey) {
           event.preventDefault();
           state.undo();
@@ -3865,6 +4014,9 @@ export function DesktopEditor({
         }
         return;
       }
+
+      // The remaining single-key shortcuts belong to the desktop workspace.
+      if (!window.matchMedia("(min-width: 768px)").matches) return;
 
       if (key === " ") {
         event.preventDefault();

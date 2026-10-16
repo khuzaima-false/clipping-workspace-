@@ -148,6 +148,10 @@ export type ProjectMedia = {
   audio: StoredAudio[];
   /** Per-lane mute/solo/lock/hide state (loosely typed, see `lib/tracks`). */
   trackStates?: Record<string, unknown>;
+  /** Playhead position (seconds) at the moment of the checkpoint. */
+  currentTime?: number;
+  /** Epoch ms of the last successful checkpoint. */
+  savedAt?: number;
 };
 
 const EMPTY_MEDIA: ProjectMedia = {
@@ -172,6 +176,16 @@ export async function loadProjectMedia(
     sequence: Array.isArray(value.sequence) ? value.sequence : [],
     overlays: Array.isArray(value.overlays) ? value.overlays : [],
     audio: Array.isArray(value.audio) ? value.audio : [],
+    // Previously dropped: the lane lock/visibility state and the playhead.
+    trackStates:
+      value.trackStates && typeof value.trackStates === "object"
+        ? value.trackStates
+        : undefined,
+    currentTime:
+      typeof value.currentTime === "number" && Number.isFinite(value.currentTime)
+        ? Math.max(0, value.currentTime)
+        : undefined,
+    savedAt: typeof value.savedAt === "number" ? value.savedAt : undefined,
   };
 }
 

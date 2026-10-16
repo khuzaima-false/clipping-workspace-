@@ -97,3 +97,27 @@ export async function idbDel(store: IdbStore, key: IDBValidKey): Promise<void> {
     transaction.onabort = () => reject(transaction.error);
   });
 }
+
+/** Lists every key currently stored in `store` (empty when IDB is absent). */
+export async function idbKeys(store: IdbStore): Promise<IDBValidKey[]> {
+  if (typeof indexedDB === "undefined") return [];
+  const db = await openDb();
+  return new Promise<IDBValidKey[]>((resolve, reject) => {
+    const request = db.transaction(store, "readonly").objectStore(store).getAllKeys();
+    request.onsuccess = () => resolve(request.result ?? []);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+/** Empties `store` in a single transaction. */
+export async function idbClear(store: IdbStore): Promise<void> {
+  if (typeof indexedDB === "undefined") return;
+  const db = await openDb();
+  return new Promise<void>((resolve, reject) => {
+    const transaction = db.transaction(store, "readwrite");
+    transaction.objectStore(store).clear();
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error);
+  });
+}

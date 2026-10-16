@@ -2,16 +2,13 @@
 
 import {
   Suspense,
-  useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, Download } from "lucide-react";
 import Link from "next/link";
-import { shallow } from "zustand/shallow";
 import { createClient } from "@/lib/supabase/client";
 import type { Project } from "@/types/database";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -25,6 +22,7 @@ import {
 import { drawScene } from "@/lib/render";
 import { visibleLayerFlags } from "@/lib/tracks";
 import { TutorialLauncher } from "@/components/tutorial/guided-tour";
+import { StorageManager } from "@/components/editor/storage-manager";
 import {
   EXPORT_FPS,
   downloadFile,
@@ -34,6 +32,7 @@ import {
 import { DesktopEditor } from "@/components/editor/desktop-editor";
 import { MobileEditor } from "@/components/editor/mobile-editor";
 import { ExportDialog, type ExportRun } from "@/components/editor/export-dialog";
+import { useAutosave } from "@/hooks/use-autosave";
 import { cn } from "@/lib/utils";
 
 function fileNameFor(title: string, extension: string, label: string): string {
@@ -68,8 +67,6 @@ function EditorView() {
   const [error, setError] = useState<string | null>(null);
 
   const [titleDraft, setTitleDraft] = useState("");
-  const [saveState, setSaveState] = useState<"saved" | "saving">("saved");
-  const saveTimer = useRef<number | null>(null);
 
   const hasVideo = useEditorStore((state) => state.videoEl !== null);
   const exportResolution = useEditorStore((state) => state.exportResolution);
@@ -78,30 +75,8 @@ function EditorView() {
 
   const preset = EXPORT_RESOLUTIONS[exportResolution];
 
-  // Flash "Saving…" whenever the timeline state changes, then settle to "Saved".
-  const markSaving = useCallback(() => {
-    setSaveState("saving");
-    if (saveTimer.current) window.clearTimeout(saveTimer.current);
-    saveTimer.current = window.setTimeout(() => setSaveState("saved"), 700);
-  }, []);
-
-  useEffect(() => {
-    const unsubscribe = useEditorStore.subscribe(
-      (state) => ({
-        assets: state.assets,
-        sequence: state.sequence,
-        overlays: state.overlays,
-        audioTracks: state.audioTracks,
-        trackStates: state.trackStates,
-      }),
-      markSaving,
-      { equalityFn: shallow }
-    );
-    return () => {
-      unsubscribe();
-      if (saveTimer.current) window.clearTimeout(saveTimer.current);
-    };
-  }, [markSaving]);
+  // Debounced IndexedDB autosave — drives the header status indicator.
+  const saveStatus = useAutosave();
 
   useEffect(() => {
     let cancelled = false;
@@ -213,13 +188,14 @@ function EditorView() {
     setTitleDraft(next);
     if (next === current.title) return;
     setProject((prev) => (prev ? { ...prev, title: next } : prev));
-    markSaving();
+    useEditorStore.getState().setSaveStatus("unsaved");
     try {
       const supabase = createClient();
       await supabase.from("projects").update({ title: next }).eq("id", current.id);
     } catch {
       // Local state already reflects the change; retry on the next edit.
     }
+    useEditorStore.getState().setSaveStatus("saved");
   };
 
   // Persist export stats onto the project (best-effort, never blocks the UI).
@@ -503,7 +479,7 @@ function EditorView() {
                   value={titleDraft}
                   onChange={(e) => {
                     setTitleDraft(e.target.value);
-                    setSaveState("saving");
+                    useEditorStore.getState().setSaveStatus("unsaved");
                   }}
                   onBlur={() => void commitTitle()}
                   onKeyDown={(e) => {
@@ -529,11 +505,17 @@ function EditorView() {
                   aria-hidden
                   className={cn(
                     "h-1.5 w-1.5 shrink-0 rounded-full",
-                    saveState === "saving" ? "animate-pulse bg-amber-400" : "bg-emerald-400"
+                    saveStatus === "saved" && "bg-emerald-400",
+                    saveStatus === "saving" && "animate-pulse bg-amber-400",
+                    saveStatus === "unsaved" && "bg-zinc-500"
                   )}
                 />
-                <span className="shrink-0">
-                  {saveState === "saving" ? "Saving…" : "Saved to Device"}
+                <span className="shrink-0" aria-live="polite">
+                  {saveStatus === "saved"
+                    ? "All changes saved"
+                    : saveStatus === "saving"
+                      ? "Auto-saving…"
+                      : "Unsaved changes"}
                 </span>
                 {project && (
                   <span className="truncate text-zinc-600">
@@ -565,6 +547,7 @@ function EditorView() {
           </select>
         </label>
 
+        <StorageManager />
         <TutorialLauncher />
 
         <button
