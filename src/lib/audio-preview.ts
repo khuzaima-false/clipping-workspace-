@@ -1,4 +1,5 @@
 import type { AudioTrack } from "@/store/editor";
+import { mountPreviewMedia, unmountPreviewMedia } from "@/lib/preview-media";
 
 /**
  * Lightweight preview playback for external audio tracks.
@@ -36,9 +37,7 @@ class AudioPreview {
     // Drop removed tracks.
     for (const [id, entry] of this.entries) {
       if (!tracks.some((track) => track.id === id)) {
-        entry.el.pause();
-        entry.el.removeAttribute("src");
-        if (entry.recoveredUrl) URL.revokeObjectURL(entry.recoveredUrl);
+        this.dispose(entry);
         this.entries.delete(id);
       }
     }
@@ -49,7 +48,11 @@ class AudioPreview {
       if (!entry) {
         const el = new Audio();
         el.preload = "auto";
+        el.setAttribute("playsinline", "");
+        el.muted = false;
+        el.volume = 1;
         el.src = track.url;
+        mountPreviewMedia(el);
         entry = {
           el,
           track,
@@ -61,7 +64,6 @@ class AudioPreview {
         // These elements use the browser's normal media output, rather than a
         // Web Audio graph. Keep them explicitly unmuted; routing decisions are
         // represented by pausing an inactive track and setting its volume.
-        el.muted = false;
         el.addEventListener("error", () => this.recover(track.id));
         this.entries.set(track.id, entry);
       } else {
@@ -143,9 +145,7 @@ class AudioPreview {
   /** Stops every element (used when the editor unmounts). */
   stop(): void {
     for (const entry of this.entries.values()) {
-      entry.el.pause();
-      entry.el.removeAttribute("src");
-      if (entry.recoveredUrl) URL.revokeObjectURL(entry.recoveredUrl);
+      this.dispose(entry);
     }
     this.entries.clear();
   }
@@ -156,6 +156,14 @@ class AudioPreview {
     } catch {
       // Metadata not ready yet; the next frame will retry.
     }
+  }
+
+  private dispose(entry: Entry): void {
+    entry.el.pause();
+    entry.el.removeAttribute("src");
+    entry.el.load();
+    unmountPreviewMedia(entry.el);
+    if (entry.recoveredUrl) URL.revokeObjectURL(entry.recoveredUrl);
   }
 }
 

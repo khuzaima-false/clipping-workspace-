@@ -21,6 +21,7 @@ import {
 import { renderSoundEffect, SOUND_EFFECTS, type SoundEffectId } from "@/lib/sfx";
 import { audioPreview } from "@/lib/audio-preview";
 import { unlockAudio } from "@/lib/media-recovery";
+import { mountPreviewMedia, unmountPreviewMedia } from "@/lib/preview-media";
 import { type MotionPresetId } from "@/lib/motion-presets";
 import {
   AUDIO_TRACK_KEYS,
@@ -962,6 +963,7 @@ function releaseVideo(el: HTMLVideoElement | null, url: string | null): void {
     el.pause();
     el.removeAttribute("src");
     el.load();
+    unmountPreviewMedia(el);
   }
   if (url) URL.revokeObjectURL(url);
 }
@@ -1495,8 +1497,12 @@ export const useEditorStore = create<EditorState>()(
     const el = document.createElement("video");
     el.preload = "auto";
     el.playsInline = true;
+    el.muted = false;
+    // Set a known audible default before applying the editor's volume control.
+    el.volume = 1;
     el.src = url;
     el.volume = get().volume;
+    mountPreviewMedia(el);
 
     // One-shot source recovery for browser-throttling / eviction failures.
     let recovering = false;
