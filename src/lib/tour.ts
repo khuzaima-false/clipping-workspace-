@@ -51,7 +51,7 @@ const LEFT_STEPS: TourStep[] = [
     target: "left-panel-body",
     open: "tab-media",
     title: "Media — import & manage clips",
-    body: "Import MP4/WebM files (multi-select supported), pick clips for batch export, and see your sequence with each clip's trimmed length. The trash icon removes a clip from the sequence.",
+    body: "Import MP4/WebM files (multi-select supported) from the pinned action bar, then scroll the media bin below it independently — the list keeps its own scrollbar so long sequences never push the panel or the reserved ad space out of place. Each row shows its trimmed length, a checkbox for batch export, and a trash icon to remove it.",
     placement: "right",
   },
   {

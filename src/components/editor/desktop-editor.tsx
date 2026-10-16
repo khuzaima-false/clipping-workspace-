@@ -92,6 +92,7 @@ import {
 } from "@/components/editor/studio-modules";
 import { cn } from "@/lib/utils";
 import { Modal } from "@/components/ui/modal";
+import { AdPlaceholder } from "@/components/monetization/ad-placeholder";
 import type { TransitionType } from "@/lib/video-storage";
 
 type CinematicPreset = {
@@ -473,7 +474,7 @@ function ProjectBinPanel({
   };
 
   return (
-    <section className="glass-card flex min-h-0 flex-col overflow-hidden rounded-2xl" data-tour="left-panel">
+    <section className="glass-card flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl" data-tour="left-panel">
       <div className="custom-scrollbar flex items-center gap-1 overflow-x-auto whitespace-nowrap border-b border-zinc-800 px-1 py-1" data-tour="tab-strip">
         {(
           [
@@ -509,30 +510,39 @@ function ProjectBinPanel({
 
       <div className="min-h-0 flex-1 overflow-y-auto p-3" data-tour="left-panel-body">
         {tab === "media" && (
-          <div className="space-y-2">
-            <button
-              type="button"
-              onClick={() => inputRef.current?.click()}
-              className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg brand-gradient brand-gradient-hover px-3 py-2 text-xs font-semibold text-white"
+          <div className="flex min-h-0 flex-col gap-2">
+            {/* Fixed action area — stays pinned while the bin below scrolls. */}
+            <div className="shrink-0 space-y-2">
+              <button
+                type="button"
+                onClick={() => inputRef.current?.click()}
+                className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg brand-gradient brand-gradient-hover px-3 py-2 text-xs font-semibold text-white"
+              >
+                <Plus className="h-3.5 w-3.5" aria-hidden /> Import media
+              </button>
+              <input
+                ref={inputRef}
+                type="file"
+                accept="video/mp4,video/webm,video/*"
+                multiple
+                className="hidden"
+                onChange={(e) => {
+                  if (e.target.files?.length) void addVideoAssets(e.target.files);
+                  e.target.value = "";
+                }}
+              />
+              <BatchTools
+                selectedIds={selectedClips}
+                onClear={() => setSelectedClips([])}
+                onBatchExport={onBatchExport}
+              />
+            </div>
+
+            {/* Independently scrollable media bin — never grows past its box. */}
+            <div
+              data-tour="media-bin"
+              className="custom-scrollbar max-h-[calc(100vh-320px)] min-h-0 overflow-y-auto pr-1"
             >
-              <Plus className="h-3.5 w-3.5" aria-hidden /> Import media
-            </button>
-            <input
-              ref={inputRef}
-              type="file"
-              accept="video/mp4,video/webm,video/*"
-              multiple
-              className="hidden"
-              onChange={(e) => {
-                if (e.target.files?.length) void addVideoAssets(e.target.files);
-                e.target.value = "";
-              }}
-            />
-            <BatchTools
-              selectedIds={selectedClips}
-              onClear={() => setSelectedClips([])}
-              onBatchExport={onBatchExport}
-            />
             {sequence.length === 0 ? (
               <p className="text-[11px] leading-4 text-zinc-500">
                 No media yet — import clips to build your sequence.
@@ -584,6 +594,7 @@ function ProjectBinPanel({
                 ))}
               </ul>
             )}
+            </div>
           </div>
         )}
 
@@ -3890,7 +3901,11 @@ export function DesktopEditor({
         className="grid min-h-0 gap-3 lg:grid-cols-[236px_minmax(0,1fr)_256px] xl:grid-cols-[264px_minmax(0,1fr)_288px] 2xl:grid-cols-[300px_minmax(0,1fr)_320px]"
         style={{ height: "min(66vh, 780px)", minHeight: 440 }}
       >
-        <ProjectBinPanel onBatchExport={onBatchExport} />
+        {/* Left column: the tool/media panel with a reserved ad slot below it. */}
+        <div className="flex min-h-0 flex-col gap-3">
+          <ProjectBinPanel onBatchExport={onBatchExport} />
+          <AdPlaceholder />
+        </div>
         <ProgramPreview />
         <LumetriPanel />
       </div>
