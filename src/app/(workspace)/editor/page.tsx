@@ -16,6 +16,7 @@ import {
   EXPORT_RESOLUTIONS,
   computeClipStarts,
   effectiveAudioTracks,
+  resolveClipTransform,
   useEditorStore,
   type ExportResolutionId,
 } from "@/store/editor";
@@ -326,6 +327,13 @@ function EditorView() {
           drawScene(ctx, frameVideo, {
             ...scene,
             sceneTime: time,
+            // Per-clip transform keyframes (single-clip export path).
+            clipTransform: segments
+              ? undefined
+              : resolveClipTransform(
+                  state.sequence.find((item) => item.id === state.activeClipId),
+                  time
+                ),
             transition: transition
               ? {
                   type: transition.type,

@@ -100,6 +100,12 @@ export type SceneConfig = {
     progress: number;
     fromVideo: HTMLVideoElement;
   };
+  /**
+   * Per-clip transform applied to the video frame (percentage offsets, scale
+   * multiplier and rotation in degrees). Resolved from the clip's keyframes at
+   * the current source time by the caller.
+   */
+  clipTransform?: { x: number; y: number; scale: number; rotation: number };
 };
 
 /** Per-frame overlay transform resolved from its keyframes (or its base pose). */
@@ -1029,6 +1035,19 @@ function drawFrameTransformed(
   }
   const source =
     config.chromaKey?.enabled ? keyedVideoFrame(video, config.chromaKey) : video;
+  // Per-clip transform (position / scale / rotation) around the frame centre.
+  const clip = config.clipTransform;
+  if (
+    clip &&
+    (clip.x !== 0 || clip.y !== 0 || clip.scale !== 1 || clip.rotation !== 0)
+  ) {
+    const cx = width / 2;
+    const cy = height / 2;
+    ctx.translate(cx + (clip.x / 100) * width, cy + (clip.y / 100) * height);
+    if (clip.rotation) ctx.rotate((clip.rotation * Math.PI) / 180);
+    if (clip.scale !== 1) ctx.scale(clip.scale, clip.scale);
+    ctx.translate(-cx, -cy);
+  }
   ctx.drawImage(source, x, y, drawW, drawH);
   ctx.restore();
 }

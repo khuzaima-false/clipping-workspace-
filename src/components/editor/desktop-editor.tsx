@@ -53,6 +53,7 @@ import {
   effectiveAudioTracks,
   effectLabel,
   isBaseVideoAudioMuted,
+  resolveClipTransform,
   trackLane,
   useEditorStore,
   type AspectRatio,
@@ -171,7 +172,7 @@ type LumetriTab = "wheels" | "corrections" | "presets";
 
 const LUMETRI_TABS: { id: LumetriTab; label: string; full: string }[] = [
   { id: "wheels", label: "Wheels", full: "Color Wheels — Lift / Gamma / Gain" },
-  { id: "corrections", label: "Corrections", full: "Color Corrections & Sliders" },
+  { id: "corrections", label: "Correct", full: "Color Corrections & Sliders" },
   { id: "presets", label: "Presets", full: "Cinematic Presets & Scopes" },
 ];
 
@@ -201,6 +202,9 @@ function ColorWheel({
   onChange: (value: WheelPoint) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  // A ref (not `event.buttons`) is the reliable "is the pointer down?" signal:
+  // touch pointers and pen can report buttons === 0 mid-drag.
+  const draggingRef = useRef(false);
   const size = 64;
   const radius = size / 2 - 5;
 
@@ -208,16 +212,26 @@ function ColorWheel({
     const el = ref.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return;
+    // Normalise against the rendered box so CSS scaling can't skew the maths.
     const cx = rect.left + rect.width / 2;
     const cy = rect.top + rect.height / 2;
-    let dx = (clientX - cx) / radius;
-    let dy = (clientY - cy) / radius;
+    const scale = rect.width / size;
+    let dx = (clientX - cx) / (radius * scale);
+    let dy = (clientY - cy) / (radius * scale);
     const dist = Math.hypot(dx, dy);
     if (dist > 1) {
       dx /= dist;
       dy /= dist;
     }
     onChange({ ...value, x: dx, y: dy });
+  };
+
+  const endDrag = (target: HTMLDivElement, pointerId: number) => {
+    draggingRef.current = false;
+    if (target.hasPointerCapture?.(pointerId)) {
+      target.releasePointerCapture(pointerId);
+    }
   };
 
   const trim = (
@@ -260,13 +274,23 @@ function ColorWheel({
         aria-valuetext={`x ${value.x.toFixed(2)}, y ${value.y.toFixed(2)}`}
         tabIndex={0}
         onPointerDown={(e) => {
-          e.currentTarget.setPointerCapture(e.pointerId);
+          e.preventDefault();
+          draggingRef.current = true;
+          e.currentTarget.setPointerCapture?.(e.pointerId);
           handle(e.clientX, e.clientY);
         }}
         onPointerMove={(e) => {
-          if (e.buttons === 1) handle(e.clientX, e.clientY);
+          if (!draggingRef.current) return;
+          e.preventDefault();
+          handle(e.clientX, e.clientY);
         }}
-        className="relative cursor-crosshair rounded-full ring-1 ring-inset ring-white/20"
+        onPointerUp={(e) => endDrag(e.currentTarget, e.pointerId)}
+        onPointerCancel={(e) => endDrag(e.currentTarget, e.pointerId)}
+        onLostPointerCapture={() => {
+          draggingRef.current = false;
+        }}
+        onDoubleClick={() => onChange({ ...value, x: 0, y: 0 })}
+        className="relative touch-none select-none cursor-crosshair rounded-full ring-1 ring-inset ring-white/20"
         style={{
           width: size,
           height: size,
@@ -532,6 +556,22 @@ function ProjectBinPanel({
   const removeClip = useEditorStore((s) => s.removeClip);
   const activeClipId = useEditorStore((s) => s.activeClipId);
   const currentTime = useEditorStore((s) => s.currentTime);
+  const setClipTransformAtPlayhead = useEditorStore(
+    (s) => s.setClipTransformAtPlayhead
+  );
+  const addClipTransformKeyframe = useEditorStore((s) => s.addClipTransformKeyframe);
+  const removeClipTransformKeyframe = useEditorStore(
+    (s) => s.removeClipTransformKeyframe
+  );
+  const clearClipTransformKeyframes = useEditorStore(
+    (s) => s.clearClipTransformKeyframes
+  );
+  const activeClip =
+    sequence.find((clip) => clip.id === activeClipId) ?? null;
+  const clipPose = activeClip
+    ? resolveClipTransform(activeClip, currentTime)
+    : null;
+  const clipKeyframes = activeClip?.transformKeyframes ?? [];
 
   const addEffect = useEditorStore((s) => s.addEffect);
   const activeEffects = useEditorStore((s) => s.activeEffects);
@@ -1497,6 +1537,192 @@ function ProjectBinPanel({
               >
                 Reset framing
               </button>
+            </div>
+
+            {/* Keyframes & Transform */}
+            <div
+              className="space-y-2 border-t border-zinc-800 pt-3"
+              data-tour="clip-keyframes"
+            >
+              <div className="flex items-center justify-between">
+                <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                  <Diamond className="h-3 w-3" aria-hidden /> Keyframes &amp; Transform
+                </p>
+                {clipKeyframes.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => activeClip && clearClipTransformKeyframes(activeClip.id)}
+                    className="text-[10px] text-zinc-500 hover:text-red-400"
+                  >
+                    Clear all
+                  </button>
+                )}
+              </div>
+
+              {!activeClip || !clipPose ? (
+                <p className="text-[10px] leading-4 text-zinc-600">
+                  Select a clip on the V1 timeline to animate its position, scale
+                  and rotation.
+                </p>
+              ) : (
+                <>
+                  {/* Per-property rows, each with its own Add-keyframe toggle. */}
+                  {(
+                    [
+                      {
+                        key: "x" as const,
+                        label: "Position X",
+                        min: -100,
+                        max: 100,
+                        step: 1,
+                        value: clipPose.x,
+                        suffix: "%",
+                      },
+                      {
+                        key: "y" as const,
+                        label: "Position Y",
+                        min: -100,
+                        max: 100,
+                        step: 1,
+                        value: clipPose.y,
+                        suffix: "%",
+                      },
+                      {
+                        key: "scale" as const,
+                        label: "Scale / Zoom",
+                        min: 0.1,
+                        max: 4,
+                        step: 0.01,
+                        value: clipPose.scale,
+                        suffix: "×",
+                      },
+                      {
+                        key: "rotation" as const,
+                        label: "Rotation",
+                        min: -180,
+                        max: 180,
+                        step: 1,
+                        value: clipPose.rotation,
+                        suffix: "°",
+                      },
+                    ] as const
+                  ).map((property) => {
+                    // Does an existing keyframe sit exactly on the playhead?
+                    const onKeyframe = clipKeyframes.some(
+                      (frame) => Math.abs(frame.time - currentTime) <= 0.03
+                    );
+                    return (
+                      <div key={property.key} className="space-y-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[10px] text-zinc-500">
+                            {property.label}
+                          </span>
+                          <span className="flex items-center gap-1.5">
+                            <span className="text-[10px] tabular-nums text-zinc-400">
+                              {property.key === "scale"
+                                ? `${Math.round(property.value * 100)}${property.suffix}`
+                                : `${Math.round(property.value)}${property.suffix}`}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                addClipTransformKeyframe(activeClip.id)
+                              }
+                              aria-label={`Add ${property.label} keyframe at playhead`}
+                              aria-pressed={onKeyframe}
+                              title="Add keyframe at playhead"
+                              className={cn(
+                                "flex h-5 w-5 items-center justify-center rounded border transition-colors",
+                                onKeyframe
+                                  ? "border-amber-400 bg-amber-400/20 text-amber-300"
+                                  : "border-zinc-800 bg-zinc-950/60 text-zinc-500 hover:border-amber-500/60 hover:text-amber-300"
+                              )}
+                            >
+                              <Diamond className="h-2.5 w-2.5" aria-hidden />
+                            </button>
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min={property.min}
+                          max={property.max}
+                          step={property.step}
+                          value={property.value}
+                          onChange={(e) =>
+                            setClipTransformAtPlayhead(activeClip.id, {
+                              [property.key]: Number(e.target.value),
+                            })
+                          }
+                          aria-label={property.label}
+                          className="w-full accent-violet-500"
+                        />
+                      </div>
+                    );
+                  })}
+
+                  <div className="flex items-center justify-between">
+                    <button
+                      type="button"
+                      onClick={() => addClipTransformKeyframe(activeClip.id)}
+                      className="inline-flex items-center gap-1 rounded-md border border-zinc-800 bg-zinc-950/60 px-2 py-1 text-[10px] text-zinc-200 hover:border-amber-500/60 hover:text-amber-200"
+                    >
+                      <Plus className="h-3 w-3" aria-hidden /> Add keyframe @{" "}
+                      {currentTime.toFixed(2)}s
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setClipTransformAtPlayhead(activeClip.id, {
+                          x: 0,
+                          y: 0,
+                          scale: 1,
+                          rotation: 0,
+                        })
+                      }
+                      className="text-[10px] text-zinc-500 hover:text-zinc-200"
+                    >
+                      Reset
+                    </button>
+                  </div>
+
+                  {clipKeyframes.length > 0 ? (
+                    <ul className="space-y-1">
+                      {clipKeyframes.map((frame) => (
+                        <li
+                          key={frame.id}
+                          className="flex items-center gap-2 rounded-md border border-zinc-800 bg-zinc-950/60 px-2 py-1 text-[10px] text-zinc-300"
+                        >
+                          <Diamond className="h-2.5 w-2.5 text-amber-300" aria-hidden />
+                          <span className="flex-1 tabular-nums">
+                            {frame.time.toFixed(2)}s
+                          </span>
+                          <span className="text-zinc-500">
+                            {Math.round(frame.x)},{Math.round(frame.y)} ·{" "}
+                            {Math.round(frame.scale * 100)}% ·{" "}
+                            {Math.round(frame.rotation)}°
+                          </span>
+                          <button
+                            type="button"
+                            aria-label="Delete keyframe"
+                            onClick={() =>
+                              removeClipTransformKeyframe(activeClip.id, frame.id)
+                            }
+                            className="rounded p-0.5 text-zinc-500 hover:text-red-400"
+                          >
+                            <Trash2 className="h-3 w-3" aria-hidden />
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-[10px] leading-4 text-zinc-600">
+                      No keyframes yet. Drag a slider (edits the base pose) or hit
+                      ◆ to start animating — once keyframes exist, slider edits
+                      auto-key at the playhead.
+                    </p>
+                  )}
+                </>
+              )}
             </div>
 
             {/* Platform framing presets + canvas fill */}
@@ -2479,6 +2705,11 @@ function ProgramPreview() {
           colorWheels: state.colorWheels,
           // V1/V2/V3 eye + solo decide which layers reach the canvas.
           ...visibleLayerFlags(state.trackStates),
+          // Per-clip transform keyframes (position / scale / rotation).
+          clipTransform: resolveClipTransform(
+            state.sequence.find((clip) => clip.id === state.activeClipId),
+            video ? video.currentTime : state.currentTime
+          ),
         },
         { placeholder: true }
       );

@@ -784,6 +784,77 @@ export function computeClipStarts(
   });
 }
 
+/* ------------------------------------------------------------------ */
+/* Clip transform keyframes                                            */
+/* ------------------------------------------------------------------ */
+
+/** A clip's video-frame transform (percent offsets, scale multiplier, degrees). */
+export type ClipTransform = {
+  x: number;
+  y: number;
+  scale: number;
+  rotation: number;
+};
+
+export type ClipTransformKeyframe = ClipTransform & {
+  id: string;
+  /** Source-time position (seconds) of the keyframe. */
+  time: number;
+};
+
+export const DEFAULT_CLIP_TRANSFORM: ClipTransform = {
+  x: 0,
+  y: 0,
+  scale: 1,
+  rotation: 0,
+};
+
+/**
+ * Resolves a clip's transform at a source time. Keyframes take precedence over
+ * the base transform and are linearly interpolated (clamped at the ends), so
+ * the preview and exporter always agree.
+ */
+export function resolveClipTransform(
+  clip: TimelineClip | null | undefined,
+  sourceTime: number
+): ClipTransform {
+  if (!clip) return DEFAULT_CLIP_TRANSFORM;
+  const base: ClipTransform = {
+    ...DEFAULT_CLIP_TRANSFORM,
+    ...(clip.transform ?? {}),
+  };
+  const frames = clip.transformKeyframes;
+  if (!frames || frames.length === 0) return base;
+
+  const poseOf = (frame: ClipTransformKeyframe): ClipTransform => ({
+    x: frame.x,
+    y: frame.y,
+    scale: frame.scale,
+    rotation: frame.rotation,
+  });
+
+  if (sourceTime <= frames[0].time) return poseOf(frames[0]);
+  const last = frames[frames.length - 1];
+  if (sourceTime >= last.time) return poseOf(last);
+
+  for (let i = 0; i < frames.length - 1; i += 1) {
+    const a = frames[i];
+    const b = frames[i + 1];
+    if (sourceTime >= a.time && sourceTime <= b.time) {
+      const span = b.time - a.time;
+      const t = span <= 0 ? 0 : (sourceTime - a.time) / span;
+      const mix = (from: number, to: number) => from + (to - from) * t;
+      return {
+        x: mix(a.x, b.x),
+        y: mix(a.y, b.y),
+        scale: mix(a.scale, b.scale),
+        rotation: mix(a.rotation, b.rotation),
+      };
+    }
+  }
+  return base;
+}
+
 function createOverlay(duration: number): TextOverlay {
   return {
     id: createId("overlay"),
@@ -973,6 +1044,18 @@ type EditorState = {
     clipId: string,
     patch: { trimStart?: number; trimEnd?: number }
   ) => void;
+  /**
+   * Writes transform values to a clip. With no keyframes it updates the base
+   * pose; once the clip is animated it upserts a keyframe at the playhead.
+   */
+  setClipTransformAtPlayhead: (
+    clipId: string,
+    patch: Partial<ClipTransform>
+  ) => void;
+  /** Adds a transform keyframe at the playhead capturing the current pose. */
+  addClipTransformKeyframe: (clipId: string) => void;
+  removeClipTransformKeyframe: (clipId: string, keyframeId: string) => void;
+  clearClipTransformKeyframes: (clipId: string) => void;
   /** Sets (or clears) the transition blended into a clip from the previous one. */
   setClipTransition: (
     clipId: string,
@@ -2238,6 +2321,92 @@ export const useEditorStore = create<EditorState>()(
             ),
           }
         : {}),
+    });
+    persistProject(get());
+  },
+
+  setClipTransformAtPlayhead: (clipId, patch) => {
+    if (get().trackStates.V1.locked) return;
+    const state = get();
+    const clip = state.sequence.find((item) => item.id === clipId);
+    if (!clip) return;
+    const time = clipId === state.activeClipId ? state.currentTime : clip.trimStart;
+    const animated = (clip.transformKeyframes?.length ?? 0) > 0;
+
+    if (!animated) {
+      const transform = { ...DEFAULT_CLIP_TRANSFORM, ...(clip.transform ?? {}), ...patch };
+      set({
+        sequence: state.sequence.map((item) =>
+          item.id === clipId ? { ...item, transform } : item
+        ),
+      });
+      persistProject(get());
+      return;
+    }
+
+    // Auto-key: merge into the keyframe at (or nearest) the playhead.
+    const pose = { ...resolveClipTransform(clip, time), ...patch };
+    const frames = [...(clip.transformKeyframes ?? [])];
+    const existingIndex = frames.findIndex((frame) => Math.abs(frame.time - time) <= 0.03);
+    if (existingIndex >= 0) {
+      frames[existingIndex] = { ...frames[existingIndex], ...pose };
+    } else {
+      frames.push({ id: createId("ckf"), time, ...pose });
+      frames.sort((a, b) => a.time - b.time);
+    }
+    set({
+      sequence: state.sequence.map((item) =>
+        item.id === clipId ? { ...item, transformKeyframes: frames } : item
+      ),
+    });
+    persistProject(get());
+  },
+
+  addClipTransformKeyframe: (clipId) => {
+    if (get().trackStates.V1.locked) return;
+    const state = get();
+    const clip = state.sequence.find((item) => item.id === clipId);
+    if (!clip) return;
+    const time = clipId === state.activeClipId ? state.currentTime : clip.trimStart;
+    // Capture the *current* pose so un-keyed properties are preserved.
+    const pose = resolveClipTransform(clip, time);
+    const frames = [
+      ...(clip.transformKeyframes ?? []).filter(
+        (frame) => Math.abs(frame.time - time) > 0.03
+      ),
+      { id: createId("ckf"), time, ...pose },
+    ].sort((a, b) => a.time - b.time);
+    set({
+      sequence: state.sequence.map((item) =>
+        item.id === clipId ? { ...item, transformKeyframes: frames } : item
+      ),
+    });
+    persistProject(get());
+  },
+
+  removeClipTransformKeyframe: (clipId, keyframeId) => {
+    const state = get();
+    set({
+      sequence: state.sequence.map((item) =>
+        item.id === clipId
+          ? {
+              ...item,
+              transformKeyframes: (item.transformKeyframes ?? []).filter(
+                (frame) => frame.id !== keyframeId
+              ),
+            }
+          : item
+      ),
+    });
+    persistProject(get());
+  },
+
+  clearClipTransformKeyframes: (clipId) => {
+    const state = get();
+    set({
+      sequence: state.sequence.map((item) =>
+        item.id === clipId ? { ...item, transformKeyframes: [] } : item
+      ),
     });
     persistProject(get());
   },

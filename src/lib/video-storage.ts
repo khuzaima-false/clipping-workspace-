@@ -116,6 +116,20 @@ export type TimelineClip = {
   speedPreset?: string;
   /** Per-clip velocity keyframes (seconds → speed multiplier). */
   speedPoints?: { time: number; speed: number }[];
+  /**
+   * Base transform for the clip's video frame: `x`/`y` are percentage offsets
+   * from centre, `scale` is a multiplier and `rotation` is in degrees.
+   */
+  transform?: { x: number; y: number; scale: number; rotation: number };
+  /** Animated transform keyframes, timed in source seconds. */
+  transformKeyframes?: {
+    id: string;
+    time: number;
+    x: number;
+    y: number;
+    scale: number;
+    rotation: number;
+  }[];
 };
 
 /** Persisted metadata for one audio track (binary lives under `mediaId`). */

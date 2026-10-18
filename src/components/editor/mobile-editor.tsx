@@ -44,6 +44,7 @@ import {
   TRANSITION_PRESETS,
   effectiveAudioTracks,
   effectLabel,
+  resolveClipTransform,
   isBaseVideoAudioMuted,
   useEditorStore,
   type AspectRatio,
@@ -346,6 +347,10 @@ function MobilePreview({ wrapRef }: { wrapRef: React.RefObject<HTMLDivElement | 
           colorWheels: state.colorWheels,
           // V1/V2/V3 eye + solo decide which layers reach the canvas.
           ...visibleLayerFlags(state.trackStates),
+          clipTransform: resolveClipTransform(
+            state.sequence.find((clip) => clip.id === state.activeClipId),
+            video ? video.currentTime : state.currentTime
+          ),
         },
         { placeholder: true }
       );

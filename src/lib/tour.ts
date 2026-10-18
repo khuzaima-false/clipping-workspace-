@@ -71,8 +71,8 @@ const LEFT_STEPS: TourStep[] = [
   {
     target: "left-panel-body",
     open: "tab-clip",
-    title: "Clip — cutout, trim & framing",
-    body: "Chroma Key/Cutout with an eyedropper and tolerance slider, precise Trim In/Out, Framing (Fit vs Fill & Crop with X/Y position), one-click platform framing presets (TikTok, Reels, YouTube…), and the black vs blurred letterbox fill.",
+    title: "Clip — cutout, trim, framing & keyframes",
+    body: "Chroma Key/Cutout with an eyedropper and tolerance slider, precise Trim In/Out, Framing (Fit vs Fill & Crop with X/Y position), one-click platform framing presets (TikTok, Reels, YouTube…), and the black vs blurred letterbox fill. Below Framing you'll find Keyframes & Transform: animate the clip's Position X/Y, Scale and Rotation — hit ◆ at the playhead to add a keyframe, then drag the sliders (once animated, edits auto-key) and the preview interpolates smoothly.",
     placement: "right",
   },
   {
