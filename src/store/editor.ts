@@ -252,8 +252,19 @@ export const DEFAULT_COLOR_ADJUSTMENTS: ColorAdjustments = {
   clarity: 0,
 };
 
-/** One colour-wheel handle position (-1..1 on each axis). */
-export type WheelPoint = { x: number; y: number };
+/** One colour-wheel handle position (-1..1 on each axis) plus trim controls. */
+export type WheelPoint = {
+  x: number;
+  y: number;
+  /** Per-channel offsets in the wheel's tonal range, -100..100. */
+  r?: number;
+  g?: number;
+  b?: number;
+  /** Luminance offset in the wheel's tonal range, -100..100. */
+  lum?: number;
+  /** Saturation multiplier in the wheel's tonal range, -100..100. */
+  sat?: number;
+};
 
 /** Lift / Gamma / Gain colour wheels (shadows / midtones / highlights). */
 export type ColorWheels = {
@@ -321,6 +332,15 @@ export type TextOverlay = {
   fillColor: string;
   /** Background fill, hex — empty string means transparent. */
   bgColor: string;
+  /** Background pill opacity, 0..100 (defaults to 100). */
+  bgOpacity?: number;
+  /** Text outline colour (hex). */
+  strokeColor?: string;
+  /** Text outline width in output px (overrides the caption-style default). */
+  strokeWidth?: number;
+  /** Drop-shadow colour (hex) and blur radius in output px. */
+  shadowColor?: string;
+  shadowBlur?: number;
   /** Inner padding around the text, output px. */
   padding: number;
   /** Background corner radius, output px. */
@@ -619,9 +639,122 @@ export const FONT_FAMILIES = [
   "Impact",
 ] as const;
 
+/**
+ * Clamps AI-caption display windows to a clip's in/out range after a trim.
+ * Non-destructive: word timings are preserved so re-trimming can't lose text.
+ */
+function clampCaptionsToClipWindow(
+  overlays: TextOverlay[],
+  from: number,
+  to: number
+): TextOverlay[] {
+  if (to <= from) return overlays;
+  return overlays.map((overlay) => {
+    if (!overlay.auto) return overlay;
+    // Only captions that actually intersect the new window are touched.
+    if (overlay.endTime <= from || overlay.startTime >= to) return overlay;
+    const startTime = Math.max(overlay.startTime, from);
+    const endTime = Math.max(startTime + 0.05, Math.min(overlay.endTime, to));
+    if (startTime === overlay.startTime && endTime === overlay.endTime) {
+      return overlay;
+    }
+    return { ...overlay, startTime, endTime };
+  });
+}
+
+/**
+ * Splits captions that straddle a razor cut into two independent overlays, so
+ * the words before the cut stay on the first half and the rest on the second.
+ * Prevents the "subtitle jumps / desyncs after split" bug.
+ */
+function splitCaptionsAt(overlays: TextOverlay[], cutAt: number): TextOverlay[] {
+  const out: TextOverlay[] = [];
+  for (const overlay of overlays) {
+    const words = overlay.words;
+    if (!overlay.auto || !words || words.length === 0) {
+      out.push(overlay);
+      continue;
+    }
+    if (overlay.endTime <= cutAt || overlay.startTime >= cutAt) {
+      out.push(overlay);
+      continue;
+    }
+    const before = words.filter((word) => word.start < cutAt);
+    const after = words.filter((word) => word.end > cutAt);
+    if (before.length > 0) {
+      out.push({
+        ...overlay,
+        endTime: cutAt,
+        words: before,
+        text: before.map((word) => word.text).join(" "),
+      });
+    }
+    if (after.length > 0) {
+      out.push({
+        ...overlay,
+        id: createId("caption"),
+        startTime: cutAt,
+        words: after,
+        text: after.map((word) => word.text).join(" "),
+      });
+    }
+  }
+  return out;
+}
+
 /** Snaps a time to the 0.1s control grid and clamps it into [min, max]. */
 function snapTime(value: number, min: number, max: number): number {
   return Math.min(Math.max(Math.round(value * 10) / 10, min), max);
+}
+
+/**
+ * Interpolated overlay pose at `time`, mirroring the renderer's transform.
+ * Used when dropping a keyframe so un-edited properties keep their current
+ * animated value instead of snapping back to 0 / 1.
+ */
+function overlayPoseAt(
+  overlay: TextOverlay,
+  time: number
+): { x: number; y: number; scale: number; opacity: number; rotation: number } {
+  const base = {
+    x: overlay.x,
+    y: overlay.y,
+    scale: 1,
+    opacity: overlay.opacity,
+    rotation: overlay.rotation,
+  };
+  const frames = overlay.keyframes;
+  if (!frames || frames.length === 0) return base;
+
+  const poseOf = (frame: OverlayKeyframe) => ({
+    x: frame.x,
+    y: frame.y,
+    scale: frame.scale,
+    opacity: frame.opacity,
+    rotation: frame.rotation,
+  });
+
+  if (time <= frames[0].time) return poseOf(frames[0]);
+  const last = frames[frames.length - 1];
+  if (time >= last.time) return poseOf(last);
+
+  for (let i = 0; i < frames.length - 1; i += 1) {
+    const a = frames[i];
+    const b = frames[i + 1];
+    if (time >= a.time && time <= b.time) {
+      const span = b.time - a.time;
+      const t = span <= 0 ? 0 : (time - a.time) / span;
+      const mix = (from: number, to: number) => from + (to - from) * t;
+      return {
+        x: mix(a.x, b.x),
+        y: mix(a.y, b.y),
+        scale: mix(a.scale, b.scale),
+        opacity: mix(a.opacity, b.opacity),
+        rotation: mix(a.rotation, b.rotation),
+      };
+    }
+  }
+  return base;
 }
 
 /** Generates a collision-resistant id, falling back when `crypto.randomUUID` is unavailable. */
@@ -1272,6 +1405,8 @@ export const useEditorStore = create<EditorState>()(
     ];
     set({
       sequence: next,
+      // Re-index captions across the cut so each half keeps its own words.
+      overlays: splitCaptionsAt(get().overlays, at),
       activeClipId: second.id,
       trimStart: second.trimStart,
       trimEnd: second.trimEnd,
@@ -2089,7 +2224,21 @@ export const useEditorStore = create<EditorState>()(
       }
       return next;
     });
-    set({ sequence });
+    // Keep AI captions locked to the active clip's new in/out window.
+    const trimmed = sequence.find((clip) => clip.id === clipId);
+    const isActive = get().activeClipId === clipId;
+    set({
+      sequence,
+      ...(isActive && trimmed
+        ? {
+            overlays: clampCaptionsToClipWindow(
+              get().overlays,
+              trimmed.trimStart,
+              trimmed.trimEnd
+            ),
+          }
+        : {}),
+    });
     persistProject(get());
   },
 
@@ -2540,16 +2689,27 @@ export const useEditorStore = create<EditorState>()(
   setColorAdjustment: (patch) =>
     set({ colorAdjustments: { ...get().colorAdjustments, ...patch } }),
 
-  setColorWheel: (region, point) =>
+  setColorWheel: (region, point) => {
+    const clampAxis = (value: number | undefined) =>
+      value === undefined ? undefined : Math.min(Math.max(value, -100), 100);
+    const current = get().colorWheels[region];
     set({
       colorWheels: {
         ...get().colorWheels,
         [region]: {
+          // Merge so dragging the puck keeps the trim values (and vice versa).
+          ...current,
           x: Math.min(Math.max(point.x, -1), 1),
           y: Math.min(Math.max(point.y, -1), 1),
+          r: clampAxis(point.r ?? current.r),
+          g: clampAxis(point.g ?? current.g),
+          b: clampAxis(point.b ?? current.b),
+          lum: clampAxis(point.lum ?? current.lum),
+          sat: clampAxis(point.sat ?? current.sat),
         },
       },
-    }),
+    });
+  },
 
   resetColorAdjustments: () =>
     set({
@@ -2830,14 +2990,16 @@ export const useEditorStore = create<EditorState>()(
     const overlay = get().overlays.find((item) => item.id === id);
     if (!overlay) return;
     const time = get().currentTime;
+    // Preserve the *current animated* pose instead of resetting un-keyed props.
+    const pose = overlayPoseAt(overlay, time);
     const keyframe: OverlayKeyframe = {
       id: createId("kf"),
       time,
-      scale: 1,
-      x: overlay.x,
-      y: overlay.y,
-      opacity: overlay.opacity,
-      rotation: overlay.rotation,
+      scale: pose.scale,
+      x: pose.x,
+      y: pose.y,
+      opacity: pose.opacity,
+      rotation: pose.rotation,
     };
     // Replace any existing keyframe at (nearly) the same time.
     const existing = (overlay.keyframes ?? []).filter(

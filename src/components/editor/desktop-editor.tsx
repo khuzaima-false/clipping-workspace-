@@ -60,6 +60,7 @@ import {
   type OverlayAlign,
   type SpeedPreset,
   type TextOverlay,
+  type WheelPoint,
 } from "@/store/editor";
 import { useOverlayCanvasDrag } from "@/components/editor/use-overlay-drag";
 import { VelocityCurveEditor } from "@/components/editor/velocity-editor";
@@ -72,6 +73,11 @@ import { createDictation, isDictationSupported } from "@/lib/dictation";
 import { STICKER_CATEGORIES, STICKERS, stickerImageSrc, type StickerCategory } from "@/lib/stickers";
 import { TimelineWaveform, Waveform } from "@/components/editor/waveform";
 import { MOTION_PRESETS } from "@/lib/motion-presets";
+import {
+  onEditorTabRequest,
+  requestEditorTab,
+  type EditorTabRequest,
+} from "@/lib/editor-events";
 import {
   AUDIO_TRACK_KEYS,
   TRACK_KEYS,
@@ -169,8 +175,6 @@ const LUMETRI_TABS: { id: LumetriTab; label: string; full: string }[] = [
   { id: "presets", label: "Presets", full: "Cinematic Presets & Scopes" },
 ];
 
-type WheelValue = { x: number; y: number };
-
 /** Shared handle to the Program Monitor canvas so scopes can sample it live. */
 const programCanvasRef: { current: HTMLCanvasElement | null } = { current: null };
 
@@ -184,16 +188,20 @@ const CORNER_CLASSES = [
 
 /** Premiere-style round color wheel (hue around, saturation outward). */
 function ColorWheel({
-  label,
+  title,
+  role,
   value,
   onChange,
 }: {
-  label: string;
-  value: WheelValue;
-  onChange: (value: WheelValue) => void;
+  /** e.g. "Shadows / Lift". */
+  title: string;
+  /** Tonal role hint, e.g. "Shadows". */
+  role: string;
+  value: WheelPoint;
+  onChange: (value: WheelPoint) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const size = 72;
+  const size = 64;
   const radius = size / 2 - 5;
 
   const handle = (clientX: number, clientY: number) => {
@@ -209,15 +217,43 @@ function ColorWheel({
       dx /= dist;
       dy /= dist;
     }
-    onChange({ x: dx, y: dy });
+    onChange({ ...value, x: dx, y: dy });
   };
 
+  const trim = (
+    key: "r" | "g" | "b" | "lum" | "sat",
+    label: string
+  ) => (
+    <label className="flex items-center justify-between gap-1" title={`${role} ${label}`}>
+      <span className="w-7 shrink-0 text-[9px] uppercase tracking-wide text-zinc-500">
+        {label}
+      </span>
+      <input
+        type="number"
+        min={-100}
+        max={100}
+        step={1}
+        value={Math.round(value[key] ?? 0)}
+        onChange={(e) => onChange({ ...value, [key]: Number(e.target.value) })}
+        aria-label={`${title} ${label}`}
+        className="h-6 w-full min-w-0 rounded border border-zinc-800 bg-zinc-950 px-1 text-right text-[10px] tabular-nums text-zinc-100 focus:border-violet-500 focus:outline-none"
+      />
+    </label>
+  );
+
   return (
-    <div className="flex flex-col items-center gap-1">
+    <div className="flex min-w-0 flex-col items-center gap-2">
+      <div className="text-center">
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-300">
+          {title}
+        </p>
+        <p className="text-[9px] text-zinc-600">{role}</p>
+      </div>
+
       <div
         ref={ref}
         role="slider"
-        aria-label={label}
+        aria-label={title}
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={Math.round(((value.x + 1) / 2) * 100)}
@@ -252,7 +288,15 @@ function ColorWheel({
           }}
         />
       </div>
-      <span className="text-[10px] text-zinc-500">{label}</span>
+
+      {/* Numeric trims, aligned directly below the wheel. */}
+      <div className="w-full space-y-1">
+        {trim("r", "R")}
+        {trim("g", "G")}
+        {trim("b", "B")}
+        {trim("lum", "Lum")}
+        {trim("sat", "Sat")}
+      </div>
     </div>
   );
 }
@@ -475,19 +519,11 @@ function ProjectBinPanel({
 }: {
   onBatchExport?: (clipIds: string[]) => void;
 }) {
-  const [tab, setTab] = useState<
-    | "media"
-    | "effects"
-    | "properties"
-    | "clip"
-    | "speed"
-    | "captions"
-    | "audio"
-    | "stickers"
-    | "record"
-    | "studio"
-  >("media");
+  const [tab, setTab] = useState<EditorTabRequest>("media");
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Other panels (e.g. clicking a caption on the timeline) can request a tab.
+  useEffect(() => onEditorTabRequest(setTab), []);
 
   const assets = useEditorStore((s) => s.assets);
   const sequence = useEditorStore((s) => s.sequence);
@@ -840,37 +876,149 @@ function ProjectBinPanel({
                   </select>
                 </label>
 
-                <div className="grid grid-cols-2 gap-2">
-                  <label className="block">
-                    <span className="mb-1 block text-[10px] text-zinc-400">Fill</span>
+                {/* ── Text Color ─────────────────────────────────────── */}
+                <div className="space-y-1 rounded-lg border border-zinc-800 bg-zinc-950/50 p-2">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+                    Text Color
+                  </p>
+                  <div className="flex items-center gap-2">
                     <input
                       type="color"
                       value={selected.fillColor}
                       onChange={(e) => patchSelected({ fillColor: e.target.value })}
-                      className="h-8 w-full rounded border border-zinc-800 bg-zinc-950"
+                      aria-label="Text color"
+                      className="h-7 w-12 shrink-0 rounded border border-zinc-800 bg-zinc-950"
                     />
-                  </label>
-                  <label className="block">
-                    <span className="mb-1 block text-[10px] text-zinc-400">
-                      Background
+                    <span className="text-[10px] tabular-nums text-zinc-500">
+                      {selected.fillColor}
                     </span>
+                  </div>
+                </div>
+
+                {/* ── Background Pill ────────────────────────────────── */}
+                <div className="space-y-1 rounded-lg border border-zinc-800 bg-zinc-950/50 p-2">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+                    Background Pill
+                  </p>
+                  <div className="flex items-center gap-2">
                     <input
                       type="color"
                       value={selected.bgColor || "#000000"}
                       onChange={(e) => patchSelected({ bgColor: e.target.value })}
-                      className="h-8 w-full rounded border border-zinc-800 bg-zinc-950"
+                      aria-label="Background color"
+                      className="h-7 w-12 shrink-0 rounded border border-zinc-800 bg-zinc-950"
                     />
-                  </label>
+                    <label className="flex min-w-0 flex-1 items-center gap-2">
+                      <span className="text-[10px] text-zinc-500">Opacity</span>
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        step={1}
+                        value={selected.bgOpacity ?? 100}
+                        disabled={!selected.bgColor}
+                        onChange={(e) =>
+                          patchSelected({ bgOpacity: Number(e.target.value) })
+                        }
+                        aria-label="Background opacity"
+                        className="min-w-0 flex-1 accent-violet-500 disabled:opacity-40"
+                      />
+                      <span className="w-8 shrink-0 text-right text-[10px] tabular-nums text-zinc-500">
+                        {selected.bgOpacity ?? 100}%
+                      </span>
+                    </label>
+                  </div>
+                  {selected.bgColor ? (
+                    <button
+                      type="button"
+                      onClick={() => patchSelected({ bgColor: "" })}
+                      className="text-[10px] text-zinc-500 hover:text-zinc-200"
+                    >
+                      Remove background
+                    </button>
+                  ) : (
+                    <p className="text-[10px] text-zinc-600">
+                      Pick a colour to add a pill behind the text.
+                    </p>
+                  )}
                 </div>
-                {selected.bgColor && (
-                  <button
-                    type="button"
-                    onClick={() => patchSelected({ bgColor: "" })}
-                    className="text-[10px] text-zinc-500 hover:text-zinc-200"
-                  >
-                    Remove background
-                  </button>
-                )}
+
+                {/* ── Text Shadow / Stroke ───────────────────────────── */}
+                <div className="space-y-1.5 rounded-lg border border-zinc-800 bg-zinc-950/50 p-2">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+                    Text Shadow / Stroke
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={selected.strokeColor ?? "#000000"}
+                      onChange={(e) =>
+                        patchSelected({
+                          strokeColor: e.target.value,
+                          strokeWidth:
+                            selected.strokeWidth && selected.strokeWidth > 0
+                              ? selected.strokeWidth
+                              : 4,
+                        })
+                      }
+                      aria-label="Stroke color"
+                      className="h-7 w-12 shrink-0 rounded border border-zinc-800 bg-zinc-950"
+                    />
+                    <label className="flex min-w-0 flex-1 items-center gap-2">
+                      <span className="text-[10px] text-zinc-500">Stroke</span>
+                      <input
+                        type="range"
+                        min={0}
+                        max={24}
+                        step={1}
+                        value={selected.strokeWidth ?? 0}
+                        onChange={(e) =>
+                          patchSelected({ strokeWidth: Number(e.target.value) })
+                        }
+                        aria-label="Stroke width"
+                        className="min-w-0 flex-1 accent-violet-500"
+                      />
+                      <span className="w-8 shrink-0 text-right text-[10px] tabular-nums text-zinc-500">
+                        {selected.strokeWidth ?? 0}
+                      </span>
+                    </label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={selected.shadowColor ?? "#000000"}
+                      onChange={(e) =>
+                        patchSelected({
+                          shadowColor: e.target.value,
+                          shadowBlur:
+                            selected.shadowBlur && selected.shadowBlur > 0
+                              ? selected.shadowBlur
+                              : 8,
+                        })
+                      }
+                      aria-label="Shadow color"
+                      className="h-7 w-12 shrink-0 rounded border border-zinc-800 bg-zinc-950"
+                    />
+                    <label className="flex min-w-0 flex-1 items-center gap-2">
+                      <span className="text-[10px] text-zinc-500">Shadow</span>
+                      <input
+                        type="range"
+                        min={0}
+                        max={40}
+                        step={1}
+                        value={selected.shadowBlur ?? 0}
+                        onChange={(e) =>
+                          patchSelected({ shadowBlur: Number(e.target.value) })
+                        }
+                        aria-label="Shadow blur"
+                        className="min-w-0 flex-1 accent-violet-500"
+                      />
+                      <span className="w-8 shrink-0 text-right text-[10px] tabular-nums text-zinc-500">
+                        {selected.shadowBlur ?? 0}
+                      </span>
+                    </label>
+                  </div>
+                </div>
 
                 <div>
                   <span className="mb-1 block text-[10px] text-zinc-400">Alignment</span>
@@ -2799,7 +2947,7 @@ function LumetriPanel() {
         <div key={tab} className="animate-tab-in space-y-3">
         {tab === "wheels" && (
         <div data-tour="color-wheels">
-          <div className="mb-1 flex items-center justify-between">
+          <div className="mb-2 flex items-center justify-between">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
               Color Wheels
             </p>
@@ -2811,17 +2959,30 @@ function LumetriPanel() {
               Reset
             </button>
           </div>
-          <div className="grid grid-cols-3 justify-items-center gap-1">
-            <ColorWheel label="Lift" value={colorWheels.lift} onChange={(v) => setColorWheel("lift", v)} />
-            <ColorWheel label="Gamma" value={colorWheels.gamma} onChange={(v) => setColorWheel("gamma", v)} />
-            <ColorWheel label="Gain" value={colorWheels.gain} onChange={(v) => setColorWheel("gain", v)} />
+          {/* Balanced 3-column grading layout (stacks below `md`). */}
+          <div className="grid grid-cols-1 gap-4 p-4 md:grid-cols-3">
+            <ColorWheel
+              title="Shadows / Lift"
+              role="Shadows"
+              value={colorWheels.lift}
+              onChange={(value) => setColorWheel("lift", value)}
+            />
+            <ColorWheel
+              title="Midtones / Gamma"
+              role="Midtones"
+              value={colorWheels.gamma}
+              onChange={(value) => setColorWheel("gamma", value)}
+            />
+            <ColorWheel
+              title="Highlights / Gain"
+              role="Highlights"
+              value={colorWheels.gain}
+              onChange={(value) => setColorWheel("gain", value)}
+            />
           </div>
-          <p className="mt-1 text-center text-[9px] text-zinc-600">
-            Lift = shadows · Gamma = midtones · Gain = highlights
-          </p>
-          <p className="mt-2 text-center text-[10px] leading-4 text-zinc-500">
-            Drag inside a wheel to tint that tonal range. Use “Reset” to clear the
-            whole grade.
+          <p className="text-center text-[9px] leading-4 text-zinc-600">
+            Drag inside a wheel to tint that tonal range · R/G/B offset the
+            channel · Lum lifts · Sat boosts saturation.
           </p>
         </div>
         )}
@@ -3706,7 +3867,11 @@ function PremiereTimeline() {
                     onPointerUp={bodyDragHandlers.onPointerUp}
                     onPointerCancel={bodyDragHandlers.onPointerCancel}
                     onContextMenu={(e) => openMenu(e, "overlay", o.id)}
-                    onClick={() => selectOverlay(o.id)}
+                    onClick={() => {
+                      selectOverlay(o.id);
+                      // Jump the inspector to Props for immediate local edits.
+                      requestEditorTab("properties");
+                    }}
                     className={cn("h-full w-full cursor-grab overflow-hidden px-1.5 text-left active:cursor-grabbing", adjustChip, o.id === selectedId && "ring-2 ring-white/70", trackStates.V2.locked && "cursor-not-allowed")}
                   >
                     <span className="block truncate">

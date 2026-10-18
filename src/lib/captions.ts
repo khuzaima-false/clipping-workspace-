@@ -5,6 +5,8 @@ const MAX_WORDS_PER_CAPTION = 4;
 const MAX_CAPTION_SECONDS = 2.6;
 /** A pause longer than this starts a new caption group. */
 const PAUSE_BREAK_SECONDS = 0.55;
+/** Gaps shorter than this are bridged so captions never flicker off. */
+const GAP_BRIDGE_SECONDS = 0.45;
 /** Trailing hold so the final word stays on screen long enough to read. */
 const TAIL_HOLD_SECONDS = 0.18;
 const MIN_CAPTION_SECONDS = 0.3;
@@ -25,13 +27,19 @@ function captionFontSize(aspect: AspectRatio): number {
 }
 
 /** Cleans up the raw Whisper word stream (trim + clamp timings). */
-function normalizeWords(words: CaptionWord[]): CaptionWord[] {
+function normalizeWords(words: CaptionWord[] | null | undefined): CaptionWord[] {
+  if (!Array.isArray(words)) return [];
   const cleaned: CaptionWord[] = [];
   for (const word of words) {
+    // Whisper can emit null/empty chunks for silence — skip them entirely.
+    if (!word || typeof word.text !== "string") continue;
     const text = word.text.trim();
     if (!text) continue;
-    const start = Math.max(0, word.start);
-    const end = Math.max(word.end, start);
+    const rawStart = Number(word.start);
+    const rawEnd = Number(word.end);
+    if (!Number.isFinite(rawStart)) continue;
+    const start = Math.max(0, rawStart);
+    const end = Math.max(Number.isFinite(rawEnd) ? rawEnd : start, start);
     cleaned.push({ text, start, end });
   }
   return cleaned;
@@ -112,6 +120,18 @@ export function buildAutoCaptions(
       words: group,
       auto: true,
     });
+  }
+
+  // Bridge micro-gaps: a 0.1–0.4s silence between phrases used to unmount the
+  // subtitle for a few frames (visible flicker). Extend the previous caption to
+  // the next caption's start so the overlay stays mounted through the pause.
+  for (let i = 0; i < captions.length - 1; i += 1) {
+    const current = captions[i];
+    const next = captions[i + 1];
+    const gap = next.startTime - current.endTime;
+    if (gap > 0 && gap < GAP_BRIDGE_SECONDS) {
+      captions[i] = { ...current, endTime: next.startTime };
+    }
   }
 
   return captions;

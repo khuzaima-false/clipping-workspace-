@@ -49,32 +49,70 @@ export type MotionPreset = {
 
 const clamp01 = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
 
-/** Standard ease-out curve: fast start, gentle settle. */
+/**
+ * Solves a CSS `cubic-bezier(x1, y1, x2, y2)` easing curve.
+ *
+ * Uses Newton-Raphson for the x→t inversion with a bisection fallback, the same
+ * approach browsers use, so JS motion matches the CSS timing function exactly.
+ */
+function cubicBezier(
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number
+): (t: number) => number {
+  const sampleX = (t: number) =>
+    3 * t * (1 - t) * (1 - t) * x1 + 3 * t * t * (1 - t) * x2 + t * t * t;
+  const sampleY = (t: number) =>
+    3 * t * (1 - t) * (1 - t) * y1 + 3 * t * t * (1 - t) * y2 + t * t * t;
+
+  const solveX = (x: number): number => {
+    let t = x;
+    for (let i = 0; i < 6; i += 1) {
+      const dx = sampleX(t) - x;
+      if (Math.abs(dx) < 1e-4) return t;
+      const slope =
+        3 * (1 - t) * (1 - t) * x1 +
+        6 * (1 - t) * t * (x2 - x1) +
+        3 * t * t * (1 - x2);
+      if (Math.abs(slope) < 1e-6) break;
+      t = clamp01(t - dx / slope);
+    }
+    let low = 0;
+    let high = 1;
+    t = x;
+    for (let i = 0; i < 20; i += 1) {
+      const cx = sampleX(t);
+      if (Math.abs(cx - x) < 1e-4) break;
+      if (cx < x) low = t;
+      else high = t;
+      t = (low + high) / 2;
+    }
+    return t;
+  };
+
+  return (x: number) => sampleY(solveX(clamp01(x)));
+}
+
+/** The house easing: `cubic-bezier(0.16, 1, 0.3, 1)` (smooth, decelerating). */
+const EASE_OUT_EXPO = cubicBezier(0.16, 1, 0.3, 1);
+
+/** Standard ease-out (fast start, gentle settle). */
 function easeOutCubic(x: number): number {
   return 1 - Math.pow(1 - clamp01(x), 3);
 }
 
-/** Overshooting ease-out (elastic "pop" without oscillation). */
-function easeOutBack(x: number): number {
-  const c1 = 1.70158;
-  const c3 = c1 + 1;
-  const p = clamp01(x) - 1;
-  return 1 + c3 * p * p * p + c1 * p * p;
+/** Damped elastic overshoot — used by the Bounce preset. */
+function elasticOut(x: number): number {
+  const t = clamp01(x);
+  if (t === 0 || t === 1) return t;
+  return Math.pow(2, -10 * t) * Math.sin(((t - 0.075) * (2 * Math.PI)) / 0.3) + 1;
 }
 
 /** Symmetric ease-in-out, used for the exit fades. */
 function easeInOutQuad(x: number): number {
   const p = clamp01(x);
   return p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
-}
-
-/**
- * Damped spring: `1 - e^(-6t)·cos(10t)`.
- * Rises past 1 (overshoot) then settles exactly on 1, giving a physical drop.
- */
-function springAt(x: number): number {
-  const t = clamp01(x);
-  return 1 - Math.exp(-6 * t) * Math.cos(10 * t);
 }
 
 /* ------------------------------------------------------------------ */
@@ -124,7 +162,8 @@ export const MOTION_PRESETS: MotionPreset[] = [
       return {
         ...baseFrame(),
         // The word loop reads `reveal` to hide words that haven't "arrived" yet.
-        reveal: clamp01(local / inDuration),
+        // A decelerating curve keeps the cadence from feeling mechanical.
+        reveal: EASE_OUT_EXPO(local / inDuration),
         alpha: exitAlpha(local, total, 0.4),
       };
     },
@@ -132,15 +171,15 @@ export const MOTION_PRESETS: MotionPreset[] = [
   {
     id: "dropIn",
     label: "Drop-in",
-    blurb: "Springs down from the top of the frame and settles.",
+    blurb: "Glides down from the top of the frame and eases to a stop.",
     inDuration: 0.85,
     outDuration: 0.4,
     resolve: (local, total) => {
-      const p = springAt(local / 0.85);
+      const p = EASE_OUT_EXPO(local / 0.85);
       return {
         ...baseFrame(),
         offsetYRatio: -(1 - p) * 0.42,
-        alpha: Math.min(1, local / 0.12) * exitAlpha(local, total, 0.4),
+        alpha: easeOutCubic(local / 0.16) * exitAlpha(local, total, 0.4),
         scale: 1,
       };
     },
@@ -148,15 +187,15 @@ export const MOTION_PRESETS: MotionPreset[] = [
   {
     id: "bounce",
     label: "Bounce",
-    blurb: "Elastic scale-up that overshoots then snaps into place.",
+    blurb: "Elastic scale-up with a soft overshoot, then it settles.",
     inDuration: 0.7,
     outDuration: 0.35,
     resolve: (local, total) => {
-      const p = easeOutBack(local / 0.7);
+      const p = elasticOut(local / 0.7);
       return {
         ...baseFrame(),
         scale: 0.35 + 0.65 * p,
-        alpha: Math.min(1, local / 0.18) * exitAlpha(local, total, 0.35),
+        alpha: easeOutCubic(local / 0.18) * exitAlpha(local, total, 0.35),
       };
     },
   },
@@ -167,10 +206,10 @@ export const MOTION_PRESETS: MotionPreset[] = [
     inDuration: 0.8,
     outDuration: 0.45,
     resolve: (local, total) => {
-      const p = easeOutCubic(local / 0.8);
+      const p = EASE_OUT_EXPO(local / 0.8);
       return {
         ...baseFrame(),
-        alpha: Math.min(1, local / 0.35) * exitAlpha(local, total, 0.45),
+        alpha: easeOutCubic(local / 0.35) * exitAlpha(local, total, 0.45),
         rotation: -180 * (1 - p),
         scale: 0.82 + 0.18 * p,
       };
@@ -183,11 +222,11 @@ export const MOTION_PRESETS: MotionPreset[] = [
     inDuration: 0.55,
     outDuration: 0.4,
     resolve: (local, total) => {
-      const p = easeOutCubic(local / 0.55);
+      const p = EASE_OUT_EXPO(local / 0.55);
       return {
         ...baseFrame(),
         offsetYRatio: (1 - p) * 0.16,
-        alpha: Math.min(1, local / 0.2) * exitAlpha(local, total, 0.4),
+        alpha: easeOutCubic(local / 0.2) * exitAlpha(local, total, 0.4),
       };
     },
   },

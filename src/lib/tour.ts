@@ -146,7 +146,7 @@ const RIGHT_STEPS: TourStep[] = [
     target: "color-wheels",
     open: "lumetri-tab-wheels",
     title: "Tab 1 · Colour wheels",
-    body: "Three-way colour wheels for tonal ranges: Lift shapes the shadows, Gamma the midtones and Gain the highlights. Drag inside a wheel to tint that range, and use Reset to clear the whole grade.",
+    body: "Three balanced grading columns — Shadows / Lift, Midtones / Gamma and Highlights / Gain. Drag inside a wheel to tint that tonal range, then fine-tune with the R/G/B offsets, Lum (luminance) and Sat (saturation) fields under each wheel. Use Reset to clear the whole grade.",
     placement: "left",
   },
   {

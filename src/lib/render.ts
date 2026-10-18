@@ -566,6 +566,14 @@ function wheelVector(point: WheelPoint | undefined): [number, number, number] {
   return [r * magnitude, g * magnitude, b * magnitude];
 }
 
+/** True when a wheel carries any trim value beyond the handle position. */
+function wheelHasTrim(point: WheelPoint | undefined): boolean {
+  if (!point) return false;
+  return Boolean(
+    point.r || point.g || point.b || point.lum || point.sat
+  );
+}
+
 /** True when any control needs the (heavier) per-pixel grade pass. */
 export function needsPixelGrade(
   adjustments: ColorAdjustments,
@@ -587,7 +595,10 @@ export function needsPixelGrade(
     wheels.gamma.x !== 0 ||
     wheels.gamma.y !== 0 ||
     wheels.gain.x !== 0 ||
-    wheels.gain.y !== 0
+    wheels.gain.y !== 0 ||
+    wheelHasTrim(wheels.lift) ||
+    wheelHasTrim(wheels.gamma) ||
+    wheelHasTrim(wheels.gain)
   );
 }
 
@@ -604,14 +615,32 @@ function buildToneLUT(
   const blacks = adj.blacks / 100;
   const whites = adj.whites / 100;
 
+  // Per-wheel numeric trims (RGB offsets + luminance), normalised to 0..1.
+  const trim = (point: WheelPoint | undefined) => ({
+    r: (point?.r ?? 0) / 100,
+    g: (point?.g ?? 0) / 100,
+    b: (point?.b ?? 0) / 100,
+    lum: (point?.lum ?? 0) / 100,
+  });
+  const liftTrim = trim(wheels?.lift);
+  const gammaTrim = trim(wheels?.gamma);
+  const gainTrim = trim(wheels?.gain);
+
   const channels: Uint8ClampedArray[] = [];
   for (let channel = 0; channel < 3; channel += 1) {
     const lut = new Uint8ClampedArray(256);
     const liftV = lift[channel] * 0.15;
     const gainV = 1 + gain[channel] * 0.5;
     const gammaExp = 1 / (1 + gamma[channel] * 0.35);
+    const trimKey = channel === 0 ? "r" : channel === 1 ? "g" : "b";
     for (let v = 0; v < 256; v += 1) {
       let c = v / 255;
+      const luma = c;
+      // Tonal weights: lift → shadows, gamma → midtones, gain → highlights.
+      const wLift = Math.max(0, 1 - luma * 2);
+      const wGain = Math.max(0, luma * 2 - 1);
+      const wGamma = Math.max(0, 1 - wLift - wGain);
+
       if (blacks !== 0) c += blacks * 0.35 * clamp01((0.25 - c) / 0.25);
       if (whites !== 0) c += whites * 0.35 * clamp01((c - 0.75) / 0.25);
       if (shadows !== 0) c += shadows * 0.3 * clamp01((0.5 - c) / 0.5);
@@ -620,6 +649,16 @@ function buildToneLUT(
       c = clamp01(c);
       if (gammaExp !== 1) c = Math.pow(c, gammaExp);
       c *= gainV;
+
+      // Numeric trims, weighted by the wheel's tonal range.
+      c +=
+        liftTrim[trimKey] * 0.25 * wLift +
+        gammaTrim[trimKey] * 0.25 * wGamma +
+        gainTrim[trimKey] * 0.25 * wGain;
+      c +=
+        (liftTrim.lum * wLift + gammaTrim.lum * wGamma + gainTrim.lum * wGain) *
+        0.28;
+
       lut[v] = Math.round(clamp01(c) * 255);
     }
     channels.push(lut);
@@ -650,6 +689,13 @@ function applyPixelGrade(
   const vibrance = adj.vibrance / 100;
   const clarity = adj.clarity / 100;
   const sharpness = adj.sharpness / 100;
+  const wheelSat = {
+    lift: (wheels?.lift.sat ?? 0) / 100,
+    gamma: (wheels?.gamma.sat ?? 0) / 100,
+    gain: (wheels?.gain.sat ?? 0) / 100,
+  };
+  const hasWheelSat =
+    wheelSat.lift !== 0 || wheelSat.gamma !== 0 || wheelSat.gain !== 0;
   const source = sharpness > 0 ? new Uint8ClampedArray(data) : null;
   const stride = width * 4;
 
@@ -667,6 +713,25 @@ function applyPixelGrade(
       r = luma + (r - luma) * amount;
       g = luma + (g - luma) * amount;
       b = luma + (b - luma) * amount;
+    }
+
+    // Per-wheel saturation, weighted toward that wheel's tonal band.
+    if (hasWheelSat) {
+      const luma = 0.299 * r + 0.587 * g + 0.114 * b;
+      const luma01 = luma / 255;
+      const wLift = Math.max(0, 1 - luma01 * 2);
+      const wGain = Math.max(0, luma01 * 2 - 1);
+      const wGamma = Math.max(0, 1 - wLift - wGain);
+      const amount =
+        1 +
+        wheelSat.lift * wLift +
+        wheelSat.gamma * wGamma +
+        wheelSat.gain * wGain;
+      if (amount !== 1) {
+        r = luma + (r - luma) * amount;
+        g = luma + (g - luma) * amount;
+        b = luma + (b - luma) * amount;
+      }
     }
 
     if (clarity !== 0) {
@@ -835,7 +900,13 @@ export function drawScene(
 
   const visibleOverlays = showOverlays ? config.overlays : [];
   for (const overlay of visibleOverlays) {
-    if (config.sceneTime < overlay.startTime || config.sceneTime > overlay.endTime) {
+    // Auto-captions get a short carry-over so a sub-frame gap between spoken
+    // phrases can't unmount the subtitle and make it flicker.
+    const hold = overlay.auto ? 0.12 : 0;
+    if (
+      config.sceneTime < overlay.startTime ||
+      config.sceneTime > overlay.endTime + hold
+    ) {
       continue;
     }
     drawOverlay(
@@ -1344,9 +1415,14 @@ function drawOverlay(
 
   const maxTextW = Math.max(40, width * 0.9 - overlay.padding * 2);
   const textWords = text.split(/\s+/).filter(Boolean);
+  // Whisper can return empty chunks for silence; drop them before comparing so
+  // a single blank word can't disable word-level timing/animation.
+  const timedWords = overlay.words?.filter(
+    (word) => typeof word.text === "string" && word.text.trim().length > 0
+  );
   // Only trust word timings when they still line up with the (editable) text.
   const timing =
-    overlay.words && overlay.words.length === textWords.length ? overlay.words : null;
+    timedWords && timedWords.length === textWords.length ? timedWords : null;
 
   const lines: LayoutLine[] = timing
     ? layoutTimedLines(ctx, textWords, maxTextW)
@@ -1441,8 +1517,12 @@ function drawOverlay(
       ctx.shadowBlur = Math.max(24, fontSize * 0.6);
     }
     ctx.fillStyle = overlay.bgColor;
+    if ((overlay.bgOpacity ?? 100) < 100) {
+      ctx.globalAlpha = Math.max(0, (overlay.bgOpacity ?? 100) / 100);
+    }
     roundedRect(ctx, boxX, boxY, boxW, boxH, overlay.radius);
     ctx.fill();
+    if ((overlay.bgOpacity ?? 100) < 100) ctx.globalAlpha = 1;
     if (neon) {
       ctx.lineWidth = Math.max(2, fontSize * 0.06);
       ctx.strokeStyle = overlay.fillColor || style.highlightColor || "#a855f7";
@@ -1452,9 +1532,17 @@ function drawOverlay(
     ctx.restore();
   }
 
-  const strokeWidth = style.textStroke ? Math.max(2, fontSize * 0.12) : 0;
+  const strokeWidth =
+    overlay.strokeWidth ?? (style.textStroke ? Math.max(2, fontSize * 0.12) : 0);
+  const strokeColor = overlay.strokeColor ?? "#000000";
   const spaceWidth = ctx.measureText(" ").width;
   const highlightColor = style.highlightColor || "#facc15";
+
+  // Optional drop shadow for the glyphs (applies to every word below).
+  if ((overlay.shadowBlur ?? 0) > 0) {
+    ctx.shadowColor = overlay.shadowColor ?? "rgba(0,0,0,0.75)";
+    ctx.shadowBlur = overlay.shadowBlur ?? 0;
+  }
 
   let wordCounter = 0;
   lines.forEach((line, lineIndex) => {
@@ -1530,8 +1618,8 @@ function drawOverlay(
 
       // Chromatic fringe for the glitch look.
       if (anim === "glitchText") {
-        drawWord(ctx, word.text, cursorX - 2 + offsetX, baselineY + offsetY, word.width, "#ff2d55", wordStroke, scale, alpha * 0.7, false);
-        drawWord(ctx, word.text, cursorX + 2 + offsetX, baselineY + offsetY, word.width, "#22d3ee", wordStroke, scale, alpha * 0.7, false);
+        drawWord(ctx, word.text, cursorX - 2 + offsetX, baselineY + offsetY, word.width, "#ff2d55", wordStroke, scale, alpha * 0.7, false, strokeColor);
+        drawWord(ctx, word.text, cursorX + 2 + offsetX, baselineY + offsetY, word.width, "#22d3ee", wordStroke, scale, alpha * 0.7, false, strokeColor);
       }
 
       // Word highlight box behind the currently-spoken word.
@@ -1567,7 +1655,8 @@ function drawOverlay(
         wordStroke,
         scale,
         alpha,
-        glow
+        glow,
+        strokeColor
       );
 
       // Growing underline per word.
@@ -1720,7 +1809,8 @@ function drawWord(
   strokeWidth: number,
   scale: number,
   alpha = 1,
-  glow = false
+  glow = false,
+  strokeColor = "#000000"
 ): void {
   if (alpha <= 0) return;
   ctx.save();
@@ -1737,7 +1827,7 @@ function drawWord(
 
   if (strokeWidth > 0) {
     ctx.lineWidth = strokeWidth;
-    ctx.strokeStyle = "#000000";
+    ctx.strokeStyle = strokeColor;
     ctx.lineJoin = "round";
     ctx.miterLimit = 2;
     ctx.strokeText(text, -width / 2, 0);
