@@ -205,7 +205,8 @@ function ColorWheel({
   // A ref (not `event.buttons`) is the reliable "is the pointer down?" signal:
   // touch pointers and pen can report buttons === 0 mid-drag.
   const draggingRef = useRef(false);
-  const size = 64;
+  // Sized to fit the 3-column grading grid inside the narrow Lumetri panel.
+  const size = 54;
   const radius = size / 2 - 5;
 
   const handle = (clientX: number, clientY: number) => {
@@ -239,7 +240,7 @@ function ColorWheel({
     label: string
   ) => (
     <label className="flex items-center justify-between gap-1" title={`${role} ${label}`}>
-      <span className="w-7 shrink-0 text-[9px] uppercase tracking-wide text-zinc-500">
+      <span className="w-5 shrink-0 text-[8px] uppercase tracking-wide text-zinc-500">
         {label}
       </span>
       <input
@@ -250,7 +251,7 @@ function ColorWheel({
         value={Math.round(value[key] ?? 0)}
         onChange={(e) => onChange({ ...value, [key]: Number(e.target.value) })}
         aria-label={`${title} ${label}`}
-        className="h-6 w-full min-w-0 rounded border border-zinc-800 bg-zinc-950 px-1 text-right text-[10px] tabular-nums text-zinc-100 focus:border-violet-500 focus:outline-none"
+        className="h-5 w-full min-w-0 rounded border border-zinc-800 bg-zinc-950 px-0.5 text-right text-[9px] tabular-nums text-zinc-100 focus:border-violet-500 focus:outline-none"
       />
     </label>
   );
@@ -881,10 +882,29 @@ function ProjectBinPanel({
         {tab === "properties" && (
           <div className="space-y-3">
             {!selected ? (
-              <p className="text-[11px] leading-4 text-zinc-500">
-                Select a text overlay (Captions tab or timeline) to edit its text,
-                font, colors, animation and transform.
-              </p>
+              <div className="space-y-2">
+                <p className="text-[11px] leading-4 text-zinc-500">
+                  Select a text overlay (Captions tab or timeline) to edit its text,
+                  font, colors, animation and transform.
+                </p>
+                <div className="space-y-1.5 rounded-lg border border-zinc-800 bg-zinc-950/50 p-2">
+                  <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                    <Diamond className="h-3 w-3" aria-hidden /> Clip keyframes &amp;
+                    transform
+                  </p>
+                  <p className="text-[10px] leading-4 text-zinc-600">
+                    Animate the selected clip&apos;s position, scale and rotation
+                    from the Clip tab.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => requestEditorTab("clip")}
+                    className="inline-flex items-center gap-1 rounded-md border border-zinc-800 bg-zinc-950/60 px-2 py-1 text-[10px] text-zinc-200 hover:border-violet-500/60 hover:text-violet-200"
+                  >
+                    Open Clip transform →
+                  </button>
+                </div>
+              </div>
             ) : (
               <>
                 <label className="block">
@@ -1321,6 +1341,24 @@ function ProjectBinPanel({
 
         {tab === "clip" && (
           <div className="space-y-4">
+            {/* Quick jump to the transform keyframes (section sits further down). */}
+            <div className="flex items-center justify-between gap-2 rounded-lg border border-violet-500/25 bg-violet-600/5 px-2 py-1.5">
+              <span className="flex items-center gap-1.5 text-[10px] font-medium text-violet-200">
+                <Diamond className="h-3 w-3" aria-hidden /> Keyframes &amp; Transform
+              </span>
+              <button
+                type="button"
+                onClick={() =>
+                  document
+                    .getElementById("clip-transform")
+                    ?.scrollIntoView({ behavior: "smooth", block: "start" })
+                }
+                className="shrink-0 rounded-md border border-zinc-800 bg-zinc-950/60 px-2 py-0.5 text-[10px] text-zinc-300 hover:border-violet-500/60 hover:text-violet-200"
+              >
+                Open ↓
+              </button>
+            </div>
+
             {/* Chroma key / green screen cutout */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
@@ -1541,7 +1579,8 @@ function ProjectBinPanel({
 
             {/* Keyframes & Transform */}
             <div
-              className="space-y-2 border-t border-zinc-800 pt-3"
+              id="clip-transform"
+              className="scroll-mt-2 space-y-2 border-t border-zinc-800 pt-3"
               data-tour="clip-keyframes"
             >
               <div className="flex items-center justify-between">

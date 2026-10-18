@@ -55,6 +55,13 @@ const LEFT_STEPS: TourStep[] = [
     placement: "right",
   },
   {
+    target: "media-bin",
+    open: "tab-media",
+    title: "The scrollable media bin",
+    body: "The clip list has its own scroll container, so importing a dozen clips never stretches the panel or spills over the banner slot underneath. The import button and Batch-tools row stay pinned above it while you scroll.",
+    placement: "right",
+  },
+  {
     target: "left-panel-body",
     open: "tab-effects",
     title: "Effects — 35 looks & moves",
@@ -64,15 +71,29 @@ const LEFT_STEPS: TourStep[] = [
   {
     target: "left-panel-body",
     open: "tab-properties",
-    title: "Props — overlay text, keyframes, motion & AI",
-    body: "Select a text or image overlay to edit its text, font, fill/background colour, alignment, size, position, rotation and opacity. Add keyframes at the playhead to animate scale/position/opacity (the renderer interpolates between them), pick an in/out Motion preset (Typewriter, Drop-in, Bounce, Fade Spin, Slide Up), run AI background removal, and tune the global caption animation (pop, bounce, karaoke, typewriter, neon) with word-highlight and outline toggles.",
+    title: "Props — text, colours, motion & AI",
+    body: "Select a text or image overlay to edit its text, font, alignment, size, position, rotation and opacity. Colours are split into three clear groups — “Text Color” for the glyphs, “Background Pill” with its own opacity slider, and “Text Shadow / Stroke” for outlines and drop shadows. You can also add transform keyframes at the playhead, pick an in/out Motion preset, run AI background removal, and tune the global caption animation (pop, bounce, karaoke, typewriter, neon) with word-highlight and outline toggles.",
+    placement: "right",
+  },
+  {
+    target: "motion-presets",
+    open: "tab-properties",
+    title: "Motion presets",
+    body: "Five pre-baked in/out animations for titles and overlays — Typewriter (word-by-word reveal), Drop-in (smooth glide from the top), Bounce (elastic scale with a soft overshoot), Fade Spin (fade + rotation) and Slide Up. All of them run on a cubic-bezier(0.16, 1, 0.3, 1) curve and play on top of your keyframes and caption animation.",
     placement: "right",
   },
   {
     target: "left-panel-body",
     open: "tab-clip",
-    title: "Clip — cutout, trim, framing & keyframes",
-    body: "Chroma Key/Cutout with an eyedropper and tolerance slider, precise Trim In/Out, Framing (Fit vs Fill & Crop with X/Y position), one-click platform framing presets (TikTok, Reels, YouTube…), and the black vs blurred letterbox fill. Below Framing you'll find Keyframes & Transform: animate the clip's Position X/Y, Scale and Rotation — hit ◆ at the playhead to add a keyframe, then drag the sliders (once animated, edits auto-key) and the preview interpolates smoothly.",
+    title: "Clip — cutout, trim & framing",
+    body: "Chroma Key/Cutout with an eyedropper and tolerance slider, precise Trim In/Out, Framing (Fit vs Fill & Crop with X/Y position), one-click platform framing presets (TikTok, Reels, YouTube…), and the black vs blurred letterbox fill. The violet “Keyframes & Transform” bar at the top jumps straight to the animation controls.",
+    placement: "right",
+  },
+  {
+    target: "clip-keyframes",
+    open: "tab-clip",
+    title: "Keyframes & Transform",
+    body: "Animate the selected clip itself: Position X/Y, Scale/Zoom and Rotation, each with a ◆ Add-keyframe toggle at the playhead. With no keyframes the sliders edit the base pose; once a keyframe exists, edits auto-key at the playhead and the renderer interpolates between them, so the preview (and export) moves smoothly. The list below shows every keyframe with its values and a delete button, plus Clear all.",
     placement: "right",
   },
   {
@@ -85,8 +106,15 @@ const LEFT_STEPS: TourStep[] = [
   {
     target: "left-panel-body",
     open: "tab-captions",
-    title: "Captions — AI captions, styles & the transcript",
-    body: "Choose the spoken language and auto-generate AI captions on-device (with a live progress bar), or type/dictate a script and generate timed captions from it. 23 caption styles are one click away. Once AI captions exist you get an editable Transcript: click words to select them and hit “Delete & ripple” to cut that exact range out of the clip while every caption stays in sync.",
+    title: "Captions — AI captions, styles & sync",
+    body: "Choose the spoken language and auto-generate AI captions on-device (with a live progress bar), or type/dictate a script and generate timed captions from it. 23 caption styles are one click away. Captions stay locked to the audio: short silences are bridged so subtitles never flicker off between phrases, and razor cuts re-index them so each half of a split clip keeps the right words.",
+    placement: "right",
+  },
+  {
+    target: "transcript",
+    open: "tab-captions",
+    title: "Transcript editing — cut video by deleting words",
+    body: "Once AI captions exist, the transcript appears below the caption list. Click the words you want gone (they turn red and strike through), then hit “Delete & ripple”: the clip is cut at both ends of that range, the timeline closes the gap, and every caption re-times itself so text and audio stay perfectly in sync. It works exactly like editing a text document.",
     placement: "right",
   },
   {
@@ -133,13 +161,13 @@ const RIGHT_STEPS: TourStep[] = [
   {
     target: "lumetri-panel",
     title: "🎨 Lumetri color & scopes",
-    body: "The complete grading suite, split into three compact sub-tabs — Wheels, Corrections and Presets — so nothing is buried in a wall of sliders. Every change applies in real time to the Program Monitor and is burned into your export.",
+    body: "The complete grading suite, split into three compact sub-tabs — Wheels, Correct and Presets — so nothing is buried in a wall of sliders. Every change applies in real time to the Program Monitor and is burned into your export.",
     placement: "left",
   },
   {
     target: "lumetri-tabs",
     title: "Three sub-tabs",
-    body: "Wheels for three-way tonal colour, Corrections for the 13 primary sliders, and Presets for the 20-look gallery plus the live luma scope. Switching tabs animates smoothly and the panel stays compact.",
+    body: "Wheels for three-way tonal colour, Correct for the 13 primary sliders, and Presets for the 20-look gallery plus the live luma scope. Switching tabs animates smoothly and the panel stays compact — no clipped controls.",
     placement: "left",
   },
   {
@@ -211,8 +239,8 @@ const TIMELINE_STEPS: TourStep[] = [
   },
   {
     target: "track-headers",
-    title: "Track headers & locks",
-    body: "Per lane: M mutes, S solos, the padlock locks the lane (blocking drag, trim, split and delete) and the eye hides it from the preview and the export. On A2 the eye is replaced by the microphone button for live voiceover recording.",
+    title: "Track headers — locks, mute & solo",
+    body: "Per lane: M mutes (and the V1 mute gates the clip's own audio), S solos — soloing an audio lane silences every other lane, and soloing a video lane hides the other video lanes so you can inspect one layer — the padlock locks the lane (blocking drag, trim, split and delete) and the eye hides it from the preview and the export. On A2 the eye is replaced by the microphone button for live voiceover recording.",
     placement: "right",
   },
   {
@@ -230,7 +258,7 @@ const TIMELINE_STEPS: TourStep[] = [
   {
     target: "v1-lane",
     title: "V1 — video lane",
-    body: "Your base footage in sequence order. Drag a clip to slide it in time — it magnetically snaps to the playhead, the In/Out marks and neighbouring clip edges. White handles on each side trim the in/out points, and the amber junction icon between touching clips adds a transition (cross dissolve, dip to black, whip pan, glitch cut, zoom).",
+    body: "Your base footage in sequence order. Drag a clip to slide it in time — it magnetically snaps to the playhead, the In/Out marks and neighbouring clip edges. White handles on each side trim the in/out points, the amber junction icon between touching clips adds a transition (cross dissolve, dip to black, whip pan, glitch cut, zoom), and right-clicking a clip opens Split / Ripple delete / Delete. Position, scale and rotation can be keyframed from the Clip tab.",
     placement: "right",
   },
   {
@@ -252,6 +280,13 @@ const TIMELINE_STEPS: TourStep[] = [
 /* ------------------------------------------------------------------ */
 
 const MONITOR_STEPS: TourStep[] = [
+  {
+    target: "tutorial-button",
+    title: "👋 Replay this tour any time",
+    body: "That's the Tutorial button — right next to Storage and Export. It opens this menu with the four section guides and the full studio tour, so you can revisit any part of the interface whenever you need a refresher. The rest of this guide covers the Program Monitor, header and export controls.",
+    placement: "bottom",
+    advanceOnClick: true,
+  },
   {
     target: "editor-title",
     title: "📺 Project title",
@@ -304,7 +339,7 @@ const MONITOR_STEPS: TourStep[] = [
   {
     target: "transport",
     title: "Transport controls",
-    body: "Scrub the timeline, step frame-by-frame with the arrow keys, undo/redo, play/pause (Space) and toggle Loop.",
+    body: "Scrub the timeline, step frame-by-frame with the arrow keys, undo/redo (Ctrl+Z / Ctrl+Y — the buttons grey out when there's nothing to undo), play/pause (Space) and toggle Loop. Undo covers clip edits, splits, ripple deletes, track locks and colour grading; scrubbing and zooming are deliberately excluded.",
     placement: "top",
   },
   {
@@ -326,7 +361,7 @@ export const TOUR_CATEGORIES: TourCategory[] = [
     id: "left",
     emoji: "🖥️",
     title: "Left Panel Guide",
-    blurb: "Editing tools, effects, captions, audio library & speed curves.",
+    blurb: "Media bin, effects, text & motion, clip keyframes, captions & transcript, audio, recording and Studio.",
     accent: "from-violet-500/20 to-violet-500/5 border-violet-500/40",
     steps: LEFT_STEPS,
   },
@@ -334,7 +369,7 @@ export const TOUR_CATEGORIES: TourCategory[] = [
     id: "right",
     emoji: "🎨",
     title: "Right Panel Guide",
-    blurb: "Colour wheels, 13 sliders, presets gallery & Luma scope.",
+    blurb: "Wheels with RGB/Lum/Sat trims, 13 sliders, presets gallery & live Luma scope.",
     accent: "from-fuchsia-500/20 to-fuchsia-500/5 border-fuchsia-500/40",
     steps: RIGHT_STEPS,
   },
@@ -342,7 +377,7 @@ export const TOUR_CATEGORIES: TourCategory[] = [
     id: "timeline",
     emoji: "🎞️",
     title: "Timeline Workspace Guide",
-    blurb: "Multi-track lanes, razor, ripple delete, locks & snapping.",
+    blurb: "V1–V3 & A1–A3 lanes, razor, ripple delete, locks, mute/solo, snapping and transitions.",
     accent: "from-sky-500/20 to-sky-500/5 border-sky-500/40",
     steps: TIMELINE_STEPS,
   },
@@ -350,7 +385,7 @@ export const TOUR_CATEGORIES: TourCategory[] = [
     id: "monitor",
     emoji: "📺",
     title: "Program Monitor & Header Guide",
-    blurb: "Aspect ratios, blur fill, Mark In/Out & HD export config.",
+    blurb: "Tutorial button, autosave, storage, aspect ratios, blur fill, transport, Mark In/Out & export.",
     accent: "from-emerald-500/20 to-emerald-500/5 border-emerald-500/40",
     steps: MONITOR_STEPS,
   },
