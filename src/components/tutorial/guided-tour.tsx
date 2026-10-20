@@ -109,14 +109,17 @@ export function TutorialLauncher({ className }: { className?: string }) {
 
   /* --- click the tab a step asks for, once per step ------------------- */
   useEffect(() => {
-    if (!steps || !step) return;
-    if (!step.open) return;
-    const key = `${index}:${step.open}`;
+    if (!steps || !step || !step.open) return;
+    const targets = Array.isArray(step.open) ? step.open : [step.open];
+    const key = `${index}:${targets.join(">")}`;
     if (openedRef.current === key) return;
     openedRef.current = key;
-    // Let the panel open before we take our measurement.
-    const id = window.setTimeout(() => targetEl(step.open ?? "")?.click(), 30);
-    return () => window.clearTimeout(id);
+    // Stagger the clicks so a category switch can render its sub-tabs before
+    // the second click (e.g. Color → Wheels).
+    const timers = targets.map((target, i) =>
+      window.setTimeout(() => targetEl(target)?.click(), 30 + i * 130)
+    );
+    return () => timers.forEach((id) => window.clearTimeout(id));
   }, [steps, step, index]);
 
   /* --- measure the spotlight, scroll into view, skip missing targets -- */

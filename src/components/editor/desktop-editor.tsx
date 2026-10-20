@@ -531,16 +531,141 @@ function ScreenCamRecorder() {
 /* ------------------------------------------------------------------ */
 /* Top-left: Project bin + Inspector                                    */
 /* ------------------------------------------------------------------ */
-function ProjectBinPanel({
+/* ------------------------------------------------------------------ */
+/* Left column: AI Assistant placeholder (DeepSeek integration pending) */
+/* ------------------------------------------------------------------ */
+function AIAssistantPanel() {
+  return (
+    <section
+      className="glass-card flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl"
+      data-tour="ai-panel"
+    >
+      <div className={panelTitle}>AI Assistant</div>
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 p-5 text-center">
+        <span
+          className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500/35 to-fuchsia-500/20 ring-1 ring-inset ring-violet-500/40"
+          aria-hidden
+        >
+          <Sparkles className="h-6 w-6 text-violet-200" />
+        </span>
+        <div className="space-y-1.5">
+          <p className="text-sm font-semibold tracking-tight text-zinc-100">
+            DeepSeek AI Assistant
+          </p>
+          <p className="text-[11px] leading-5 text-zinc-500">
+            Script-to-timeline, smart cuts, caption rewrites and prompt-driven
+            edits — right here in the studio.
+          </p>
+        </div>
+        <span className="rounded-full border border-violet-500/40 bg-violet-600/15 px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-violet-200">
+          Coming Soon
+        </span>
+        <p className="text-[10px] leading-4 text-zinc-600">
+          Every tool now lives in the Inspector on the right.
+        </p>
+      </div>
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Right column: unified Inspector (categories + nested sub-tabs)       */
+/* ------------------------------------------------------------------ */
+
+type InspectorCategory = "color" | "media" | "effects" | "clip" | "text";
+
+type InspectorSubTab = {
+  id: string;
+  label: string;
+};
+
+const INSPECTOR_NAV: {
+  id: InspectorCategory;
+  label: string;
+  subs: InspectorSubTab[];
+}[] = [
+  {
+    id: "color",
+    label: "Color",
+    subs: [
+      { id: "wheels", label: "Wheels" },
+      { id: "corrections", label: "Correction" },
+      { id: "presets", label: "Presets" },
+    ],
+  },
+  {
+    id: "media",
+    label: "Media",
+    subs: [
+      { id: "library", label: "Library" },
+      { id: "audio", label: "Audio" },
+      { id: "record", label: "Record" },
+      { id: "studio", label: "Studio" },
+    ],
+  },
+  { id: "effects", label: "Effects", subs: [{ id: "effects", label: "Effects" }] },
+  {
+    id: "clip",
+    label: "Clip",
+    subs: [
+      { id: "clip", label: "Clip" },
+      { id: "speed", label: "Speed" },
+    ],
+  },
+  {
+    id: "text",
+    label: "Text",
+    subs: [
+      { id: "properties", label: "Properties" },
+      { id: "captions", label: "Captions" },
+      { id: "stickers", label: "Stickers" },
+    ],
+  },
+];
+
+/** Maps legacy tab-request events onto the new category/sub-tab structure. */
+const LEGACY_TAB_MAP: Record<
+  EditorTabRequest,
+  { category: InspectorCategory; sub: string }
+> = {
+  media: { category: "media", sub: "library" },
+  audio: { category: "media", sub: "audio" },
+  record: { category: "media", sub: "record" },
+  studio: { category: "media", sub: "studio" },
+  effects: { category: "effects", sub: "effects" },
+  clip: { category: "clip", sub: "clip" },
+  speed: { category: "clip", sub: "speed" },
+  properties: { category: "text", sub: "properties" },
+  captions: { category: "text", sub: "captions" },
+  stickers: { category: "text", sub: "stickers" },
+};
+
+function InspectorPanel({
   onBatchExport,
 }: {
   onBatchExport?: (clipIds: string[]) => void;
 }) {
-  const [tab, setTab] = useState<EditorTabRequest>("media");
+  const [category, setCategory] = useState<InspectorCategory>("media");
+  const [sub, setSub] = useState("library");
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Other panels (e.g. clicking a caption on the timeline) can request a tab.
-  useEffect(() => onEditorTabRequest(setTab), []);
+  const is = (cat: InspectorCategory, subId: string) =>
+    category === cat && sub === subId;
+
+  // Other panels (e.g. clicking a caption on the timeline) request a tab.
+  useEffect(
+    () =>
+      onEditorTabRequest((tab) => {
+        const target = LEGACY_TAB_MAP[tab];
+        if (!target) return;
+        setCategory(target.category);
+        setSub(target.sub);
+      }),
+    []
+  );
+
+  const activeCategory =
+    INSPECTOR_NAV.find((item) => item.id === category) ?? INSPECTOR_NAV[0];
 
   const assets = useEditorStore((s) => s.assets);
   const sequence = useEditorStore((s) => s.sequence);
@@ -674,42 +799,73 @@ function ProjectBinPanel({
   };
 
   return (
-    <section className="glass-card flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl" data-tour="left-panel">
-      <div className="custom-scrollbar flex items-center gap-1 overflow-x-auto whitespace-nowrap border-b border-zinc-800 px-1 py-1" data-tour="tab-strip">
-        {(
-          [
-            ["media", "Media"],
-            ["effects", "Effects"],
-            ["properties", "Props"],
-            ["clip", "Clip"],
-            ["speed", "Speed"],
-            ["captions", "Captions"],
-            ["audio", "Audio"],
-            ["stickers", "Stickers"],
-            ["record", "Record"],
-            ["studio", "Studio"],
-          ] as const
-        ).map(([id, label]) => (
+    <section className="glass-card flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl" data-tour="inspector-panel">
+      <div className={panelTitle}>Inspector</div>
+
+      {/* Top-level categories. */}
+      <div
+        className="custom-scrollbar flex items-center gap-1 overflow-x-auto whitespace-nowrap border-b border-zinc-800 px-1 py-1"
+        data-tour="inspector-categories"
+        role="tablist"
+        aria-label="Inspector categories"
+      >
+        {INSPECTOR_NAV.map((item) => (
           <button
-            key={id}
+            key={item.id}
             type="button"
-            data-tour={`tab-${id}`}
-            onClick={() => setTab(id)}
-            aria-pressed={tab === id}
+            role="tab"
+            aria-selected={category === item.id}
+            data-tour={`inspector-cat-${item.id}`}
+            onClick={() => {
+              setCategory(item.id);
+              setSub(item.subs[0].id);
+            }}
             className={cn(
-              "shrink-0 whitespace-nowrap px-2.5 py-2 text-[11px] font-medium transition-colors",
-              tab === id
-                ? "bg-violet-600/15 text-violet-200"
-                : "text-zinc-400 hover:text-zinc-100"
+              "shrink-0 whitespace-nowrap rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-colors",
+              category === item.id
+                ? "bg-violet-600/20 text-violet-200 ring-1 ring-inset ring-violet-500/40"
+                : "text-zinc-400 hover:bg-zinc-900/60 hover:text-zinc-100"
             )}
           >
-            {label}
+            {item.label}
           </button>
         ))}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-3" data-tour="left-panel-body">
-        {tab === "media" && (
+      {/* Nested sub-tabs for the active category. */}
+      {activeCategory.subs.length > 1 && (
+        <div
+          className="custom-scrollbar flex items-center gap-1 overflow-x-auto whitespace-nowrap border-b border-zinc-800/70 bg-zinc-950/30 px-2 py-1"
+          data-tour="inspector-subtabs"
+          role="tablist"
+          aria-label={`${activeCategory.label} sections`}
+        >
+          {activeCategory.subs.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              role="tab"
+              aria-selected={sub === item.id}
+              data-tour={`inspector-sub-${category}-${item.id}`}
+              onClick={() => setSub(item.id)}
+              className={cn(
+                "shrink-0 whitespace-nowrap rounded px-2 py-1 text-[10px] font-medium transition-colors",
+                sub === item.id
+                  ? "bg-violet-600/15 text-violet-200"
+                  : "text-zinc-500 hover:text-zinc-200"
+              )}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {category === "color" ? (
+        <LumetriPanel embedded tab={sub as LumetriTab} />
+      ) : (
+      <div className="min-h-0 flex-1 overflow-y-auto p-3" data-tour="inspector-body">
+        {is("media", "library") && (
           <div className="flex min-h-0 flex-col gap-2">
             {/* Fixed action area — stays pinned while the bin below scrolls. */}
             <div className="shrink-0 space-y-2">
@@ -798,7 +954,7 @@ function ProjectBinPanel({
           </div>
         )}
 
-        {tab === "effects" && (
+        {is("effects", "effects") && (
           <div className="space-y-3">
             {EFFECT_GROUPS.map((group) => (
               <div key={group.label}>
@@ -871,7 +1027,7 @@ function ProjectBinPanel({
           </div>
         )}
 
-        {tab === "properties" && (
+        {is("text", "properties") && (
           <div className="space-y-3">
             {!selected ? (
               <div className="space-y-2">
@@ -1331,7 +1487,7 @@ function ProjectBinPanel({
           </div>
         )}
 
-        {tab === "clip" && (
+        {is("clip", "clip") && (
           <div className="space-y-4">
             {/* Quick jump to the transform keyframes (section sits further down). */}
             <div className="flex items-center justify-between gap-2 rounded-lg border border-violet-500/25 bg-violet-600/5 px-2 py-1.5">
@@ -1801,7 +1957,7 @@ function ProjectBinPanel({
           </div>
         )}
 
-        {tab === "captions" && (
+        {is("text", "captions") && (
           <div className="space-y-3">
             <label className="block">
               <span className="mb-1 block text-[10px] font-medium text-zinc-400">
@@ -2090,7 +2246,7 @@ function ProjectBinPanel({
           </div>
         )}
 
-        {tab === "audio" && (
+        {is("media", "audio") && (
           <div className="space-y-3">
             <p className="text-[10px] leading-4 text-zinc-500">
               {SOUND_EFFECTS.length} royalty-free sound effects, synthesized
@@ -2247,7 +2403,7 @@ function ProjectBinPanel({
           </div>
         )}
 
-        {tab === "speed" && (
+        {is("clip", "speed") && (
           <div className="space-y-3">
             <p className="text-[10px] leading-4 text-zinc-500">
               Velocity curves ramp both playback and the export time-mapping.
@@ -2286,7 +2442,7 @@ function ProjectBinPanel({
           </div>
         )}
 
-        {tab === "stickers" && (
+        {is("text", "stickers") && (
           <div className="space-y-3">
             <p className="text-[10px] leading-4 text-zinc-500">
               Tap a sticker to drop it on the V2 overlay track at the playhead.
@@ -2341,9 +2497,9 @@ function ProjectBinPanel({
           </div>
         )}
 
-        {tab === "record" && <ScreenCamRecorder />}
+        {is("media", "record") && <ScreenCamRecorder />}
 
-        {tab === "studio" && (
+        {is("media", "studio") && (
           <div className="space-y-3">
             <p className="text-[10px] leading-4 text-zinc-500">
               Design a cricket jersey or match-day poster, then send it to the
@@ -2353,6 +2509,7 @@ function ProjectBinPanel({
           </div>
         )}
       </div>
+      )}
     </section>
   );
 }
@@ -3024,7 +3181,14 @@ function ProgramPreview() {
 /* ------------------------------------------------------------------ */
 /* Top-right: Lumetri colour + scopes                                   */
 /* ------------------------------------------------------------------ */
-function LumetriPanel() {
+function LumetriPanel({
+  embedded = false,
+  tab: controlledTab,
+}: {
+  /** Rendered inside the Inspector (hides the panel chrome/tab bar). */
+  embedded?: boolean;
+  tab?: LumetriTab;
+} = {}) {
   const adjustments = useEditorStore((s) => s.colorAdjustments);
   const setColorAdjustment = useEditorStore((s) => s.setColorAdjustment);
   const colorWheels = useEditorStore((s) => s.colorWheels);
@@ -3036,7 +3200,8 @@ function LumetriPanel() {
   const [presetId, setPresetId] = useState("none");
   const [presetIntensity, setPresetIntensity] = useState(100);
   const [showMore, setShowMore] = useState(false);
-  const [tab, setTab] = useState<LumetriTab>("wheels");
+  const [internalTab, setInternalTab] = useState<LumetriTab>("wheels");
+  const tab = controlledTab ?? internalTab;
 
   const applyPreset = (id: string, intensity: number) => {
     const preset = CINEMATIC_PRESETS.find((item) => item.id === id);
@@ -3173,39 +3338,49 @@ function LumetriPanel() {
   );
 
   return (
-    <section className="glass-card flex min-h-0 flex-col overflow-hidden rounded-2xl" data-tour="lumetri-panel">
-      <div className={panelTitle}>Lumetri Color &amp; Scopes</div>
+    <section
+      className={cn(
+        "flex min-h-0 flex-col overflow-hidden",
+        embedded ? "flex-1" : "glass-card rounded-2xl"
+      )}
+      data-tour="lumetri-panel"
+    >
+      {!embedded && (
+        <>
+          <div className={panelTitle}>Lumetri Color &amp; Scopes</div>
 
-      {/* Three compact sub-tabs so the panel never becomes a wall of sliders. */}
-      <div
-        className="flex items-center gap-1 border-b border-zinc-800 px-2 py-1.5"
-        role="tablist"
-        aria-label="Lumetri sections"
-        data-tour="lumetri-tabs"
-      >
-        {LUMETRI_TABS.map(({ id, label, full }) => (
-          <button
-            key={id}
-            type="button"
-            role="tab"
-            aria-selected={tab === id}
-            aria-label={full}
-            title={full}
-            data-tour={`lumetri-tab-${id}`}
-            onClick={() => setTab(id)}
-            className={cn(
-              "min-w-0 flex-1 truncate rounded-md px-2 py-1.5 text-[10px] font-semibold transition-colors",
-              tab === id
-                ? "bg-violet-600/20 text-violet-200 ring-1 ring-inset ring-violet-500/40"
-                : "text-zinc-400 hover:bg-zinc-900/60 hover:text-zinc-100"
-            )}
+          {/* Three compact sub-tabs so the panel never becomes a wall of sliders. */}
+          <div
+            className="flex items-center gap-1 border-b border-zinc-800 px-2 py-1.5"
+            role="tablist"
+            aria-label="Lumetri sections"
+            data-tour="lumetri-tabs"
           >
-            {label}
-          </button>
-        ))}
-      </div>
+            {LUMETRI_TABS.map(({ id, label, full }) => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={tab === id}
+                aria-label={full}
+                title={full}
+                data-tour={`lumetri-tab-${id}`}
+                onClick={() => setInternalTab(id)}
+                className={cn(
+                  "min-w-0 flex-1 truncate rounded-md px-2 py-1.5 text-[10px] font-semibold transition-colors",
+                  tab === id
+                    ? "bg-violet-600/20 text-violet-200 ring-1 ring-inset ring-violet-500/40"
+                    : "text-zinc-400 hover:bg-zinc-900/60 hover:text-zinc-100"
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-3">
+      <div className="min-h-0 flex-1 overflow-y-auto p-3" data-tour="inspector-color-body">
         {/* `key={tab}` re-mounts the panel so the switch animates cleanly. */}
         <div key={tab} className="animate-tab-in space-y-3">
         {tab === "wheels" && (
@@ -4582,13 +4757,14 @@ export function DesktopEditor({
         className="grid min-h-0 gap-3 lg:grid-cols-[236px_minmax(0,1fr)_256px] xl:grid-cols-[264px_minmax(0,1fr)_288px] 2xl:grid-cols-[300px_minmax(0,1fr)_320px]"
         style={{ height: "min(66vh, 780px)", minHeight: 440 }}
       >
-        {/* Left column: the tool/media panel with a reserved ad slot below it. */}
+        {/* Left column: dedicated AI assistant placeholder + reserved ad slot. */}
         <div className="flex min-h-0 flex-col gap-3">
-          <ProjectBinPanel onBatchExport={onBatchExport} />
+          <AIAssistantPanel />
           <AdPlaceholder />
         </div>
         <ProgramPreview />
-        <LumetriPanel />
+        {/* Right column: unified inspector (categories → sub-tabs). */}
+        <InspectorPanel onBatchExport={onBatchExport} />
       </div>
       <PremiereTimeline />
     </div>
