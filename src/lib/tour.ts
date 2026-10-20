@@ -174,7 +174,7 @@ const RIGHT_STEPS: TourStep[] = [
     target: "color-wheels",
     open: "lumetri-tab-wheels",
     title: "Tab 1 · Colour wheels",
-    body: "Three large wheels stacked top-to-bottom in the pro grading-suite layout — Shadows / Lift, Midtones / Gamma and Highlights / Gain, each with its label directly above. Drag anywhere inside a wheel to tint that tonal range; double-click a wheel to recentre it, or hit Reset to clear the whole grade.",
+    body: "Three large wheels stacked top-to-bottom in the pro grading-suite layout — Shadows / Lift, Midtones / Gamma and Highlights / Gain, each with its label directly above. Drag anywhere inside a wheel to tint that tonal range; each wheel has its own Reset button (so clearing shadows never touches midtones or highlights), and double-clicking a wheel recentres just that wheel.",
     placement: "left",
   },
   {

@@ -1121,6 +1121,8 @@ type EditorState = {
   setColorAdjustment: (patch: Partial<ColorAdjustments>) => void;
   /** Sets one colour wheel's handle position (-1..1 per axis). */
   setColorWheel: (region: keyof ColorWheels, point: WheelPoint) => void;
+  /** Recentres a single colour wheel (leaves the other two untouched). */
+  resetColorWheel: (region: keyof ColorWheels) => void;
   /** Restores neutral colour grading (sliders + wheels). */
   resetColorAdjustments: () => void;
   /** Decodes and appends one or more uploaded audio files. */
@@ -2879,6 +2881,15 @@ export const useEditorStore = create<EditorState>()(
       },
     });
   },
+
+  resetColorWheel: (region) =>
+    set({
+      colorWheels: {
+        ...get().colorWheels,
+        // Replace (not merge) so any legacy trims are cleared too.
+        [region]: { x: 0, y: 0 },
+      },
+    }),
 
   resetColorAdjustments: () =>
     set({

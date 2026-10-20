@@ -25,6 +25,7 @@ import {
   Plus,
   Redo2,
   Repeat,
+  RotateCcw,
   Scissors,
   Sparkles,
   Square,
@@ -192,11 +193,14 @@ function ColorWheel({
   title,
   value,
   onChange,
+  onReset,
 }: {
   /** e.g. "Shadows / Lift". */
   title: string;
   value: WheelPoint;
   onChange: (value: WheelPoint) => void;
+  /** Recentres only this wheel. */
+  onReset: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   // A ref (not `event.buttons`) is the reliable "is the pointer down?" signal:
@@ -247,10 +251,22 @@ function ColorWheel({
 
   return (
     <div className="flex w-full flex-col items-center gap-2">
-      {/* Label sits directly above its wheel. */}
-      <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-300">
-        {title}
-      </p>
+      {/* Label + per-wheel reset sit directly above its wheel. */}
+      <div className="flex w-full items-center justify-between gap-2">
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-300">
+          {title}
+        </p>
+        <button
+          type="button"
+          onClick={onReset}
+          title={`Reset ${title}`}
+          aria-label={`Reset ${title}`}
+          className="inline-flex shrink-0 items-center gap-1 rounded-md border border-zinc-800 bg-zinc-950/60 px-1.5 py-0.5 text-[9px] font-medium text-zinc-400 transition-colors hover:border-zinc-600 hover:text-zinc-100"
+        >
+          <RotateCcw className="h-2.5 w-2.5" aria-hidden />
+          Reset
+        </button>
+      </div>
 
       <div
         ref={ref}
@@ -3013,6 +3029,7 @@ function LumetriPanel() {
   const setColorAdjustment = useEditorStore((s) => s.setColorAdjustment);
   const colorWheels = useEditorStore((s) => s.colorWheels);
   const setColorWheel = useEditorStore((s) => s.setColorWheel);
+  const resetColorWheel = useEditorStore((s) => s.resetColorWheel);
   const resetColorAdjustments = useEditorStore((s) => s.resetColorAdjustments);
   const scopeRef = useRef<HTMLCanvasElement>(null);
 
@@ -3193,39 +3210,34 @@ function LumetriPanel() {
         <div key={tab} className="animate-tab-in space-y-3">
         {tab === "wheels" && (
         <div data-tour="color-wheels">
-          <div className="mb-2 flex items-center justify-between">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-              Color Wheels
-            </p>
-            <button
-              type="button"
-              onClick={resetColorAdjustments}
-              className="rounded-md border border-zinc-800 bg-zinc-950/60 px-2 py-0.5 text-[10px] text-zinc-400 transition-colors hover:border-zinc-600 hover:text-zinc-100"
-            >
-              Reset
-            </button>
-          </div>
-          {/* Vertical stack — one large wheel per tonal range. */}
+          <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+            Color Wheels
+          </p>
+          {/* Vertical stack — one large wheel per tonal range, each with its
+              own reset so clearing one range never touches the others. */}
           <div className="flex flex-col items-center gap-6 p-4">
             <ColorWheel
               title="Shadows / Lift"
               value={colorWheels.lift}
               onChange={(value) => setColorWheel("lift", value)}
+              onReset={() => resetColorWheel("lift")}
             />
             <ColorWheel
               title="Midtones / Gamma"
               value={colorWheels.gamma}
               onChange={(value) => setColorWheel("gamma", value)}
+              onReset={() => resetColorWheel("gamma")}
             />
             <ColorWheel
               title="Highlights / Gain"
               value={colorWheels.gain}
               onChange={(value) => setColorWheel("gain", value)}
+              onReset={() => resetColorWheel("gain")}
             />
           </div>
           <p className="text-center text-[9px] leading-4 text-zinc-600">
-            Drag inside a wheel to tint that tonal range · double-click a wheel to
-            recentre it · Reset clears the whole grade.
+            Drag inside a wheel to tint that tonal range · each wheel has its own
+            Reset · double-click a wheel to recentre it.
           </p>
         </div>
         )}
