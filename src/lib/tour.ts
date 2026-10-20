@@ -174,7 +174,7 @@ const RIGHT_STEPS: TourStep[] = [
     target: "color-wheels",
     open: "lumetri-tab-wheels",
     title: "Tab 1 · Colour wheels",
-    body: "Three balanced grading columns — Shadows / Lift, Midtones / Gamma and Highlights / Gain. Drag inside a wheel to tint that tonal range, then fine-tune with the R/G/B offsets, Lum (luminance) and Sat (saturation) fields under each wheel. Use Reset to clear the whole grade.",
+    body: "Three large wheels stacked top-to-bottom in the pro grading-suite layout — Shadows / Lift, Midtones / Gamma and Highlights / Gain, each with its label directly above. Drag anywhere inside a wheel to tint that tonal range; double-click a wheel to recentre it, or hit Reset to clear the whole grade.",
     placement: "left",
   },
   {
@@ -369,7 +369,7 @@ export const TOUR_CATEGORIES: TourCategory[] = [
     id: "right",
     emoji: "🎨",
     title: "Right Panel Guide",
-    blurb: "Wheels with RGB/Lum/Sat trims, 13 sliders, presets gallery & live Luma scope.",
+    blurb: "Large stacked colour wheels, 13 sliders, presets gallery & live Luma scope.",
     accent: "from-fuchsia-500/20 to-fuchsia-500/5 border-fuchsia-500/40",
     steps: RIGHT_STEPS,
   },

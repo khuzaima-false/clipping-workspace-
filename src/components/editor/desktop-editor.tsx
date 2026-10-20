@@ -190,14 +190,11 @@ const CORNER_CLASSES = [
 /** Premiere-style round color wheel (hue around, saturation outward). */
 function ColorWheel({
   title,
-  role,
   value,
   onChange,
 }: {
   /** e.g. "Shadows / Lift". */
   title: string;
-  /** Tonal role hint, e.g. "Shadows". */
-  role: string;
   value: WheelPoint;
   onChange: (value: WheelPoint) => void;
 }) {
@@ -205,21 +202,34 @@ function ColorWheel({
   // A ref (not `event.buttons`) is the reliable "is the pointer down?" signal:
   // touch pointers and pen can report buttons === 0 mid-drag.
   const draggingRef = useRef(false);
-  // Sized to fit the 3-column grading grid inside the narrow Lumetri panel.
-  const size = 54;
-  const radius = size / 2 - 5;
+  // The wheel is fluid-width, so track its rendered size for the puck maths.
+  const [boxSize, setBoxSize] = useState(200);
+  const radius = Math.max(8, boxSize / 2 - 10);
+
+  // Measure the rendered wheel (callback-driven, so no setState in the effect
+  // body). Also keeps the puck accurate when the panel is resized.
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width ?? 0;
+      if (width > 0) setBoxSize(width);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   const handle = (clientX: number, clientY: number) => {
     const el = ref.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0) return;
-    // Normalise against the rendered box so CSS scaling can't skew the maths.
+    // Normalise against the rendered box so the responsive width is exact.
     const cx = rect.left + rect.width / 2;
     const cy = rect.top + rect.height / 2;
-    const scale = rect.width / size;
-    let dx = (clientX - cx) / (radius * scale);
-    let dy = (clientY - cy) / (radius * scale);
+    const radiusPx = Math.max(1, rect.width / 2 - 10);
+    let dx = (clientX - cx) / radiusPx;
+    let dy = (clientY - cy) / radiusPx;
     const dist = Math.hypot(dx, dy);
     if (dist > 1) {
       dx /= dist;
@@ -235,35 +245,12 @@ function ColorWheel({
     }
   };
 
-  const trim = (
-    key: "r" | "g" | "b" | "lum" | "sat",
-    label: string
-  ) => (
-    <label className="flex items-center justify-between gap-1" title={`${role} ${label}`}>
-      <span className="w-5 shrink-0 text-[8px] uppercase tracking-wide text-zinc-500">
-        {label}
-      </span>
-      <input
-        type="number"
-        min={-100}
-        max={100}
-        step={1}
-        value={Math.round(value[key] ?? 0)}
-        onChange={(e) => onChange({ ...value, [key]: Number(e.target.value) })}
-        aria-label={`${title} ${label}`}
-        className="h-5 w-full min-w-0 rounded border border-zinc-800 bg-zinc-950 px-0.5 text-right text-[9px] tabular-nums text-zinc-100 focus:border-violet-500 focus:outline-none"
-      />
-    </label>
-  );
-
   return (
-    <div className="flex min-w-0 flex-col items-center gap-2">
-      <div className="text-center">
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-300">
-          {title}
-        </p>
-        <p className="text-[9px] text-zinc-600">{role}</p>
-      </div>
+    <div className="flex w-full flex-col items-center gap-2">
+      {/* Label sits directly above its wheel. */}
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-300">
+        {title}
+      </p>
 
       <div
         ref={ref}
@@ -291,10 +278,8 @@ function ColorWheel({
           draggingRef.current = false;
         }}
         onDoubleClick={() => onChange({ ...value, x: 0, y: 0 })}
-        className="relative touch-none select-none cursor-crosshair rounded-full ring-1 ring-inset ring-white/20"
+        className="relative aspect-square w-full max-w-[220px] touch-none select-none cursor-crosshair rounded-full ring-1 ring-inset ring-white/20"
         style={{
-          width: size,
-          height: size,
           background:
             "conic-gradient(from 90deg, #ff0000, #ffff00, #00ff00, #00ffff, #0000ff, #ff00ff, #ff0000)",
         }}
@@ -307,20 +292,11 @@ function ColorWheel({
           }}
         />
         <span
-          className="pointer-events-none absolute left-1/2 top-1/2 h-2.5 w-2.5 rounded-full border-2 border-white bg-black/30 shadow"
+          className="pointer-events-none absolute left-1/2 top-1/2 h-3 w-3 rounded-full border-2 border-white bg-black/30 shadow"
           style={{
             transform: `translate(calc(-50% + ${value.x * radius}px), calc(-50% + ${value.y * radius}px))`,
           }}
         />
-      </div>
-
-      {/* Numeric trims, aligned directly below the wheel. */}
-      <div className="w-full space-y-1">
-        {trim("r", "R")}
-        {trim("g", "G")}
-        {trim("b", "B")}
-        {trim("lum", "Lum")}
-        {trim("sat", "Sat")}
       </div>
     </div>
   );
@@ -3229,30 +3205,27 @@ function LumetriPanel() {
               Reset
             </button>
           </div>
-          {/* Balanced 3-column grading layout (stacks below `md`). */}
-          <div className="grid grid-cols-1 gap-4 p-4 md:grid-cols-3">
+          {/* Vertical stack — one large wheel per tonal range. */}
+          <div className="flex flex-col items-center gap-6 p-4">
             <ColorWheel
               title="Shadows / Lift"
-              role="Shadows"
               value={colorWheels.lift}
               onChange={(value) => setColorWheel("lift", value)}
             />
             <ColorWheel
               title="Midtones / Gamma"
-              role="Midtones"
               value={colorWheels.gamma}
               onChange={(value) => setColorWheel("gamma", value)}
             />
             <ColorWheel
               title="Highlights / Gain"
-              role="Highlights"
               value={colorWheels.gain}
               onChange={(value) => setColorWheel("gain", value)}
             />
           </div>
           <p className="text-center text-[9px] leading-4 text-zinc-600">
-            Drag inside a wheel to tint that tonal range · R/G/B offset the
-            channel · Lum lifts · Sat boosts saturation.
+            Drag inside a wheel to tint that tonal range · double-click a wheel to
+            recentre it · Reset clears the whole grade.
           </p>
         </div>
         )}
