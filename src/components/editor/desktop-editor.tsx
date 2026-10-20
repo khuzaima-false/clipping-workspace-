@@ -540,7 +540,18 @@ function AIAssistantPanel() {
       className="glass-card flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl"
       data-tour="ai-panel"
     >
-      <div className={panelTitle}>AI Assistant</div>
+      {/* Header: logo + title in one flex row so they can never overlap. */}
+      <div className="flex items-center gap-2 border-b border-zinc-800 px-3 py-2">
+        <span
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-violet-500/40 to-fuchsia-500/25 ring-1 ring-inset ring-violet-500/40"
+          aria-hidden
+        >
+          <Sparkles className="h-3.5 w-3.5 text-violet-200" />
+        </span>
+        <span className="truncate text-[11px] font-semibold uppercase tracking-wider text-zinc-300">
+          AI Assistant
+        </span>
+      </div>
       <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 p-5 text-center">
         <span
           className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500/35 to-fuchsia-500/20 ring-1 ring-inset ring-violet-500/40"
@@ -557,7 +568,7 @@ function AIAssistantPanel() {
             edits — right here in the studio.
           </p>
         </div>
-        <span className="rounded-full border border-violet-500/40 bg-violet-600/15 px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-violet-200">
+        <span className="mt-1 rounded-full border border-violet-500/40 bg-violet-600/15 px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-violet-200">
           Coming Soon
         </span>
         <p className="text-[10px] leading-4 text-zinc-600">
@@ -598,7 +609,7 @@ const INSPECTOR_NAV: {
     label: "Media",
     subs: [
       { id: "library", label: "Library" },
-      { id: "audio", label: "Audio" },
+      { id: "audio", label: "Sound Effects" },
       { id: "record", label: "Record" },
       { id: "studio", label: "Studio" },
     ],
@@ -608,7 +619,8 @@ const INSPECTOR_NAV: {
     id: "clip",
     label: "Clip",
     subs: [
-      { id: "clip", label: "Clip" },
+      { id: "transform", label: "Transform & Cutout" },
+      { id: "keyframes", label: "Keyframes" },
       { id: "speed", label: "Speed" },
     ],
   },
@@ -616,7 +628,6 @@ const INSPECTOR_NAV: {
     id: "text",
     label: "Text",
     subs: [
-      { id: "properties", label: "Properties" },
       { id: "captions", label: "Captions" },
       { id: "stickers", label: "Stickers" },
     ],
@@ -633,9 +644,9 @@ const LEGACY_TAB_MAP: Record<
   record: { category: "media", sub: "record" },
   studio: { category: "media", sub: "studio" },
   effects: { category: "effects", sub: "effects" },
-  clip: { category: "clip", sub: "clip" },
+  clip: { category: "clip", sub: "transform" },
   speed: { category: "clip", sub: "speed" },
-  properties: { category: "text", sub: "properties" },
+  properties: { category: "text", sub: "captions" },
   captions: { category: "text", sub: "captions" },
   stickers: { category: "text", sub: "stickers" },
 };
@@ -647,10 +658,23 @@ function InspectorPanel({
 }) {
   const [category, setCategory] = useState<InspectorCategory>("media");
   const [sub, setSub] = useState("library");
+  const [effectQuery, setEffectQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
   const is = (cat: InspectorCategory, subId: string) =>
     category === cat && sub === subId;
+
+  // Effects search — matches the human label or the raw type slug.
+  const effectQueryNorm = effectQuery.trim().toLowerCase();
+  const filteredEffectGroups = EFFECT_GROUPS.map((group) => ({
+    ...group,
+    types: group.types.filter(
+      (type) =>
+        !effectQueryNorm ||
+        effectLabel(type).toLowerCase().includes(effectQueryNorm) ||
+        type.includes(effectQueryNorm)
+    ),
+  })).filter((group) => group.types.length > 0);
 
   // Other panels (e.g. clicking a caption on the timeline) request a tab.
   useEffect(
@@ -956,7 +980,26 @@ function InspectorPanel({
 
         {is("effects", "effects") && (
           <div className="space-y-3">
-            {EFFECT_GROUPS.map((group) => (
+            {/* Sticky search — filters all effect groups by name. */}
+            <div className="sticky -top-3 z-10 -mx-3 -mt-3 border-b border-zinc-800 bg-zinc-950/95 px-3 py-2 backdrop-blur">
+              <input
+                type="text"
+                value={effectQuery}
+                onChange={(e) => setEffectQuery(e.target.value)}
+                placeholder="Search 80+ effects..."
+                aria-label="Search effects"
+                data-tour="effect-search"
+                className="w-full rounded-lg border border-zinc-800 bg-zinc-900/70 px-2.5 py-1.5 text-[11px] text-zinc-100 placeholder:text-zinc-600 focus:border-violet-500 focus:outline-none"
+              />
+            </div>
+
+            {filteredEffectGroups.length === 0 && (
+              <p className="text-[11px] text-zinc-500">
+                No effects match “{effectQuery}”.
+              </p>
+            )}
+
+            {filteredEffectGroups.map((group) => (
               <div key={group.label}>
                 <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
                   {group.label}
@@ -1024,10 +1067,15 @@ function InspectorPanel({
                 </ul>
               </div>
             )}
+
+            {/* AI background removal lives with the other effects. */}
+            <div className="border-t border-zinc-800 pt-3">
+              <AiStudioSection selected={selected} />
+            </div>
           </div>
         )}
 
-        {is("text", "properties") && (
+        {is("text", "captions") && (
           <div className="space-y-3">
             {!selected ? (
               <div className="space-y-2">
@@ -1336,63 +1384,6 @@ function InspectorPanel({
             )}
 
             {selected && (
-              <div className="space-y-2 border-t border-zinc-800 pt-3">
-                <div className="flex items-center justify-between">
-                  <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-                    <Diamond className="h-3 w-3" aria-hidden /> Keyframes
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => addOverlayKeyframe(selected.id)}
-                    className="inline-flex items-center gap-1 rounded-md border border-zinc-800 bg-zinc-950/60 px-2 py-1 text-[10px] text-zinc-200 hover:border-zinc-600"
-                  >
-                    <Plus className="h-3 w-3" aria-hidden /> Add @ playhead
-                  </button>
-                </div>
-                {overlayKeyframes.length === 0 ? (
-                  <p className="text-[10px] leading-4 text-zinc-500">
-                    Add keyframes at the playhead to animate scale, position,
-                    opacity and rotation — the renderer LERPs between them.
-                  </p>
-                ) : (
-                  <>
-                    <ul className="space-y-1">
-                      {overlayKeyframes.map((frame) => (
-                        <li
-                          key={frame.id}
-                          className="flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-950/60 px-2 py-1 text-[10px] text-zinc-300"
-                        >
-                          <Diamond className="h-3 w-3 text-amber-300" aria-hidden />
-                          <span className="flex-1 tabular-nums">
-                            {frame.time.toFixed(2)}s
-                          </span>
-                          <span className="text-zinc-500">×{frame.scale.toFixed(2)}</span>
-                          <button
-                            type="button"
-                            aria-label="Delete keyframe"
-                            onClick={() => removeOverlayKeyframe(selected.id, frame.id)}
-                            className="rounded p-0.5 text-zinc-500 hover:text-red-400"
-                          >
-                            <Trash2 className="h-3 w-3" aria-hidden />
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                    <button
-                      type="button"
-                      onClick={() => clearOverlayKeyframes(selected.id)}
-                      className="text-[10px] text-zinc-500 hover:text-red-400"
-                    >
-                      Clear all keyframes
-                    </button>
-                  </>
-                )}
-              </div>
-            )}
-
-            <AiStudioSection selected={selected} />
-
-            {selected && (
               <div className="space-y-2 border-t border-zinc-800 pt-3" data-tour="motion-presets">
                 <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
                   Motion preset
@@ -1487,26 +1478,10 @@ function InspectorPanel({
           </div>
         )}
 
-        {is("clip", "clip") && (
+        {(is("clip", "transform") || is("clip", "keyframes")) && (
           <div className="space-y-4">
-            {/* Quick jump to the transform keyframes (section sits further down). */}
-            <div className="flex items-center justify-between gap-2 rounded-lg border border-violet-500/25 bg-violet-600/5 px-2 py-1.5">
-              <span className="flex items-center gap-1.5 text-[10px] font-medium text-violet-200">
-                <Diamond className="h-3 w-3" aria-hidden /> Keyframes &amp; Transform
-              </span>
-              <button
-                type="button"
-                onClick={() =>
-                  document
-                    .getElementById("clip-transform")
-                    ?.scrollIntoView({ behavior: "smooth", block: "start" })
-                }
-                className="shrink-0 rounded-md border border-zinc-800 bg-zinc-950/60 px-2 py-0.5 text-[10px] text-zinc-300 hover:border-violet-500/60 hover:text-violet-200"
-              >
-                Open ↓
-              </button>
-            </div>
-
+            {is("clip", "transform") && (
+            <>
             {/* Chroma key / green screen cutout */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
@@ -1724,11 +1699,15 @@ function InspectorPanel({
                 Reset framing
               </button>
             </div>
+            </>
+            )}
 
+            {is("clip", "keyframes") && (
+            <>
             {/* Keyframes & Transform */}
             <div
               id="clip-transform"
-              className="scroll-mt-2 space-y-2 border-t border-zinc-800 pt-3"
+              className="scroll-mt-2 space-y-2"
               data-tour="clip-keyframes"
             >
               <div className="flex items-center justify-between">
@@ -1912,6 +1891,66 @@ function InspectorPanel({
               )}
             </div>
 
+            {/* Overlay keyframes (moved here from the old text Properties tab) */}
+            {selected && (
+              <div className="space-y-2 border-t border-zinc-800 pt-3">
+                <div className="flex items-center justify-between">
+                  <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                    <Diamond className="h-3 w-3" aria-hidden /> Text / Overlay Keyframes
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => addOverlayKeyframe(selected.id)}
+                    className="inline-flex items-center gap-1 rounded-md border border-zinc-800 bg-zinc-950/60 px-2 py-1 text-[10px] text-zinc-200 hover:border-zinc-600"
+                  >
+                    <Plus className="h-3 w-3" aria-hidden /> Add @ playhead
+                  </button>
+                </div>
+                {overlayKeyframes.length === 0 ? (
+                  <p className="text-[10px] leading-4 text-zinc-500">
+                    Select a text overlay, then add keyframes at the playhead to
+                    animate its scale, position, opacity and rotation.
+                  </p>
+                ) : (
+                  <>
+                    <ul className="space-y-1">
+                      {overlayKeyframes.map((frame) => (
+                        <li
+                          key={frame.id}
+                          className="flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-950/60 px-2 py-1 text-[10px] text-zinc-300"
+                        >
+                          <Diamond className="h-3 w-3 text-amber-300" aria-hidden />
+                          <span className="flex-1 tabular-nums">
+                            {frame.time.toFixed(2)}s
+                          </span>
+                          <span className="text-zinc-500">×{frame.scale.toFixed(2)}</span>
+                          <button
+                            type="button"
+                            aria-label="Delete keyframe"
+                            onClick={() => removeOverlayKeyframe(selected.id, frame.id)}
+                            className="rounded p-0.5 text-zinc-500 hover:text-red-400"
+                          >
+                            <Trash2 className="h-3 w-3" aria-hidden />
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                    <button
+                      type="button"
+                      onClick={() => clearOverlayKeyframes(selected.id)}
+                      className="text-[10px] text-zinc-500 hover:text-red-400"
+                    >
+                      Clear all keyframes
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+            </>
+            )}
+
+            {is("clip", "transform") && (
+            <>
             {/* Platform framing presets + canvas fill */}
             <div className="space-y-2 border-t border-zinc-800 pt-3">
               <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
@@ -1954,6 +1993,8 @@ function InspectorPanel({
                 {canvasFill === "blur" ? "Blurred background fill" : "Black letterbox fill"}
               </button>
             </div>
+            </>
+            )}
           </div>
         )}
 
@@ -2119,7 +2160,7 @@ function InspectorPanel({
               onClick={addOverlay}
               className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-2 text-[11px] text-zinc-200 hover:border-zinc-600"
             >
-              <Plus className="h-3.5 w-3.5" aria-hidden /> Add text overlay
+              <Plus className="h-3.5 w-3.5" aria-hidden /> Add Text / Caption Overlay
             </button>
 
             {overlays.length > 0 && (

@@ -434,6 +434,9 @@ export type VideoEffectType =
   | "rotate-sway"
   | "bounce-pulse"
   | "handheld"
+  | "slow-zoom"
+  | "whip-pan"
+  | "rotate-in"
   // Colour / grade
   | "sepia"
   | "invert"
@@ -445,6 +448,9 @@ export type VideoEffectType =
   | "contrast-pump"
   | "chromatic-bleed"
   | "duotone"
+  | "soft-focus"
+  | "tilt-shift"
+  | "fade-black"
   // Light / atmosphere
   | "flash"
   | "light-leak"
@@ -454,6 +460,7 @@ export type VideoEffectType =
   | "blur-vignette"
   | "sparkle"
   | "god-rays"
+  | "neon-glow"
   // Film / retro
   | "film-grain"
   | "scanlines"
@@ -461,7 +468,59 @@ export type VideoEffectType =
   | "glitch-rgb"
   | "pixelate"
   | "retro-tv"
-  | "crt-warp";
+  | "crt-warp"
+  | "old-film"
+  // ---- Extended NLE library ----
+  // Transform & camera
+  | "soft-shake"
+  | "whip-pan-left"
+  | "whip-pan-right"
+  | "tilt-up"
+  | "tilt-down"
+  // Colour & grade
+  | "soft-glow"
+  | "color-pop"
+  // Light & atmosphere
+  | "lightning"
+  | "lens-flare"
+  | "sunbeams"
+  | "anamorphic-flare"
+  // Film & retro
+  | "bad-tv-signal"
+  | "old-film-flicker"
+  | "posterize"
+  | "dust-scratches"
+  // Reel effects — stylized & action
+  | "edge-glow"
+  | "thermal-vision"
+  | "night-vision"
+  | "heatwave"
+  | "mirror-h"
+  | "mirror-v"
+  | "kaleidoscope"
+  | "rgb-split"
+  | "directional-blur"
+  | "radial-blur"
+  | "bokeh-sparkles"
+  // Reel effects — impact & flash
+  | "white-flash"
+  | "blackout-strobe"
+  | "negative-flash"
+  | "glitch-shake"
+  | "zoom-blur-hit"
+  | "color-strobe"
+  | "glow-pulse"
+  | "impact-zoom"
+  // Reel effects — texture & aesthetic
+  | "film-roll-slide"
+  | "prism-lens"
+  | "halftone"
+  | "crt-lines"
+  | "cyberpunk-glow"
+  | "vintage-border"
+  | "dreamy-blur"
+  | "thermal-rainbow"
+  | "fire-embers";
 
 /** A timed visual effect applied on top of the video frame. */
 export type VideoEffect = {
@@ -490,6 +549,9 @@ export const EFFECT_DEFAULTS: Record<
   "rotate-sway": { duration: 2.5, intensity: 0.5 },
   "bounce-pulse": { duration: 1.2, intensity: 0.6 },
   handheld: { duration: 3, intensity: 0.4 },
+  "slow-zoom": { duration: 4, intensity: 0.4 },
+  "whip-pan": { duration: 0.6, intensity: 0.6 },
+  "rotate-in": { duration: 1, intensity: 0.6 },
   sepia: { duration: 2, intensity: 0.8 },
   invert: { duration: 1.5, intensity: 1 },
   grayscale: { duration: 2, intensity: 1 },
@@ -500,6 +562,9 @@ export const EFFECT_DEFAULTS: Record<
   "contrast-pump": { duration: 1, intensity: 0.6 },
   "chromatic-bleed": { duration: 1.5, intensity: 0.6 },
   duotone: { duration: 2.5, intensity: 0.7 },
+  "soft-focus": { duration: 3, intensity: 0.5 },
+  "tilt-shift": { duration: 3, intensity: 0.5 },
+  "fade-black": { duration: 1.2, intensity: 0.8 },
   flash: { duration: 0.5, intensity: 0.8 },
   "light-leak": { duration: 1.6, intensity: 0.7 },
   "cinematic-glow": { duration: 2.5, intensity: 0.6 },
@@ -508,6 +573,7 @@ export const EFFECT_DEFAULTS: Record<
   "blur-vignette": { duration: 2, intensity: 0.6 },
   sparkle: { duration: 1.5, intensity: 0.7 },
   "god-rays": { duration: 2.5, intensity: 0.6 },
+  "neon-glow": { duration: 2.5, intensity: 0.7 },
   "film-grain": { duration: 2.5, intensity: 0.5 },
   scanlines: { duration: 2.5, intensity: 0.5 },
   "vhs-glitch": { duration: 1, intensity: 0.7 },
@@ -515,33 +581,147 @@ export const EFFECT_DEFAULTS: Record<
   pixelate: { duration: 1.5, intensity: 0.6 },
   "retro-tv": { duration: 2.5, intensity: 0.6 },
   "crt-warp": { duration: 2.5, intensity: 0.6 },
+  "old-film": { duration: 3, intensity: 0.7 },
+  // ---- Extended NLE library ----
+  "soft-shake": { duration: 1.2, intensity: 0.35 },
+  "whip-pan-left": { duration: 0.6, intensity: 0.6 },
+  "whip-pan-right": { duration: 0.6, intensity: 0.6 },
+  "tilt-up": { duration: 1.4, intensity: 0.5 },
+  "tilt-down": { duration: 1.4, intensity: 0.5 },
+  "soft-glow": { duration: 3, intensity: 0.5 },
+  "color-pop": { duration: 2.5, intensity: 0.6 },
+  lightning: { duration: 0.9, intensity: 0.8 },
+  "lens-flare": { duration: 2, intensity: 0.6 },
+  sunbeams: { duration: 3, intensity: 0.6 },
+  "anamorphic-flare": { duration: 2.2, intensity: 0.6 },
+  "bad-tv-signal": { duration: 1.2, intensity: 0.7 },
+  "old-film-flicker": { duration: 3, intensity: 0.5 },
+  posterize: { duration: 2, intensity: 0.6 },
+  "dust-scratches": { duration: 3, intensity: 0.6 },
+  "edge-glow": { duration: 2.5, intensity: 0.7 },
+  "thermal-vision": { duration: 2.5, intensity: 0.8 },
+  "night-vision": { duration: 2.5, intensity: 0.8 },
+  heatwave: { duration: 2, intensity: 0.6 },
+  "mirror-h": { duration: 2.5, intensity: 1 },
+  "mirror-v": { duration: 2.5, intensity: 1 },
+  kaleidoscope: { duration: 3, intensity: 0.7 },
+  "rgb-split": { duration: 1.5, intensity: 0.6 },
+  "directional-blur": { duration: 1.5, intensity: 0.6 },
+  "radial-blur": { duration: 1.2, intensity: 0.6 },
+  "bokeh-sparkles": { duration: 3, intensity: 0.6 },
+  "white-flash": { duration: 0.45, intensity: 0.9 },
+  "blackout-strobe": { duration: 0.8, intensity: 0.8 },
+  "negative-flash": { duration: 0.5, intensity: 0.9 },
+  "glitch-shake": { duration: 0.8, intensity: 0.7 },
+  "zoom-blur-hit": { duration: 0.5, intensity: 0.8 },
+  "color-strobe": { duration: 0.9, intensity: 0.7 },
+  "glow-pulse": { duration: 1.6, intensity: 0.7 },
+  "impact-zoom": { duration: 0.6, intensity: 0.8 },
+  "film-roll-slide": { duration: 2, intensity: 0.5 },
+  "prism-lens": { duration: 2.5, intensity: 0.6 },
+  halftone: { duration: 2.5, intensity: 0.6 },
+  "crt-lines": { duration: 3, intensity: 0.6 },
+  "cyberpunk-glow": { duration: 3, intensity: 0.7 },
+  "vintage-border": { duration: 3, intensity: 0.6 },
+  "dreamy-blur": { duration: 3, intensity: 0.5 },
+  "thermal-rainbow": { duration: 3, intensity: 0.7 },
+  "fire-embers": { duration: 2.5, intensity: 0.7 },
+};
+
+/** Friendly labels where the slug would read awkwardly or use acronyms. */
+const EFFECT_LABEL_OVERRIDES: Partial<Record<VideoEffectType, string>> = {
+  sparkle: "Sparkle Overlay",
+  "crt-warp": "CRT Warp",
+  "crt-lines": "CRT Monitor Lines",
+  "rgb-split": "RGB Split",
+  "vhs-glitch": "VHS Glitch",
+  "glitch-rgb": "Glitch RGB",
+  "god-rays": "God Rays",
+  "halftone": "Halftone Dots",
+  "edge-glow": "Edge Glow / Neon Outline",
+  "thermal-rainbow": "Thermal Rainbow",
+  "fire-embers": "Fire / Embers",
+  "dust-scratches": "Dust & Scratches",
+  "heatwave": "Heatwave Distortion",
+  "mirror-h": "Mirror Horizontal",
+  "mirror-v": "Mirror Vertical",
+  "vintage-border": "Vintage Film Border",
+  "dreamy-blur": "Soft Dreamy Blur",
+  "film-roll-slide": "Film Roll Slide",
+  "old-film-flicker": "Old Film Flicker",
+  "bad-tv-signal": "Bad TV Signal",
+  "white-flash": "White Flash Impact",
+  "radial-blur": "Radial Motion Blur",
+  "bokeh-sparkles": "Bokeh Sparkles",
 };
 
 /** Display label for an effect type (e.g. "chromatic-bleed" → "Chromatic Bleed"). */
 export function effectLabel(type: VideoEffectType): string {
+  const override = EFFECT_LABEL_OVERRIDES[type];
+  if (override) return override;
   return type
     .split("-")
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
 }
 
-/** The 35 effects, grouped for the effect pickers. */
+/** The 86 effects, grouped for the effect pickers. */
 export const EFFECT_GROUPS: { label: string; types: VideoEffectType[] }[] = [
   {
     label: "Transform & Camera",
-    types: ["zoom-in", "zoom-out", "punch-in", "pull-back", "camera-shake", "orbit-drift", "vertical-drift", "rotate-sway", "bounce-pulse", "handheld"],
+    types: [
+      "zoom-in", "zoom-out", "punch-in", "pull-back", "slow-zoom",
+      "camera-shake", "soft-shake", "handheld", "orbit-drift",
+      "vertical-drift", "rotate-sway", "rotate-in", "bounce-pulse",
+      "whip-pan", "whip-pan-left", "whip-pan-right", "tilt-up", "tilt-down",
+    ],
   },
   {
     label: "Color & Grade",
-    types: ["sepia", "invert", "grayscale", "warm-flash", "cool-shift", "hue-cycle", "brightness-pulse", "contrast-pump", "chromatic-bleed", "duotone"],
+    types: [
+      "sepia", "invert", "grayscale", "warm-flash", "cool-shift",
+      "hue-cycle", "brightness-pulse", "contrast-pump", "chromatic-bleed",
+      "rgb-split", "duotone", "color-pop", "soft-focus", "tilt-shift",
+      "fade-black",
+    ],
   },
   {
     label: "Light & Atmosphere",
-    types: ["flash", "light-leak", "cinematic-glow", "bloom", "vignette", "blur-vignette", "sparkle", "god-rays"],
+    types: [
+      "flash", "lightning", "light-leak", "lens-flare", "anamorphic-flare",
+      "cinematic-glow", "neon-glow", "bloom", "soft-glow", "god-rays",
+      "sunbeams", "vignette", "blur-vignette", "sparkle", "bokeh-sparkles",
+    ],
   },
   {
     label: "Film & Retro",
-    types: ["film-grain", "scanlines", "vhs-glitch", "glitch-rgb", "pixelate", "retro-tv", "crt-warp"],
+    types: [
+      "film-grain", "old-film", "old-film-flicker", "dust-scratches",
+      "scanlines", "crt-lines", "vhs-glitch", "bad-tv-signal", "glitch-rgb",
+      "pixelate", "posterize", "retro-tv", "crt-warp",
+    ],
+  },
+  {
+    label: "Reel Effects — Stylized",
+    types: [
+      "edge-glow", "thermal-vision", "night-vision", "heatwave",
+      "mirror-h", "mirror-v", "kaleidoscope", "directional-blur",
+      "radial-blur",
+    ],
+  },
+  {
+    label: "Reel Effects — Impact & Flash",
+    types: [
+      "white-flash", "blackout-strobe", "negative-flash", "glitch-shake",
+      "zoom-blur-hit", "color-strobe", "glow-pulse", "impact-zoom",
+    ],
+  },
+  {
+    label: "Reel Effects — Texture",
+    types: [
+      "film-roll-slide", "prism-lens", "halftone", "cyberpunk-glow",
+      "vintage-border", "dreamy-blur", "thermal-rainbow", "fire-embers",
+    ],
   },
 ];
 

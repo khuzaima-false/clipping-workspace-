@@ -106,6 +106,9 @@ export type SceneConfig = {
    * the current source time by the caller.
    */
   clipTransform?: { x: number; y: number; scale: number; rotation: number };
+  /** Internal: mirror flags resolved from the active effect frame. */
+  effectFlipX?: boolean;
+  effectFlipY?: boolean;
 };
 
 /** Per-frame overlay transform resolved from its keyframes (or its base pose). */
@@ -239,6 +242,8 @@ export type EffectFrame = {
   grayscale: number;
   brightness: number;
   contrast: number;
+  /** Saturation boost/drop in percent (0 = neutral). */
+  saturation: number;
   hueRotate: number;
   /** Full-frame colour overlay (light leak / duotone / glow tint). */
   overlay: { r: number; g: number; b: number; a: number } | null;
@@ -252,6 +257,9 @@ export type EffectFrame = {
   glow: number;
   /** Pixelate block size in px (0 = off). */
   pixelate: number;
+  /** Mirror the frame horizontally / vertically (for Mirror & Kaleidoscope). */
+  flipX: boolean;
+  flipY: boolean;
 };
 
 let effectNoiseTile: HTMLCanvasElement | null = null;
@@ -296,6 +304,7 @@ export function computeEffectFrame(
     grayscale: 0,
     brightness: 0,
     contrast: 0,
+    saturation: 0,
     hueRotate: 0,
     overlay: null,
     overlayMode: "screen",
@@ -304,6 +313,8 @@ export function computeEffectFrame(
     scanlines: 0,
     glow: 0,
     pixelate: 0,
+    flipX: false,
+    flipY: false,
   };
 
   for (const effect of effects) {
@@ -478,6 +489,282 @@ export function computeEffectFrame(
         frame.scanlines = Math.min(1, frame.scanlines + intensity * 0.4);
         frame.vignetteAlpha = Math.min(1, frame.vignetteAlpha + intensity * 0.4);
         break;
+      /* ---- Expanded presets ---- */
+      case "slow-zoom":
+        frame.scale *= 1 + 0.18 * intensity * easeInOut(progress);
+        break;
+      case "whip-pan":
+        frame.offsetX += Math.sin(progress * Math.PI) * 260 * intensity;
+        frame.blur += Math.sin(progress * Math.PI) * 6 * intensity;
+        break;
+      case "rotate-in":
+        frame.rotation += (1 - easeInOut(progress)) * 12 * intensity;
+        frame.scale *= 1 + 0.08 * intensity * (1 - easeInOut(progress));
+        break;
+      case "soft-focus":
+        frame.blur += 6 * intensity;
+        frame.brightness += 12 * intensity;
+        break;
+      case "tilt-shift":
+        frame.blur += 3 * intensity;
+        frame.contrast += 14 * intensity;
+        break;
+      case "fade-black":
+        frame.brightness -= 85 * intensity * envelope;
+        frame.vignetteAlpha = Math.min(
+          1,
+          frame.vignetteAlpha + 0.6 * intensity * envelope
+        );
+        break;
+      case "neon-glow":
+        frame.glow = Math.min(1, frame.glow + 0.8 * intensity);
+        frame.hueRotate += 20 * intensity;
+        break;
+      case "old-film":
+        frame.sepia = Math.min(1, frame.sepia + 0.9 * intensity);
+        frame.grain = Math.min(1, frame.grain + 0.55 * intensity);
+        frame.vignetteAlpha = Math.min(
+          1,
+          frame.vignetteAlpha + 0.35 * intensity
+        );
+        break;
+      /* ---- Extended NLE library ---- */
+      case "soft-shake": {
+        const amp = 9 * intensity;
+        frame.offsetX += Math.sin(seed * 3.1) * amp;
+        frame.offsetY += Math.cos(seed * 2.3) * amp;
+        break;
+      }
+      case "whip-pan-left":
+        frame.offsetX -= Math.sin(progress * Math.PI) * 300 * intensity;
+        frame.blur += Math.sin(progress * Math.PI) * 7 * intensity;
+        break;
+      case "whip-pan-right":
+        frame.offsetX += Math.sin(progress * Math.PI) * 300 * intensity;
+        frame.blur += Math.sin(progress * Math.PI) * 7 * intensity;
+        break;
+      case "tilt-up":
+        frame.offsetY -= (1 - easeInOut(progress)) * 140 * intensity;
+        break;
+      case "tilt-down":
+        frame.offsetY += (1 - easeInOut(progress)) * 140 * intensity;
+        break;
+      case "soft-glow":
+        frame.glow = Math.min(1, frame.glow + 0.6 * intensity);
+        frame.brightness += 8 * intensity;
+        break;
+      case "color-pop":
+        frame.saturation += 55 * intensity;
+        frame.contrast += 18 * intensity;
+        break;
+      case "lightning": {
+        const bolt = Math.sin(progress * Math.PI * 3) > 0.5 ? 1 : 0.12;
+        frame.flashAlpha = Math.max(frame.flashAlpha, 0.85 * intensity * bolt);
+        break;
+      }
+      case "lens-flare":
+        frame.overlay = { r: 255, g: 214, b: 130, a: 0.22 * intensity * envelope };
+        frame.overlayMode = "screen";
+        frame.glow = Math.min(1, frame.glow + 0.5 * intensity);
+        break;
+      case "sunbeams":
+        frame.overlay = { r: 255, g: 236, b: 180, a: 0.18 * intensity };
+        frame.overlayMode = "screen";
+        frame.glow = Math.min(1, frame.glow + 0.45 * intensity);
+        break;
+      case "anamorphic-flare":
+        frame.rgbSplit = Math.max(frame.rgbSplit, 10 * intensity);
+        frame.overlay = { r: 120, g: 190, b: 255, a: 0.2 * intensity };
+        frame.overlayMode = "screen";
+        frame.glow = Math.min(1, frame.glow + 0.5 * intensity);
+        break;
+      case "bad-tv-signal":
+        frame.scanlines = Math.min(1, frame.scanlines + 0.6 * intensity);
+        frame.rgbSplit = Math.max(
+          frame.rgbSplit,
+          (4 + Math.abs(Math.sin(seed * 7)) * 10) * intensity
+        );
+        frame.offsetY += Math.sin(seed * 11) * 4 * intensity;
+        frame.grain = Math.min(1, frame.grain + 0.3 * intensity);
+        break;
+      case "old-film-flicker":
+        frame.brightness += Math.sin(seed * 9) * 10 * intensity;
+        frame.grain = Math.min(1, frame.grain + 0.4 * intensity);
+        frame.sepia = Math.min(1, frame.sepia + 0.25 * intensity);
+        break;
+      case "posterize":
+        // Approximated with hard contrast + light pixelation.
+        frame.contrast += 45 * intensity;
+        frame.pixelate = Math.max(
+          frame.pixelate,
+          Math.round(2 + 4 * intensity)
+        );
+        break;
+      case "dust-scratches":
+        frame.grain = Math.min(1, frame.grain + 0.6 * intensity);
+        frame.scanlines = Math.min(1, frame.scanlines + 0.25 * intensity);
+        frame.vignetteAlpha = Math.min(
+          1,
+          frame.vignetteAlpha + 0.25 * intensity
+        );
+        break;
+      /* ---- Reel effects: stylized & action ---- */
+      case "edge-glow":
+        frame.glow = Math.min(1, frame.glow + 0.85 * intensity);
+        frame.contrast += 25 * intensity;
+        frame.saturation += 20 * intensity;
+        break;
+      case "thermal-vision":
+        frame.overlay = { r: 255, g: 92, b: 0, a: 0.38 * intensity };
+        frame.overlayMode = "overlay";
+        frame.contrast += 35 * intensity;
+        frame.saturation += 40 * intensity;
+        break;
+      case "night-vision":
+        frame.grayscale = Math.min(1, frame.grayscale + 0.85 * intensity);
+        frame.overlay = { r: 40, g: 255, b: 90, a: 0.35 * intensity };
+        frame.overlayMode = "screen";
+        frame.grain = Math.min(1, frame.grain + 0.35 * intensity);
+        frame.vignetteAlpha = Math.min(
+          1,
+          frame.vignetteAlpha + 0.4 * intensity
+        );
+        break;
+      case "heatwave":
+        frame.offsetY += Math.sin(progress * Math.PI * 6 + seed) * 6 * intensity;
+        frame.blur += 1.6 * intensity;
+        frame.hueRotate += 6 * intensity;
+        break;
+      case "mirror-h":
+        frame.flipX = intensity > 0.05;
+        break;
+      case "mirror-v":
+        frame.flipY = intensity > 0.05;
+        break;
+      case "kaleidoscope":
+        frame.flipX = true;
+        frame.flipY = true;
+        frame.scale *= 1.35 + 0.1 * intensity;
+        frame.rotation += Math.sin(progress * Math.PI) * 3 * intensity;
+        break;
+      case "rgb-split":
+        frame.rgbSplit = Math.max(
+          frame.rgbSplit,
+          (5 + Math.abs(Math.sin(seed * 4.2)) * 10) * intensity
+        );
+        break;
+      case "directional-blur":
+        frame.blur += 4 * intensity;
+        frame.offsetX += Math.sin(seed * 3) * 5 * intensity;
+        frame.rgbSplit = Math.max(frame.rgbSplit, 6 * intensity);
+        break;
+      case "radial-blur":
+        frame.blur += 3 * intensity * (0.4 + envelope);
+        frame.scale *= 1 + 0.06 * intensity * envelope;
+        break;
+      case "bokeh-sparkles":
+        frame.glow = Math.min(1, frame.glow + 0.55 * intensity);
+        frame.overlay = { r: 255, g: 220, b: 170, a: 0.12 * intensity };
+        frame.overlayMode = "screen";
+        break;
+      /* ---- Reel effects: impact & flash ---- */
+      case "white-flash":
+        frame.flashAlpha = Math.max(frame.flashAlpha, 0.95 * intensity * envelope);
+        break;
+      case "blackout-strobe": {
+        const dark = Math.sin(progress * Math.PI * 8) > 0 ? 0 : 1;
+        frame.brightness -= 95 * intensity * dark;
+        frame.contrast += 20 * intensity;
+        break;
+      }
+      case "negative-flash":
+        frame.invert = Math.min(1, frame.invert + intensity * envelope);
+        break;
+      case "glitch-shake":
+        frame.offsetX +=
+          (Math.sin(seed * 17) + Math.sin(seed * 5.3)) * 14 * intensity;
+        frame.offsetY += Math.cos(seed * 9.7) * 8 * intensity;
+        frame.rgbSplit = Math.max(frame.rgbSplit, 10 * intensity);
+        frame.scanlines = Math.min(1, frame.scanlines + 0.3 * intensity);
+        break;
+      case "zoom-blur-hit":
+        frame.scale *= 1 + 0.28 * intensity * envelope;
+        frame.blur += 10 * intensity * envelope;
+        break;
+      case "color-strobe":
+        frame.hueRotate += Math.sin(progress * Math.PI * 10) * 140 * intensity;
+        frame.saturation += 30 * intensity;
+        break;
+      case "glow-pulse":
+        frame.glow = Math.min(1, frame.glow + 0.9 * intensity * envelope);
+        break;
+      case "impact-zoom":
+        frame.scale *= 1 + 0.55 * intensity * (1 - Math.pow(1 - progress, 4));
+        frame.flashAlpha = Math.max(
+          frame.flashAlpha,
+          0.35 * intensity * (1 - progress)
+        );
+        break;
+      /* ---- Reel effects: texture & aesthetic ---- */
+      case "film-roll-slide":
+        frame.offsetY += Math.sin(progress * Math.PI * 2) * 26 * intensity;
+        frame.grain = Math.min(1, frame.grain + 0.35 * intensity);
+        frame.scanlines = Math.min(1, frame.scanlines + 0.2 * intensity);
+        break;
+      case "prism-lens":
+        frame.rgbSplit = Math.max(frame.rgbSplit, 7 * intensity);
+        frame.overlay = { r: 150, g: 130, b: 255, a: 0.14 * intensity };
+        frame.overlayMode = "screen";
+        frame.glow = Math.min(1, frame.glow + 0.35 * intensity);
+        break;
+      case "halftone":
+        frame.pixelate = Math.max(
+          frame.pixelate,
+          Math.round(3 + 5 * intensity)
+        );
+        frame.contrast += 35 * intensity;
+        frame.grayscale = Math.min(1, frame.grayscale + 0.35 * intensity);
+        break;
+      case "crt-lines":
+        frame.scanlines = Math.min(1, frame.scanlines + 0.9 * intensity);
+        frame.glow = Math.min(1, frame.glow + 0.25 * intensity);
+        frame.vignetteAlpha = Math.min(
+          1,
+          frame.vignetteAlpha + 0.3 * intensity
+        );
+        break;
+      case "cyberpunk-glow":
+        frame.overlay = { r: 255, g: 0, b: 190, a: 0.2 * intensity };
+        frame.overlayMode = "overlay";
+        frame.glow = Math.min(1, frame.glow + 0.6 * intensity);
+        frame.saturation += 35 * intensity;
+        frame.rgbSplit = Math.max(frame.rgbSplit, 4 * intensity);
+        break;
+      case "vintage-border":
+        frame.vignetteAlpha = Math.min(
+          1,
+          frame.vignetteAlpha + 0.75 * intensity
+        );
+        frame.sepia = Math.min(1, frame.sepia + 0.3 * intensity);
+        frame.grain = Math.min(1, frame.grain + 0.3 * intensity);
+        break;
+      case "dreamy-blur":
+        frame.blur += 5 * intensity;
+        frame.brightness += 10 * intensity;
+        frame.overlay = { r: 255, g: 240, b: 250, a: 0.12 * intensity };
+        frame.overlayMode = "screen";
+        break;
+      case "thermal-rainbow":
+        frame.hueRotate += progress * 220 * intensity;
+        frame.saturation += 50 * intensity;
+        frame.contrast += 15 * intensity;
+        break;
+      case "fire-embers":
+        frame.overlay = { r: 255, g: 90, b: 20, a: 0.22 * intensity };
+        frame.overlayMode = "screen";
+        frame.glow = Math.min(1, frame.glow + 0.5 * intensity);
+        frame.grain = Math.min(1, frame.grain + 0.2 * intensity);
+        break;
     }
   }
 
@@ -545,7 +832,10 @@ export function buildCombinedFilter(
   if (bright !== 0) parts.push(`brightness(${Math.max(0, 100 + bright)}%)`);
   const contrastTotal = contrast + (fx?.contrast ?? 0);
   if (contrastTotal !== 0) parts.push(`contrast(${Math.max(0, 100 + contrastTotal)}%)`);
-  if (saturation !== 0) parts.push(`saturate(${Math.max(0, 100 + saturation)}%)`);
+  const saturationTotal = saturation + (fx?.saturation ?? 0);
+  if (saturationTotal !== 0) {
+    parts.push(`saturate(${Math.max(0, 100 + saturationTotal)}%)`);
+  }
   const hueShift = hue + tint * 0.5 + (fx?.hueRotate ?? 0);
   if (hueShift !== 0) parts.push(`hue-rotate(${hueShift}deg)`);
   if (fx?.sepia) parts.push(`sepia(${fx.sepia.toFixed(3)})`);
@@ -862,7 +1152,7 @@ export function drawScene(
     if (config.transition) {
       drawTransition(ctx, config, video);
     } else {
-      drawVideoFrame(ctx, video, config);
+      drawVideoFrame(ctx, video, config, fx);
     }
 
     // Chromatic-aberration ghost copies (screen blend).
@@ -871,11 +1161,11 @@ export function drawScene(
       ctx.globalAlpha = 0.4;
       ctx.save();
       ctx.translate(fx.rgbSplit, 0);
-      drawVideoFrame(ctx, video, config);
+      drawVideoFrame(ctx, video, config, fx);
       ctx.restore();
       ctx.save();
       ctx.translate(-fx.rgbSplit, 0);
-      drawVideoFrame(ctx, video, config);
+      drawVideoFrame(ctx, video, config, fx);
       ctx.restore();
       ctx.globalAlpha = 1;
       ctx.globalCompositeOperation = "source-over";
@@ -887,7 +1177,7 @@ export function drawScene(
       ctx.globalCompositeOperation = "screen";
       ctx.globalAlpha = Math.min(1, fx.glow);
       ctx.filter = `blur(${Math.round(10 + fx.glow * 12)}px) brightness(1.35)`;
-      drawVideoFrame(ctx, video, config);
+      drawVideoFrame(ctx, video, config, fx);
       ctx.restore();
       ctx.globalAlpha = 1;
       ctx.globalCompositeOperation = "source-over";
@@ -1048,6 +1338,12 @@ function drawFrameTransformed(
     if (clip.scale !== 1) ctx.scale(clip.scale, clip.scale);
     ctx.translate(-cx, -cy);
   }
+  // Mirror effects flip the whole frame around the canvas centre.
+  if (config.effectFlipX || config.effectFlipY) {
+    ctx.translate(width / 2, height / 2);
+    ctx.scale(config.effectFlipX ? -1 : 1, config.effectFlipY ? -1 : 1);
+    ctx.translate(-width / 2, -height / 2);
+  }
   ctx.drawImage(source, x, y, drawW, drawH);
   ctx.restore();
 }
@@ -1055,8 +1351,17 @@ function drawFrameTransformed(
 function drawVideoFrame(
   ctx: CanvasRenderingContext2D,
   video: HTMLVideoElement,
-  config: SceneConfig
+  config: SceneConfig,
+  fx?: EffectFrame | null
 ): void {
+  if (fx?.flipX || fx?.flipY) {
+    drawFrameTransformed(ctx, video, {
+      ...config,
+      effectFlipX: Boolean(fx.flipX),
+      effectFlipY: Boolean(fx.flipY),
+    });
+    return;
+  }
   drawFrameTransformed(ctx, video, config);
 }
 
