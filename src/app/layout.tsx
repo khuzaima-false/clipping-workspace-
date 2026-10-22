@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
+import { TAURI_ENTRY_SCRIPT, TAURI_ENTRY_STYLE } from "@/lib/tauri";
 import "./globals.css";
 
 const SITE_URL = (
@@ -108,6 +109,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased dark`}
     >
       <head>
+        {/* Desktop shell entry: hide the marketing page before paint and jump
+            straight into the editor. Web browsers skip both entirely. */}
+        <style dangerouslySetInnerHTML={{ __html: TAURI_ENTRY_STYLE }} />
+        <script dangerouslySetInnerHTML={{ __html: TAURI_ENTRY_SCRIPT }} />
         <link rel="icon" type="image/png" sizes="48x48" href="/icon-48x48.png" />
         <link rel="icon" type="image/png" sizes="192x192" href="/icon-192x192.png" />
         <link rel="apple-touch-icon" sizes="180x180" href="/apple-icon.png" />

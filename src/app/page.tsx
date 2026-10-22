@@ -45,6 +45,7 @@ import {
 } from "lucide-react";
 import { Logo } from "@/components/ui/logo";
 import { HeroPreview } from "@/components/marketing/hero-preview";
+import { DesktopEntryRedirect } from "@/components/system/desktop-entry";
 import {
   DesktopDownloadMenu,
   HeroAuthActions,
@@ -316,6 +317,9 @@ const INCLUDED = [
 export default function LandingPage() {
   return (
     <div className="relative min-h-screen overflow-x-hidden bg-zinc-950 text-zinc-100">
+      {/* Inside the Tauri desktop shell this immediately routes to /editor. */}
+      <DesktopEntryRedirect />
+
       {/* Ambient backdrop */}
       <div className="pointer-events-none fixed inset-0 -z-10">
         <div className="absolute -top-40 left-1/2 h-[36rem] w-[72rem] -translate-x-1/2 rounded-full bg-[radial-gradient(ellipse_at_center,rgba(124,58,237,0.28),transparent_60%)]" />
