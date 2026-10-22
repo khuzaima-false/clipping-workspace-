@@ -41,6 +41,8 @@ import {
   rememberLocalProject,
   renameLocalProject,
 } from "@/lib/local-projects";
+import { isTauri } from "@/lib/tauri";
+import { useIsTauri } from "@/hooks/use-is-tauri";
 import { cn } from "@/lib/utils";
 
 function fileNameFor(title: string, extension: string, label: string): string {
@@ -73,6 +75,7 @@ function EditorView() {
   const [project, setProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const desktop = useIsTauri();
 
   const [titleDraft, setTitleDraft] = useState("");
 
@@ -101,6 +104,13 @@ function EditorView() {
 
       setLoading(true);
       setError(null);
+
+      // Desktop shell: never contact the cloud. A cloud project id arriving
+      // from a stale bookmark/link is swapped for the local desktop project.
+      if (isTauri() && !isLocalProjectId(projectId)) {
+        router.replace(`/editor?id=${getOrCreateLocalProject()}`);
+        return;
+      }
 
       // Browser demo projects (`local-…`) never touch Supabase: their
       // metadata lives in localStorage and their media/autosaves in
@@ -152,7 +162,7 @@ function EditorView() {
     return () => {
       cancelled = true;
     };
-  }, [projectId]);
+  }, [projectId, router]);
 
   // No project id: jump straight into the most recent project so the landing
   // CTA opens real work. With no account or no projects, seed a browser demo
@@ -162,6 +172,14 @@ function EditorView() {
     let cancelled = false;
 
     async function openLatest() {
+      // Desktop shell: fully local-first — no session lookup, no network.
+      if (isTauri()) {
+        if (!cancelled) {
+          router.replace(`/editor?id=${getOrCreateLocalProject()}`);
+        }
+        return;
+      }
+
       try {
         const supabase = createClient();
         const {
@@ -572,7 +590,9 @@ function EditorView() {
                   <span className="truncate text-zinc-600">
                     ·{" "}
                     {isLocalProjectId(project.id)
-                      ? "Browser demo · saved on this device"
+                      ? desktop
+                        ? "Desktop project · saved on this device"
+                        : "Browser demo · saved on this device"
                       : `Created ${new Date(project.created_at).toLocaleDateString()}`}
                   </span>
                 )}

@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { createClient } from "@/lib/supabase/client";
+import { isTauri } from "@/lib/tauri";
 import type { Project } from "@/types/database";
 
 type ProjectsState = {
@@ -23,6 +24,11 @@ export const useProjectsStore = create<ProjectsState>((set) => ({
   setProjects: (projects) => set({ projects, error: null }),
 
   loadProjects: async () => {
+    // Desktop shell is local-first: projects live in IndexedDB, never Supabase.
+    if (isTauri()) {
+      set({ projects: [], loading: false, error: null });
+      return;
+    }
     set({ loading: true, error: null });
 
     try {

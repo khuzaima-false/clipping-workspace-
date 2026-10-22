@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
+import { DesktopEntryRedirect } from "@/components/system/desktop-entry";
 import { TAURI_ENTRY_SCRIPT, TAURI_ENTRY_STYLE } from "@/lib/tauri";
 import "./globals.css";
 
@@ -118,6 +119,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <link rel="apple-touch-icon" sizes="180x180" href="/apple-icon.png" />
       </head>
       <body className="min-h-full">
+        <DesktopEntryRedirect />
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(JSON_LD) }}

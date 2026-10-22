@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { createClient } from "@/lib/supabase/client";
+import { isTauri } from "@/lib/tauri";
 import type { Channel, Profile } from "@/types/database";
 
 type WorkspaceState = {
@@ -32,6 +33,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   setActiveChannel: (channelId) => set({ activeChannelId: channelId }),
 
   loadChannels: async ({ force = false } = {}) => {
+    // Desktop shell is local-first: there is no cloud account to query.
+    if (isTauri()) return;
     const { channelsLoading, channels } = get();
     if (channelsLoading) return;
     if (!force && channels.length > 0) return;
@@ -84,6 +87,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   setProfile: (profile) => set({ profile, profileError: null }),
 
   loadProfile: async ({ force = false } = {}) => {
+    // Desktop shell is local-first: there is no cloud account to query.
+    if (isTauri()) return;
     const { profileLoading, profile } = get();
     if (profileLoading) return;
     if (!force && profile) return;

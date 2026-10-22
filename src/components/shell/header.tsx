@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   ArrowLeft,
   ChevronDown,
+  HardDrive,
   LogIn,
   Menu,
   Moon,
@@ -18,6 +19,8 @@ import type { User as SupabaseUser } from "@supabase/supabase-js";
 import { SignOutButton } from "@/components/auth/sign-out-button";
 import { Logo } from "@/components/ui/logo";
 import { useWorkspaceStore } from "@/store/workspace";
+import { useIsTauri } from "@/hooks/use-is-tauri";
+import { isTauri } from "@/lib/tauri";
 
 type HeaderProps = {
   onMenuClick: () => void;
@@ -30,6 +33,7 @@ type HeaderProps = {
 
 export function Header({ onMenuClick, variant = "default" }: HeaderProps) {
   const isEditor = variant === "editor";
+  const desktop = useIsTauri();
   const [channelOpen, setChannelOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
 
@@ -46,7 +50,9 @@ export function Header({ onMenuClick, variant = "default" }: HeaderProps) {
   const [authChecked, setAuthChecked] = useState(false);
 
   // Track auth so the navbar can offer a sign-in CTA when signed out.
+  // The desktop shell is local-first, so it has no session to look up.
   useEffect(() => {
+    if (isTauri()) return;
     const supabase = createClient();
     let active = true;
 
@@ -76,10 +82,12 @@ export function Header({ onMenuClick, variant = "default" }: HeaderProps) {
   const profileRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (isTauri()) return;
     void loadChannels();
   }, [loadChannels]);
 
   useEffect(() => {
+    if (isTauri()) return;
     void loadProfile();
   }, [loadProfile]);
 
@@ -118,7 +126,7 @@ export function Header({ onMenuClick, variant = "default" }: HeaderProps) {
 
       {/* Brand — in the studio it is the only left-side element. */}
       <Link
-        href="/dashboard"
+        href={desktop ? "/editor" : "/dashboard"}
         aria-label="Forgevyn Clipping home"
         className={cn("flex items-center", !isEditor && "lg:hidden")}
       >
@@ -234,7 +242,7 @@ export function Header({ onMenuClick, variant = "default" }: HeaderProps) {
       )}
       <div className={cn("flex-1", !isEditor && "md:hidden")} />
 
-      {isEditor && (
+      {isEditor && !desktop && (
         <Link
           href="/projects"
           className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-900/70 px-3 py-2 text-sm font-medium text-zinc-200 transition-colors hover:border-violet-500/60 hover:text-white"
@@ -252,8 +260,19 @@ export function Header({ onMenuClick, variant = "default" }: HeaderProps) {
       </span>
       )}
 
-      {/* User profile menu, or a sign-in CTA when signed out */}
-      {authChecked && !user ? (
+      {/* Desktop shell: local-first, so there is no account to show.
+          Web: user profile menu, or a sign-in CTA when signed out. */}
+      {desktop ? (
+        <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-zinc-800 bg-zinc-900 px-2.5 py-1 text-xs font-medium text-zinc-400">
+          <HardDrive className="h-3.5 w-3.5 text-emerald-400" aria-hidden />
+          Local
+        </span>
+      ) : !authChecked ? (
+        <span
+          aria-hidden
+          className="h-8 w-8 animate-pulse rounded-full border border-zinc-800 bg-zinc-900"
+        />
+      ) : !user ? (
         <Link
           href="/login"
           className="inline-flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-violet-500"
