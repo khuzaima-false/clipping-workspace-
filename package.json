@@ -9,6 +9,7 @@
     "lint": "eslint",
     "brand:assets": "node scripts/generate-brand-assets.mjs",
     "dev:tauri": "next dev -p 3000",
+    "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build"
   },
@@ -30,7 +31,6 @@
   },
   "devDependencies": {
     "@tailwindcss/turbopack": "^4",
-    "@tauri-apps/cli": "^2",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",

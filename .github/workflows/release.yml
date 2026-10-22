@@ -1,0 +1,110 @@
+name: Release Desktop App
+
+# Builds native installers for Windows, macOS and Linux.
+#
+# - Push a version tag (e.g. `git tag v0.1.0 && git push origin v0.1.0`)
+#   → builds every platform and publishes a GitHub Release with the assets.
+# - Run manually (Actions → Release Desktop App → Run workflow)
+#   → builds every platform into a DRAFT release for testing.
+#
+# `tauri-action` is pinned to v1: that is the action's own major version
+# (Tauri 2 apps use it) — there is no published `@v2` tag yet.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.platform }}
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            label: macOS (Universal .dmg)
+            args: --target universal-apple-darwin
+          - platform: ubuntu-22.04
+            label: Linux (AppImage / deb)
+            args: ""
+          - platform: windows-latest
+            label: Windows (NSIS .exe)
+            args: ""
+
+    env:
+      # Baked into the static export so the desktop app's own download menu
+      # points at the release it was built from. Override with a repo variable.
+      NEXT_PUBLIC_GITHUB_REPO: ${{ vars.GITHUB_REPO || github.repository }}
+      NEXT_PUBLIC_DESKTOP_RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+      # Optional: enables cloud sign-in inside the packaged app. The studio
+      # still runs fully offline (browser demo projects) without them.
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - name: Install Linux system dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            libgtk-3-dev \
+            patchelf
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build and publish release
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # Tag pushes publish the tag they were triggered by; manual runs use
+          # the app version from `tauri.conf.json` (creating the tag if needed).
+          tagName: ${{ github.ref_type == 'tag' && github.ref_name || 'v__VERSION__' }}
+          releaseName: "Forgevyn v__VERSION__"
+          releaseBody: |
+            Native Forgevyn installers, built automatically from the source at this tag.
+
+            | Platform | Asset |
+            | --- | --- |
+            | Windows | `Forgevyn_*_x64-setup.exe` (NSIS) |
+            | macOS | `Forgevyn_*_universal.dmg` (Apple Silicon + Intel) |
+            | Linux | `Forgevyn_*_amd64.AppImage`, `Forgevyn_*_amd64.deb` |
+
+            The web studio at https://forgevyn.com runs the same client-side engine — no install required.
+          # Tag pushes go live; manual runs stay as drafts so they can be checked first.
+          releaseDraft: ${{ github.event_name == 'workflow_dispatch' }}
+          prerelease: false
+          retryAttempts: 3
+          args: ${{ matrix.args }}

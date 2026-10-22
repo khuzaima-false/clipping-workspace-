@@ -34,6 +34,13 @@ import { DesktopEditor } from "@/components/editor/desktop-editor";
 import { MobileEditor } from "@/components/editor/mobile-editor";
 import { ExportDialog, type ExportRun } from "@/components/editor/export-dialog";
 import { useAutosave } from "@/hooks/use-autosave";
+import {
+  buildLocalProject,
+  getOrCreateLocalProject,
+  isLocalProjectId,
+  rememberLocalProject,
+  renameLocalProject,
+} from "@/lib/local-projects";
 import { cn } from "@/lib/utils";
 
 function fileNameFor(title: string, extension: string, label: string): string {
@@ -94,6 +101,22 @@ function EditorView() {
 
       setLoading(true);
       setError(null);
+
+      // Browser demo projects (`local-…`) never touch Supabase: their
+      // metadata lives in localStorage and their media/autosaves in
+      // IndexedDB. This keeps "Try in Browser" instant for signed-out
+      // visitors (and offline), landing them directly in a working editor.
+      if (isLocalProjectId(projectId)) {
+        rememberLocalProject(projectId);
+        const local = buildLocalProject(projectId);
+        if (!cancelled) {
+          setProject(local);
+          setTitleDraft(local.title);
+          setLoading(false);
+        }
+        return;
+      }
+
       try {
         const supabase = createClient();
         const {
@@ -132,7 +155,8 @@ function EditorView() {
   }, [projectId]);
 
   // No project id: jump straight into the most recent project so the landing
-  // CTA opens real work — or fall through to the empty state when none exists.
+  // CTA opens real work. With no account or no projects, seed a browser demo
+  // project instead of dead-ending on "No project selected".
   useEffect(() => {
     if (projectId) return;
     let cancelled = false;
@@ -143,8 +167,9 @@ function EditorView() {
         const {
           data: { user },
         } = await supabase.auth.getUser();
+        if (cancelled) return;
         if (!user) {
-          if (!cancelled) setLoading(false);
+          router.replace(`/editor?id=${getOrCreateLocalProject()}`);
           return;
         }
         const { data } = await supabase
@@ -155,10 +180,15 @@ function EditorView() {
           .limit(1)
           .maybeSingle();
         if (cancelled) return;
-        if (data?.id) router.replace(`/editor?id=${data.id}`);
-        else setLoading(false);
+        router.replace(
+          data?.id ? `/editor?id=${data.id}` : `/editor?id=${getOrCreateLocalProject()}`
+        );
       } catch {
-        if (!cancelled) setLoading(false);
+        // Supabase unavailable (offline or not configured) — the studio still
+        // works locally, so open a demo project rather than an empty state.
+        if (!cancelled) {
+          router.replace(`/editor?id=${getOrCreateLocalProject()}`);
+        }
       }
     }
 
@@ -171,6 +201,7 @@ function EditorView() {
   // Load the project's media library + clip sequence from IndexedDB.
   useEffect(() => {
     if (!projectId) return;
+    if (isLocalProjectId(projectId)) rememberLocalProject(projectId);
     void useEditorStore.getState().loadProjectMedia(projectId);
   }, [projectId]);
 
@@ -190,6 +221,14 @@ function EditorView() {
     if (next === current.title) return;
     setProject((prev) => (prev ? { ...prev, title: next } : prev));
     useEditorStore.getState().setSaveStatus("unsaved");
+
+    // Browser demo projects persist the title on-device only.
+    if (isLocalProjectId(current.id)) {
+      renameLocalProject(current.id, next);
+      useEditorStore.getState().setSaveStatus("saved");
+      return;
+    }
+
     try {
       const supabase = createClient();
       await supabase.from("projects").update({ title: next }).eq("id", current.id);
@@ -201,21 +240,25 @@ function EditorView() {
 
   // Persist export stats onto the project (best-effort, never blocks the UI).
   const persistExport = async (target: Project, seconds: number) => {
+    const previous =
+      typeof target.settings?.exportCount === "number"
+        ? target.settings.exportCount
+        : 0;
+    const settings = {
+      ...target.settings,
+      exportCount: previous + 1,
+      durationSeconds: seconds,
+      lastExportAt: new Date().toISOString(),
+    };
+    setProject((prev) =>
+      prev ? { ...prev, status: "exported", settings } : prev
+    );
+
+    // Browser demo projects keep their stats in memory / IndexedDB only.
+    if (isLocalProjectId(target.id)) return;
+
     try {
       const supabase = createClient();
-      const previous =
-        typeof target.settings?.exportCount === "number"
-          ? target.settings.exportCount
-          : 0;
-      const settings = {
-        ...target.settings,
-        exportCount: previous + 1,
-        durationSeconds: seconds,
-        lastExportAt: new Date().toISOString(),
-      };
-      setProject((prev) =>
-        prev ? { ...prev, status: "exported", settings } : prev
-      );
       await supabase
         .from("projects")
         .update({ status: "exported", settings })
@@ -527,7 +570,10 @@ function EditorView() {
                 </span>
                 {project && (
                   <span className="truncate text-zinc-600">
-                    · Created {new Date(project.created_at).toLocaleDateString()}
+                    ·{" "}
+                    {isLocalProjectId(project.id)
+                      ? "Browser demo · saved on this device"
+                      : `Created ${new Date(project.created_at).toLocaleDateString()}`}
                   </span>
                 )}
               </p>
