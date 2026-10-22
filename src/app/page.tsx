@@ -29,7 +29,6 @@ import {
   Pipette,
   ScanFace,
   Scissors,
-  Send,
   ShieldCheck,
   Shirt,
   SlidersHorizontal,
@@ -47,6 +46,7 @@ import {
 import { Logo } from "@/components/ui/logo";
 import { HeroPreview } from "@/components/marketing/hero-preview";
 import {
+  DesktopDownloadMenu,
   HeroAuthActions,
   NavAuthActions,
 } from "@/components/marketing/auth-actions";
@@ -349,7 +349,7 @@ export default function LandingPage() {
         <div className="animate-fade-up">
           <span className="inline-flex items-center gap-2 rounded-full border border-violet-500/30 bg-violet-500/10 px-3 py-1 text-xs font-medium text-violet-200">
             <Sparkles className="h-3.5 w-3.5" aria-hidden />
-            {TOTAL_TOOLS} tools · 100% free · runs entirely in your browser
+            {TOTAL_TOOLS} tools · 100% free · browser or desktop
           </span>
 
           <h1 className="mt-6 text-4xl font-bold leading-[1.05] tracking-tight text-white sm:text-5xl lg:text-6xl">
@@ -359,8 +359,8 @@ export default function LandingPage() {
 
           <p className="mt-6 max-w-xl text-base leading-7 text-zinc-400 sm:text-lg">
             Full-featured multi-track editing, Chroma key, keyframe animations,
-            audio mixing, and customizable templates — running 100% locally in
-            your browser with zero server lag.
+            audio mixing and customizable templates — running 100% locally on
+            your own device, in the browser or in the desktop app.
           </p>
 
           <HeroAuthActions />
@@ -562,31 +562,29 @@ export default function LandingPage() {
           <div className="relative">
             <span className="inline-flex items-center gap-2 rounded-full border border-zinc-700/60 bg-zinc-900/60 px-3 py-1 text-xs text-zinc-300">
               <Zap className="h-3.5 w-3.5 text-amber-400" aria-hidden />
-              No installs, no uploads, no waiting
+              No uploads, no subscriptions, no waiting
             </span>
             <h2 className="mx-auto mt-5 max-w-2xl text-3xl font-bold tracking-tight text-white sm:text-4xl">
               Open the studio and start editing
             </h2>
             <p className="mx-auto mt-4 max-w-xl text-zinc-400">
-              Launch the full multi-track editor right now — free, private, and
-              running at native speed on your own device.
+              Launch the full multi-track editor right now in your browser — or
+              take the native desktop build for direct-to-disk projects.
             </p>
             <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
               <Link
                 href="/editor"
                 className="brand-gradient brand-gradient-hover inline-flex items-center gap-2 rounded-xl px-6 py-3.5 text-sm font-semibold text-white shadow-xl shadow-violet-900/30 transition-transform hover:scale-[1.03]"
               >
-                Launch Studio
+                Try in Browser
                 <ArrowRight className="h-4 w-4" aria-hidden />
               </Link>
-              <Link
-                href="/editor"
-                className="inline-flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900/60 px-6 py-3.5 text-sm font-semibold text-zinc-200 transition-colors hover:border-zinc-600 hover:text-white"
-              >
-                <Send className="h-4 w-4" aria-hidden />
-                Open Editor
-              </Link>
+              <DesktopDownloadMenu />
             </div>
+            <p className="mx-auto mt-4 max-w-xl text-xs leading-5 text-zinc-500">
+              Zero Cloud Fees. 100% Private. Browser mode saves to local browser
+              storage; the Desktop app saves directly to your computer folders.
+            </p>
           </div>
         </div>
       </section>
