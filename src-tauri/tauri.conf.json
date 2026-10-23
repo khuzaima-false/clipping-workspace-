@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Forgevyn",
-  "version": "0.1.0",
+  "version": "0.1.3",
   "identifier": "com.forgevyn.studio",
   "build": {
     "beforeDevCommand": "npm run dev:tauri",
@@ -14,6 +14,7 @@
       {
         "label": "main",
         "title": "Forgevyn",
+        "url": "editor",
         "width": 1440,
         "height": 900,
         "minWidth": 1024,
@@ -27,9 +28,18 @@
       "csp": null
     }
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDUwNkVGRTY2RkUwMDM5N0YKUldSL09RRCtadjV1VU1wTnFQaXVzRDEyeFNyYm8yWmVSbjVBc3g3NzZoS2F1ZHNTaUkvb2pKazAK",
+      "endpoints": [
+        "https://github.com/khuzaima-false/clipping-workspace-/releases/latest/download/latest.json"
+      ]
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "category": "Video",
     "shortDescription": "Free professional in-browser video studio",
     "longDescription": "Forgevyn is a client-side multi-track video editor: colour grading, captions, motion presets, audio mixing and WebCodecs export — everything runs locally on your machine.",

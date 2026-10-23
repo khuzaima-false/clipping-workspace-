@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import { DesktopEntryRedirect } from "@/components/system/desktop-entry";
+import { UpdateChecker } from "@/components/system/update-checker";
 import { TAURI_ENTRY_SCRIPT, TAURI_ENTRY_STYLE } from "@/lib/tauri";
 import "./globals.css";
 
@@ -125,6 +126,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           dangerouslySetInnerHTML={{ __html: JSON.stringify(JSON_LD) }}
         />
         {children}
+        <UpdateChecker />
       </body>
     </html>
   );

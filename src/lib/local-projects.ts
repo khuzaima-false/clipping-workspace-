@@ -1,16 +1,16 @@
 "use client";
 
-import { isTauri } from "@/lib/tauri";
+import { DESKTOP_PROJECT_ID, isTauriEnvironment } from "@/lib/tauri";
+import { LOCAL_DESKTOP_USER } from "@/lib/desktop-auth";
 import type { Project } from "@/types/database";
 
 /**
- * Browser-only ("demo") projects.
+ * Local-first projects.
  *
  * A `local-…` id never touches Supabase: its metadata lives in `localStorage`
  * and its media/autosaves live in IndexedDB under the same id, using the exact
- * same persistence path as a cloud project. This is what powers the landing
- * page's "Try in Browser" flow — visitors land in a working editor immediately
- * instead of an empty "No project selected" screen.
+ * same persistence path as a cloud project. This powers both the landing page's
+ * "Try in Browser" demo and the entire Tauri desktop app.
  */
 
 const ACTIVE_PROJECT_KEY = "forgevyn:active-project";
@@ -61,7 +61,7 @@ export function localProjectTitle(id: string): string {
   if (stored) return stored;
   // The desktop shell is local-first from the first launch; the web demo keeps
   // its browser-specific label.
-  return isTauri() ? DESKTOP_PROJECT_TITLE : DEMO_PROJECT_TITLE;
+  return isTauriEnvironment() ? DESKTOP_PROJECT_TITLE : DEMO_PROJECT_TITLE;
 }
 
 /** Persists an inline title edit for a browser project. */
@@ -74,7 +74,7 @@ export function buildLocalProject(id: string): Project {
   const now = new Date().toISOString();
   return {
     id,
-    user_id: "local-browser",
+    user_id: isTauriEnvironment() ? LOCAL_DESKTOP_USER.id : "local-browser",
     channel_id: null,
     title: localProjectTitle(id),
     status: "in-progress",
@@ -85,17 +85,21 @@ export function buildLocalProject(id: string): Project {
 }
 
 /**
- * Returns the remembered browser project, or creates a fresh "Browser Demo
- * Project" id. Media is empty until the user imports something — the editor
- * itself is fully functional from the first frame.
+ * Returns the remembered local project, or creates one on first launch.
+ *
+ * Desktop uses the stable `local-demo-project` id so every fresh install starts
+ * in a known IndexedDB/localStorage bucket. The web demo keeps a unique id per
+ * visitor. Existing desktop installs keep their remembered id.
  */
 export function getOrCreateLocalProject(): string {
   const existing = activeLocalProjectId();
   if (existing) return existing;
 
-  const id = `${LOCAL_PROJECT_PREFIX}${Date.now().toString(36)}${Math.random()
-    .toString(36)
-    .slice(2, 6)}`;
+  const id = isTauriEnvironment()
+    ? DESKTOP_PROJECT_ID
+    : `${LOCAL_PROJECT_PREFIX}${Date.now().toString(36)}${Math.random()
+        .toString(36)
+        .slice(2, 6)}`;
   rememberLocalProject(id);
   return id;
 }

@@ -41,7 +41,7 @@ import {
   rememberLocalProject,
   renameLocalProject,
 } from "@/lib/local-projects";
-import { isTauri } from "@/lib/tauri";
+import { isTauriEnvironment } from "@/lib/tauri";
 import { useIsTauri } from "@/hooks/use-is-tauri";
 import { cn } from "@/lib/utils";
 
@@ -107,7 +107,7 @@ function EditorView() {
 
       // Desktop shell: never contact the cloud. A cloud project id arriving
       // from a stale bookmark/link is swapped for the local desktop project.
-      if (isTauri() && !isLocalProjectId(projectId)) {
+      if (isTauriEnvironment() && !isLocalProjectId(projectId)) {
         router.replace(`/editor?id=${getOrCreateLocalProject()}`);
         return;
       }
@@ -173,7 +173,7 @@ function EditorView() {
 
     async function openLatest() {
       // Desktop shell: fully local-first — no session lookup, no network.
-      if (isTauri()) {
+      if (isTauriEnvironment()) {
         if (!cancelled) {
           router.replace(`/editor?id=${getOrCreateLocalProject()}`);
         }

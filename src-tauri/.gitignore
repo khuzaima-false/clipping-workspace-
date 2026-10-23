@@ -7,3 +7,6 @@
 # Local environment overrides for the desktop shell
 .env
 .env.*
+
+# Updater signing keys — NEVER commit these.
+/keys

@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { isEditorPath, isTauri } from "@/lib/tauri";
+import { isEditorPath, isTauriEnvironment } from "@/lib/tauri";
 import { getOrCreateLocalProject } from "@/lib/local-projects";
 
 /**
@@ -21,8 +21,10 @@ export function DesktopEntryRedirect() {
   const pathname = usePathname();
 
   useEffect(() => {
-    if (!isTauri()) return;
+    if (!isTauriEnvironment()) return;
     if (isEditorPath(pathname)) return;
+    // The landing page carries its own black-screen guard.
+    if (pathname === "/") return;
     // Reuse the remembered project or create the first desktop project.
     router.replace(`/editor?id=${getOrCreateLocalProject()}`);
   }, [pathname, router]);

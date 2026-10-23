@@ -14,13 +14,12 @@ import {
   ChevronsUpDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { createClient } from "@/lib/supabase/client";
-import type { User as SupabaseUser } from "@supabase/supabase-js";
 import { SignOutButton } from "@/components/auth/sign-out-button";
 import { Logo } from "@/components/ui/logo";
 import { useWorkspaceStore } from "@/store/workspace";
+import { useAuth } from "@/hooks/use-auth";
 import { useIsTauri } from "@/hooks/use-is-tauri";
-import { isTauri } from "@/lib/tauri";
+import { isTauriEnvironment } from "@/lib/tauri";
 
 type HeaderProps = {
   onMenuClick: () => void;
@@ -46,35 +45,13 @@ export function Header({ onMenuClick, variant = "default" }: HeaderProps) {
   const profile = useWorkspaceStore((state) => state.profile);
   const loadProfile = useWorkspaceStore((state) => state.loadProfile);
 
-  const [user, setUser] = useState<SupabaseUser | null>(null);
-  const [authChecked, setAuthChecked] = useState(false);
-
-  // Track auth so the navbar can offer a sign-in CTA when signed out.
-  // The desktop shell is local-first, so it has no session to look up.
-  useEffect(() => {
-    if (isTauri()) return;
-    const supabase = createClient();
-    let active = true;
-
-    void supabase.auth.getUser().then(({ data }) => {
-      if (!active) return;
-      setUser(data.user ?? null);
-      setAuthChecked(true);
-    });
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!active) return;
-      setUser(session?.user ?? null);
-      setAuthChecked(true);
-    });
-
-    return () => {
-      active = false;
-      subscription.unsubscribe();
-    };
-  }, []);
+  // Centralized auth: in the desktop shell this returns the local identity and
+  // never creates a Supabase client. In the browser it tracks the real session.
+  const {
+    isAuthenticated,
+    loading: authLoading,
+    isLocalDesktop,
+  } = useAuth();
 
   const activeChannel = channels.find((c) => c.id === activeChannelId) ?? null;
 
@@ -82,12 +59,12 @@ export function Header({ onMenuClick, variant = "default" }: HeaderProps) {
   const profileRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (isTauri()) return;
+    if (isTauriEnvironment()) return;
     void loadChannels();
   }, [loadChannels]);
 
   useEffect(() => {
-    if (isTauri()) return;
+    if (isTauriEnvironment()) return;
     void loadProfile();
   }, [loadProfile]);
 
@@ -260,19 +237,19 @@ export function Header({ onMenuClick, variant = "default" }: HeaderProps) {
       </span>
       )}
 
-      {/* Desktop shell: local-first, so there is no account to show.
+      {/* Desktop shell: local identity, never a cloud sign-in wall.
           Web: user profile menu, or a sign-in CTA when signed out. */}
-      {desktop ? (
+      {isLocalDesktop ? (
         <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-zinc-800 bg-zinc-900 px-2.5 py-1 text-xs font-medium text-zinc-400">
           <HardDrive className="h-3.5 w-3.5 text-emerald-400" aria-hidden />
           Local
         </span>
-      ) : !authChecked ? (
+      ) : authLoading ? (
         <span
           aria-hidden
           className="h-8 w-8 animate-pulse rounded-full border border-zinc-800 bg-zinc-900"
         />
-      ) : !user ? (
+      ) : !isAuthenticated ? (
         <Link
           href="/login"
           className="inline-flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-violet-500"
