@@ -30,7 +30,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDUwNkVGRTY2RkUwMDM5N0YKUldSL09RRCtadjV1VU1wTnFQaXVzRDEyeFNyYm8yWmVSbjVBc3g3NzZoS2F1ZHNTaUkvb2pKazAK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDcyNjZCODgzRkNCQzI3MDYKUldRR0o3ejhnN2htY3NQNUppR3dhRE91TElnMjdPMXVVZWtWZkczSDZRaGVTM1BXTC9LSll2VHkK",
       "endpoints": [
         "https://github.com/khuzaima-false/clipping-workspace-/releases/latest/download/latest.json"
       ]
