@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { cn } from "@/lib/utils";
+import { windowControl } from "@/lib/tauri";
 import {
   runUpdateCheck,
   UPDATER_ENDPOINT,
@@ -135,6 +136,9 @@ export function EditorMenuBar({
   const router = useRouter();
   const playing = useEditorStore((state) => state.playing);
   const saveStatus = useEditorStore((state) => state.saveStatus);
+  const selectedClipIds = useEditorStore((state) => state.selectedClipIds);
+  const snapping = useEditorStore((state) => state.snapping);
+  const linkedSelection = useEditorStore((state) => state.linkedSelection);
 
   useEffect(() => {
     if (!open) return;
@@ -159,6 +163,17 @@ export function EditorMenuBar({
 
   const state = () => useEditorStore.getState();
   const activeClipId = () => state().activeClipId;
+
+  const deleteSelected = () => {
+    const s = state();
+    const ids =
+      s.selectedClipIds.length > 0
+        ? s.selectedClipIds
+        : s.activeClipId
+          ? [s.activeClipId]
+          : [];
+    ids.forEach((id) => s.removeClip(id));
+  };
 
   const zoom = (delta: number) => {
     if (typeof window === "undefined") return;
@@ -201,12 +216,32 @@ export function EditorMenuBar({
     file: (
       <>
         <MenuItem
-          label="Project Manager"
+          label="New project"
+          shortcut="Ctrl+N"
           onSelect={() => run(() => router.push("/dashboard"))}
         />
-        <MenuDivider />
-        <MenuItem label="New project" shortcut="Ctrl+N" disabled onSelect={() => {}} />
-        <MenuItem label="Open project" shortcut="Ctrl+O" disabled onSelect={() => {}} />
+        <MenuItem
+          label="Open project"
+          shortcut="Ctrl+O"
+          onSelect={() => run(() => router.push("/dashboard"))}
+        />
+        <MenuItem
+          label="Save project"
+          shortcut="Ctrl+S"
+          onSelect={() => run(() => void state().checkpoint())}
+        />
+        <MenuItem
+          label="Project settings"
+          onSelect={() =>
+            run(() => {
+              document
+                .querySelector<HTMLSelectElement>(
+                  '[data-tour="export-resolution"] select'
+                )
+                ?.focus();
+            })
+          }
+        />
         <MenuDivider />
         <MenuItem
           label="Export project (.forgevyn)"
@@ -237,6 +272,46 @@ export function EditorMenuBar({
           shortcut="Ctrl+Y"
           onSelect={() => run(() => state().redo())}
         />
+        <MenuDivider />
+        <MenuItem
+          label="Cut active clip"
+          shortcut="Ctrl+X"
+          disabled={!activeClipId()}
+          onSelect={() => run(() => state().cutActiveClip())}
+        />
+        <MenuItem
+          label="Copy active clip"
+          shortcut="Ctrl+C"
+          disabled={!activeClipId()}
+          onSelect={() => run(() => state().copyActiveClip())}
+        />
+        <MenuItem
+          label="Paste clip"
+          shortcut="Ctrl+V"
+          onSelect={() => run(() => state().pasteClip())}
+        />
+        <MenuItem
+          label="Delete selected"
+          shortcut="Del"
+          disabled={!activeClipId() && selectedClipIds.length === 0}
+          onSelect={() => run(deleteSelected)}
+        />
+        <MenuItem
+          label="Select all clips"
+          shortcut="Ctrl+A"
+          disabled={state().sequence.length === 0}
+          onSelect={() => run(() => state().selectAllClips())}
+        />
+        <MenuDivider />
+        <MenuItem
+          label="Ripple delete active clip"
+          shortcut="Shift+Del"
+          disabled={!activeClipId()}
+          onSelect={() => {
+            const id = activeClipId();
+            if (id) run(() => state().rippleDeleteClip(id));
+          }}
+        />
       </>
     ),
     trim: (
@@ -251,15 +326,18 @@ export function EditorMenuBar({
           shortcut="O"
           onSelect={() => run(() => state().setMarkOut(state().currentTime))}
         />
+        <MenuItem
+          label="Clear marks"
+          onSelect={() => run(() => state().clearMarks())}
+        />
         <MenuDivider />
         <MenuItem
-          label="Ripple delete active clip"
-          shortcut="Shift+Del"
-          disabled={!activeClipId()}
-          onSelect={() => {
-            const id = activeClipId();
-            if (id) run(() => state().rippleDeleteClip(id));
-          }}
+          label={`Snapping: ${snapping ? "On" : "Off"}`}
+          onSelect={() => run(() => state().toggleSnapping())}
+        />
+        <MenuItem
+          label={`Linked selection: ${linkedSelection ? "On" : "Off"}`}
+          onSelect={() => run(() => state().toggleLinkedSelection())}
         />
       </>
     ),
@@ -270,15 +348,6 @@ export function EditorMenuBar({
           shortcut="S"
           onSelect={() => run(() => state().splitActiveClip())}
         />
-        <MenuItem
-          label="Ripple delete active clip"
-          shortcut="Shift+Del"
-          disabled={!activeClipId()}
-          onSelect={() => {
-            const id = activeClipId();
-            if (id) run(() => state().rippleDeleteClip(id));
-          }}
-        />
         <MenuDivider />
         <MenuItem label="Zoom in" shortcut="+" onSelect={() => run(() => zoom(12))} />
         <MenuItem label="Zoom out" shortcut="-" onSelect={() => run(() => zoom(-12))} />
@@ -287,26 +356,15 @@ export function EditorMenuBar({
     clip: (
       <>
         <MenuItem
-          label="Split at playhead"
-          shortcut="S"
-          onSelect={() => run(() => state().splitActiveClip())}
+          label="Duplicate clip"
+          shortcut="Ctrl+D"
+          disabled={!activeClipId()}
+          onSelect={() => run(() => state().duplicateActiveClip())}
         />
         <MenuItem
-          label="Ripple delete"
-          shortcut="Shift+Del"
-          disabled={!activeClipId()}
-          onSelect={() => {
-            const id = activeClipId();
-            if (id) run(() => state().rippleDeleteClip(id));
-          }}
-        />
-        <MenuItem
-          label="Delete clip"
-          disabled={!activeClipId()}
-          onSelect={() => {
-            const id = activeClipId();
-            if (id) run(() => state().removeClip(id));
-          }}
+          label="Delete selected"
+          disabled={!activeClipId() && selectedClipIds.length === 0}
+          onSelect={() => run(deleteSelected)}
         />
         <MenuDivider />
         <MenuItem
@@ -331,28 +389,39 @@ export function EditorMenuBar({
     ),
     view: (
       <>
-        <MenuItem
-          label="Go to Color page"
-          disabled={!onSelectPage}
-          onSelect={() => onSelectPage?.("color")}
-        />
-        <MenuItem
-          label="Go to Deliver page"
-          disabled={!onSelectPage}
-          onSelect={() => onSelectPage?.("deliver")}
-        />
-        <MenuDivider />
+        <MenuItem label="Zoom in" shortcut="+" onSelect={() => run(() => zoom(12))} />
+        <MenuItem label="Zoom out" shortcut="-" onSelect={() => run(() => zoom(-12))} />
         <MenuItem
           label="Toggle fullscreen"
           shortcut="F11"
           onSelect={() =>
             run(() => {
-              if (typeof document === "undefined") return;
-              if (document.fullscreenElement) void document.exitFullscreen();
-              else void document.documentElement.requestFullscreen?.();
+              void windowControl("fullscreen").then((handled) => {
+                if (handled || typeof document === "undefined") return;
+                if (document.fullscreenElement) void document.exitFullscreen();
+                else void document.documentElement.requestFullscreen?.();
+              });
             })
           }
         />
+        <MenuDivider />
+        {(
+          [
+            ["cut", "Cut page"],
+            ["edit", "Edit page"],
+            ["fusion", "Fusion page"],
+            ["color", "Color page"],
+            ["fairlight", "Fairlight page"],
+            ["deliver", "Deliver page"],
+          ] as const
+        ).map(([page, label]) => (
+          <MenuItem
+            key={page}
+            label={label}
+            disabled={!onSelectPage}
+            onSelect={() => onSelectPage?.(page)}
+          />
+        ))}
       </>
     ),
     playback: (
@@ -408,9 +477,9 @@ export function EditorMenuBar({
         role="menubar"
         aria-label="Studio menu"
         data-tour="studio-menu-bar"
-        className="sticky top-0 z-30 hidden h-8 shrink-0 items-center gap-0.5 border-b border-studio-border bg-studio-panel px-2 text-[11px] md:flex"
+        className="sticky top-0 z-30 hidden h-7 shrink-0 items-center gap-0.5 border-b border-studio-border bg-studio-panel px-1.5 text-[11px] leading-none md:flex"
       >
-        <span className="mr-1 flex items-center gap-1.5 pr-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+        <span className="mr-1 flex items-center gap-1.5 pr-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
           <button
             type="button"
             onClick={() => router.push("/dashboard")}
@@ -420,6 +489,7 @@ export function EditorMenuBar({
             <span className="h-1.5 w-1.5 rounded-full bg-violet-400" aria-hidden />
             Forgevyn
           </button>
+          <span className="studio-divider" aria-hidden />
         </span>
 
         {MENUS.map((menu) => (
@@ -431,7 +501,7 @@ export function EditorMenuBar({
               aria-expanded={open === menu.id}
               onClick={() => setOpen((value) => (value === menu.id ? null : menu.id))}
               className={cn(
-                "rounded px-2 py-1 text-zinc-400 transition-colors hover:bg-white/5 hover:text-zinc-100",
+                "rounded px-1.5 py-0.5 text-[11px] text-zinc-400 transition-colors hover:bg-white/5 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-violet-500/60",
                 open === menu.id && "bg-white/5 text-zinc-100"
               )}
             >
@@ -469,7 +539,7 @@ export function EditorMenuBar({
             aria-label="Undo"
             title="Undo (Ctrl+Z)"
             onClick={() => state().undo()}
-            className="rounded p-1.5 text-zinc-500 transition-colors hover:bg-white/5 hover:text-zinc-100"
+            className="flex h-6 w-6 items-center justify-center rounded p-1 text-zinc-500 transition-colors hover:bg-white/5 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-violet-500/60"
           >
             <Undo2 className="h-3.5 w-3.5" aria-hidden />
           </button>
@@ -478,7 +548,7 @@ export function EditorMenuBar({
             aria-label="Redo"
             title="Redo (Ctrl+Y)"
             onClick={() => state().redo()}
-            className="rounded p-1.5 text-zinc-500 transition-colors hover:bg-white/5 hover:text-zinc-100"
+            className="flex h-6 w-6 items-center justify-center rounded p-1 text-zinc-500 transition-colors hover:bg-white/5 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-violet-500/60"
           >
             <Redo2 className="h-3.5 w-3.5" aria-hidden />
           </button>
@@ -488,7 +558,7 @@ export function EditorMenuBar({
             title="Export video"
             disabled={!onExport}
             onClick={() => onExport?.()}
-            className="ml-1 inline-flex items-center gap-1.5 rounded border border-studio-border bg-[#202127] px-2 py-1 text-[10px] font-medium text-zinc-300 transition-colors hover:border-violet-500/60 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+            className="ml-1 inline-flex h-6 items-center gap-1 rounded border border-violet-500/40 bg-violet-600/15 px-2 text-[10px] font-semibold text-violet-200 transition-colors hover:bg-violet-600/25 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Download className="h-3 w-3" aria-hidden />
             Deliver
@@ -526,8 +596,15 @@ export function EditorMenuBar({
             ["Mark in / out", "I / O"],
             ["Split at playhead", "S"],
             ["Ripple delete", "Shift+Delete"],
+            ["Delete selected", "Delete"],
             ["Undo / redo", "Ctrl+Z / Ctrl+Y"],
-            ["Zoom timeline", "Timeline menu"],
+            ["Cut / copy / paste", "Ctrl+X / C / V"],
+            ["Select all clips", "Ctrl+A"],
+            ["Duplicate clip", "Ctrl+D"],
+            ["Save project", "Ctrl+S"],
+            ["Export video", "Ctrl+E"],
+            ["Fullscreen", "F11"],
+            ["Zoom timeline", "+ / -"],
           ].map(([label, keys]) => (
             <div key={label} className="contents">
               <dt>{label}</dt>

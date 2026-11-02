@@ -1,4 +1,4 @@
-"""Three-specialist CrewAI dev team + parallel planning orchestration."""
+"""Four-specialist CrewAI dev team + parallel planning orchestration."""
 
 from __future__ import annotations
 

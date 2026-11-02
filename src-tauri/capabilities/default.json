@@ -7,6 +7,10 @@
     "core:default",
     "updater:default",
     "process:allow-restart",
-    "dialog:allow-open"
+    "dialog:allow-open",
+    "core:window:allow-set-fullscreen",
+    "core:window:allow-maximize",
+    "core:window:allow-unmaximize",
+    "core:window:allow-minimize"
   ]
 }

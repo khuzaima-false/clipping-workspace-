@@ -9,6 +9,8 @@
   --studio-bg: #121316;
   --studio-panel: #18191d;
   --studio-border: #26282e;
+  --studio-menubar-h: 28px;
+  --studio-timeline-h: 260px;
 }
 
 @theme inline {
@@ -17,6 +19,8 @@
   --color-studio-bg: var(--studio-bg);
   --color-studio-panel: var(--studio-panel);
   --color-studio-border: var(--studio-border);
+  --spacing-menubar: var(--studio-menubar-h);
+  --spacing-timeline: var(--studio-timeline-h);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -116,6 +120,19 @@ body {
 
 .studio-seam {
   border-color: var(--studio-border);
+}
+
+.studio-menubar {
+  height: var(--studio-menubar-h);
+  border-bottom: 1px solid var(--studio-border);
+  font-feature-settings: "tnum" 1;
+}
+
+.studio-divider {
+  width: 1px;
+  height: 14px;
+  flex-shrink: 0;
+  background: var(--studio-border);
 }
 
 /* --- Brand --------------------------------------------------------------- */

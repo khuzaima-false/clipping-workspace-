@@ -1,20 +1,15 @@
 "use client";
 
 import { useRef } from "react";
-import { Film, Layers, Sparkles, Upload } from "lucide-react";
+import { Film, Sparkles, Upload } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
-import {
-  EFFECT_GROUPS,
-  effectLabel,
-  useEditorStore,
-} from "@/store/editor";
+import { useEditorStore } from "@/store/editor";
 
-export type LeftPanelTab = "media" | "effects" | "ai";
+export type LeftPanelTab = "media" | "ai";
 
 const TABS: { id: LeftPanelTab; label: string; icon: typeof Film }[] = [
   { id: "media", label: "Media Pool", icon: Film },
-  { id: "effects", label: "Effects", icon: Layers },
   { id: "ai", label: "DeepSeek AI", icon: Sparkles },
 ];
 
@@ -39,8 +34,6 @@ export function LeftPanel({
   const activeClipId = useEditorStore((state) => state.activeClipId);
   const selectClip = useEditorStore((state) => state.selectClip);
   const addVideoAssets = useEditorStore((state) => state.addVideoAssets);
-  const addEffect = useEditorStore((state) => state.addEffect);
-  const currentTime = useEditorStore((state) => state.currentTime);
   const fileRef = useRef<HTMLInputElement>(null);
 
   return (
@@ -53,7 +46,7 @@ export function LeftPanel({
     >
       <div
         role="tablist"
-        aria-label="Media and effects"
+        aria-label="Media and AI"
         className="flex h-8 shrink-0 items-center gap-0.5 border-b border-studio-border px-1.5"
       >
         {TABS.map((tab) => {
@@ -150,34 +143,6 @@ export function LeftPanel({
                 })}
               </ul>
             )}
-          </div>
-        )}
-
-        {activeTab === "effects" && (
-          <div className="space-y-3 p-2">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-              Effects
-            </p>
-            {EFFECT_GROUPS.map((group) => (
-              <div key={group.label}>
-                <p className="mb-1 text-[9px] font-semibold uppercase tracking-wider text-zinc-600">
-                  {group.label}
-                </p>
-                <div className="grid grid-cols-2 gap-1">
-                  {group.types.map((type) => (
-                    <button
-                      key={type}
-                      type="button"
-                      onClick={() => addEffect(type, currentTime)}
-                      className="truncate rounded border border-studio-border bg-[#15161a] px-1.5 py-1 text-left text-[10px] text-zinc-400 transition-colors hover:border-violet-500/50 hover:text-zinc-100"
-                      title={effectLabel(type)}
-                    >
-                      {effectLabel(type)}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ))}
           </div>
         )}
 

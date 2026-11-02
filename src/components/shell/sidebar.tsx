@@ -33,7 +33,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
           open ? "translate-x-0" : "-translate-x-full"
         )}
       >
-        <div className="flex h-16 items-center justify-between gap-2 border-b border-zinc-800 px-5">
+        <div className="flex h-14 items-center justify-between gap-2 border-b border-zinc-800 px-5">
           <Link href="/dashboard" className="flex items-center" onClick={onClose}>
             <Logo size="md" />
           </Link>
@@ -62,7 +62,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
                 onClick={onClose}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                  "group relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200",
                   active
                     ? "bg-violet-600/15 text-violet-200 ring-1 ring-inset ring-violet-500/30"
                     : "text-zinc-400 hover:bg-zinc-900/70 hover:text-zinc-100"

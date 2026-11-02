@@ -19,6 +19,7 @@
 mod auth_store;
 mod inspector;
 mod project_fs;
+mod window_controls;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -34,7 +35,8 @@ pub fn run() {
             project_fs::save_project_manifest,
             auth_store::save_auth_token,
             auth_store::load_auth_token,
-            auth_store::clear_auth_token
+            auth_store::clear_auth_token,
+            window_controls::window_control
         ])
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())

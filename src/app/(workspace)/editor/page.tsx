@@ -23,7 +23,6 @@ import {
 import { drawScene } from "@/lib/render";
 import { visibleLayerFlags } from "@/lib/tracks";
 import { TutorialLauncher } from "@/components/tutorial/guided-tour";
-import { StorageManager } from "@/components/editor/storage-manager";
 import {
   EXPORT_FPS,
   downloadFile,
@@ -578,7 +577,6 @@ function EditorView() {
           </select>
         </label>
 
-        <StorageManager />
         <TutorialLauncher />
 
         <button
@@ -586,7 +584,7 @@ function EditorView() {
           data-tour="export-button"
           onClick={() => void handleExport()}
           disabled={!hasVideo || exporting}
-          className="brand-gradient brand-gradient-hover relative inline-flex shrink-0 items-center gap-2 overflow-hidden rounded-lg px-4 py-2.5 text-sm font-medium text-white transition-transform hover:scale-[1.03] disabled:cursor-not-allowed disabled:opacity-50"
+          className="brand-gradient brand-gradient-hover relative inline-flex shrink-0 items-center gap-1.5 overflow-hidden rounded-md px-3 py-1.5 text-xs font-medium text-white transition-transform hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-50"
         >
           {exporting && (
             <span
@@ -595,11 +593,11 @@ function EditorView() {
               style={{ width: `${Math.max(2, exportPercent)}%` }}
             />
           )}
-          <span className="relative inline-flex items-center gap-2">
-            <Download className="h-4 w-4" aria-hidden />
+          <span className="relative inline-flex items-center gap-1.5">
+            <Download className="h-3.5 w-3.5" aria-hidden />
             {exporting
               ? `Rendering ${exportPercent}%…`
-              : `Export ${preset.label} Video`}
+              : `Export ${preset.label}`}
           </span>
         </button>
       </div>

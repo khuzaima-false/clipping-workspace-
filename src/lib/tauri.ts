@@ -115,3 +115,24 @@ export async function getInspectorParams(): Promise<InspectorParams | null> {
     return null;
   }
 }
+
+export type WindowControlAction =
+  | "fullscreen"
+  | "maximize"
+  | "unmaximize"
+  | "minimize";
+
+/** Native window controls; returns false in browsers or when invoke fails. */
+export async function windowControl(
+  action: WindowControlAction
+): Promise<boolean> {
+  if (!isTauriEnvironment()) return false;
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("window_control", { action });
+    return true;
+  } catch (error) {
+    console.warn("[tauri] window_control failed", error);
+    return false;
+  }
+}

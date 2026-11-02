@@ -20,14 +20,12 @@ import {
   Pipette,
   Play,
   Plus,
-  Redo2,
   Repeat,
   RotateCcw,
   Scissors,
   Sparkles,
   Square,
   Trash2,
-  Undo2,
   Volume2,
   VolumeX,
   Zap,
@@ -2708,10 +2706,6 @@ export function ProgramPreview() {
   const setHdRendering = useEditorStore((s) => s.setHdRendering);
   const canvasFill = useEditorStore((s) => s.canvasFill);
   const setCanvasFill = useEditorStore((s) => s.setCanvasFill);
-  const undo = useEditorStore((s) => s.undo);
-  const redo = useEditorStore((s) => s.redo);
-  const canUndo = useEditorStore((s) => s.history.length > 0);
-  const canRedo = useEditorStore((s) => s.future.length > 0);
   const setPlaying = useEditorStore((s) => s.setPlaying);
   const seek = useEditorStore((s) => s.seek);
   const markIn = useEditorStore((s) => s.markIn);
@@ -3132,26 +3126,6 @@ export function ProgramPreview() {
           />
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
-          <button
-            type="button"
-            onClick={undo}
-            disabled={!canUndo}
-            aria-label="Undo"
-            title="Undo (Ctrl+Z)"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-studio-border bg-zinc-950/60 text-zinc-300 transition-colors hover:border-zinc-600 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <Undo2 className="h-3.5 w-3.5" aria-hidden />
-          </button>
-          <button
-            type="button"
-            onClick={redo}
-            disabled={!canRedo}
-            aria-label="Redo"
-            title="Redo (Ctrl+Y)"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-studio-border bg-zinc-950/60 text-zinc-300 transition-colors hover:border-zinc-600 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <Redo2 className="h-3.5 w-3.5" aria-hidden />
-          </button>
           <button
             type="button"
             onClick={() => setPlaying(!playing)}
@@ -3581,6 +3555,8 @@ export function PremiereTimeline() {
   const activeEffects = useEditorStore((s) => s.activeEffects);
   const audioTracks = useEditorStore((s) => s.audioTracks);
   const activeClipId = useEditorStore((s) => s.activeClipId);
+  const selectedClipIds = useEditorStore((s) => s.selectedClipIds);
+  const snapping = useEditorStore((s) => s.snapping);
   const selectedId = useEditorStore((s) => s.selectedId);
   const currentTime = useEditorStore((s) => s.currentTime);
   const duration = useEditorStore((s) => s.duration);
@@ -3784,6 +3760,7 @@ export function PremiereTimeline() {
 
   /** Snaps a time to the nearest target within a few pixels (magnetic feel). */
   const snapValue = (value: number, targets: number[]) => {
+    if (!snapping) return value;
     const threshold = SNAP_PX / pps;
     let best = value;
     let bestDist = threshold;
@@ -3860,6 +3837,7 @@ export function PremiereTimeline() {
    * playhead, the marks, and every other clip's edges, within `SNAP_PX`.
    */
   const snapClipStart = (rawStart: number, dur: number): number => {
+    if (!snapping) return Math.max(0, rawStart);
     const targets: number[] = [0, timelineLeft(currentTime)];
     if (markIn !== null) targets.push(timelineLeft(markIn));
     if (markOut !== null) targets.push(timelineLeft(markOut));
@@ -4117,13 +4095,13 @@ export function PremiereTimeline() {
   }, [menu]);
 
   return (
-    <section className="studio-panel flex min-h-0 flex-col overflow-hidden rounded-md" data-tour="timeline">
+    <section className="studio-panel flex h-full min-h-0 flex-col overflow-hidden rounded-md" data-tour="timeline">
       {/* Timeline toolbar */}
-      <div className="flex items-center gap-2 border-b border-studio-border px-3 py-2" data-tour="timeline-toolbar">
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+      <div className="flex items-center gap-2 border-b border-studio-border px-2 py-1.5" data-tour="timeline-toolbar">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
           Timeline
         </span>
-        <span className="font-mono text-[10px] tabular-nums text-zinc-500">
+        <span className="rounded border border-studio-border bg-zinc-950/50 px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-zinc-500">
           {formatTimecode(currentTime, fps)} / {formatTimecode(timelineDuration, fps)}
         </span>
 
@@ -4161,7 +4139,7 @@ export function PremiereTimeline() {
           <button type="button" aria-label="Zoom out" onClick={() => zoomTo(pps - 12)} className="rounded-lg border border-studio-border bg-zinc-950/60 p-1.5 text-zinc-300 hover:border-zinc-600">
             <ZoomOut className="h-3.5 w-3.5" aria-hidden />
           </button>
-          <input type="range" min={12} max={200} step={4} value={pps} onChange={(e) => zoomTo(Number(e.target.value))} aria-label="Timeline zoom" className="w-28 accent-violet-500" />
+          <input type="range" min={12} max={200} step={4} value={pps} onChange={(e) => zoomTo(Number(e.target.value))} aria-label="Timeline zoom" className="w-24 accent-violet-500" />
           <button type="button" aria-label="Zoom in" onClick={() => zoomTo(pps + 12)} className="rounded-lg border border-studio-border bg-zinc-950/60 p-1.5 text-zinc-300 hover:border-zinc-600">
             <ZoomIn className="h-3.5 w-3.5" aria-hidden />
           </button>
@@ -4187,7 +4165,7 @@ export function PremiereTimeline() {
         </div>
 
         {/* Ruler + lanes */}
-        <div className="relative min-h-0 flex-1 overflow-x-auto overflow-y-hidden" ref={scrollRef}>
+        <div className="relative min-h-0 flex-1 overflow-x-auto overflow-y-auto" ref={scrollRef}>
           <div className="relative" style={{ width: `${Math.max(timelineDuration * pps, 400)}px` }} ref={laneRef}>
             {/* Ruler */}
             <div
@@ -4399,6 +4377,8 @@ export function PremiereTimeline() {
                     className={cn(
                       "h-full w-full cursor-grab overflow-hidden px-2 text-left active:cursor-grabbing",
                       videoChip,
+                      selectedClipIds.includes(clip.id) &&
+                        "ring-1 ring-violet-400/60",
                       clip.id === activeClipId && "ring-2 ring-white/70",
                       dragging && "shadow-xl ring-2 ring-white",
                       trackStates.V1.locked && "cursor-not-allowed"

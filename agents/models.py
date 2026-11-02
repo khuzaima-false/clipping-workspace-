@@ -6,7 +6,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-SpecialistId = Literal["design", "core", "backend"]
+SpecialistId = Literal["design", "core", "backend", "tester"]
 
 
 class FeatureRequest(BaseModel):

@@ -34,8 +34,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m agents.main",
         description=(
-            "Plan multiple Forgevyn features with three developer specialists "
-            "(Timeline UI, Color Grading, Rust/Bug Hunter)."
+            "Plan multiple Forgevyn features with four developer specialists "
+            "(Design, Core, Backend, Tester)."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
@@ -59,7 +59,7 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="TEXT",
         help=(
             "Feature request; repeat for multiple features. Prefix with "
-            "design:, core:, or backend: to force a specialist."
+            "design:, core:, backend:, or tester: to force a specialist."
         ),
     )
     parser.add_argument(
@@ -70,7 +70,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--agent",
-        choices=("auto", "design", "core", "backend"),
+        choices=("auto", "design", "core", "backend", "tester"),
         default="auto",
         help="Force one specialist for every feature (default: auto-route).",
     )

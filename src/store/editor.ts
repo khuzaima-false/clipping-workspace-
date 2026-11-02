@@ -1171,6 +1171,12 @@ type EditorState = {
   sequence: TimelineClip[];
   /** Sequence clip currently loaded in the preview/editor. */
   activeClipId: string | null;
+  /** Multi-selection used by Edit menu actions (timeline highlights). */
+  selectedClipIds: string[];
+  /** Magnetic timeline snapping toggle. */
+  snapping: boolean;
+  /** Linked audio/video selection toggle. */
+  linkedSelection: boolean;
   /** True while the project's media library is loading. */
   assetsLoading: boolean;
   /** Trim applied once a selected clip's metadata loads. */
@@ -1271,12 +1277,22 @@ type EditorState = {
   removeAsset: (assetId: string) => void;
   /** Loads a sequence clip into the preview/editor. */
   selectClip: (clipId: string) => void;
+  /** Copies the active clip into the in-memory production clipboard. */
+  copyActiveClip: () => void;
+  /** Copies and removes the active clip while keeping its media asset. */
+  cutActiveClip: () => void;
+  /** Pastes the production clipboard after the active clip. */
+  pasteClip: () => void;
+  /** Selects every sequence clip for batch menu actions. */
+  selectAllClips: () => void;
+  toggleSnapping: () => void;
+  toggleLinkedSelection: () => void;
   /** Scrubs to a source time inside a clip (used by the mobile filmstrip). */
   scrubTo: (clipId: string, sourceTime: number) => void;
   /** Advances to the next clip during playback; false when on the last clip. */
   advanceClip: (wrap?: boolean) => boolean;
   /** Removes a clip from the sequence. */
-  removeClip: (clipId: string) => void;
+  removeClip: (clipId: string, keepAsset?: boolean) => void;
   /** Splits the active clip into two clips at the current playhead. */
   splitActiveClip: () => void;
   /** Duplicates the active clip immediately after it. */
@@ -1695,6 +1711,9 @@ let historyPaused = false;
 /** Monotonic checkpoint id so only the newest write may set the save status. */
 let checkpointToken = 0;
 
+/** In-memory production clipboard; never persisted or duplicated to storage. */
+let clipClipboard: TimelineClip | null = null;
+
 export const useEditorStore = create<EditorState>()(
   subscribeWithSelector((set, get) => ({
   videoEl: null,
@@ -1711,6 +1730,9 @@ export const useEditorStore = create<EditorState>()(
   assets: [],
   sequence: [],
   activeClipId: null,
+  selectedClipIds: [],
+  snapping: true,
+  linkedSelection: true,
   assetsLoading: false,
   pendingTrim: null,
   pendingSeek: null,
@@ -2544,6 +2566,7 @@ export const useEditorStore = create<EditorState>()(
     if (!asset) return;
     set({
       activeClipId: clipId,
+      selectedClipIds: [clipId],
       pendingTrim: { trimStart: clip.trimStart, trimEnd: clip.trimEnd },
       pendingSeek: null,
       chromaKey: clip.chromaKey ?? DEFAULT_CHROMA_KEY,
@@ -2551,6 +2574,50 @@ export const useEditorStore = create<EditorState>()(
     });
     get().loadVideoBlob(asset.blob, asset.name);
   },
+
+  copyActiveClip: () => {
+    const state = get();
+    const clip = state.sequence.find((item) => item.id === state.activeClipId);
+    if (!clip) return;
+    clipClipboard = { ...clip };
+  },
+
+  cutActiveClip: () => {
+    const state = get();
+    const clip = state.sequence.find((item) => item.id === state.activeClipId);
+    if (!clip) return;
+    clipClipboard = { ...clip };
+    get().removeClip(clip.id, true);
+  },
+
+  pasteClip: () => {
+    const state = get();
+    const source = clipClipboard;
+    if (!source) return;
+    if (!state.assets.some((asset) => asset.id === source.assetId)) return;
+
+    const copy: TimelineClip = {
+      ...source,
+      id: createId("clip"),
+      timelineStart: undefined,
+    };
+    const index = state.activeClipId
+      ? state.sequence.findIndex((clip) => clip.id === state.activeClipId)
+      : state.sequence.length - 1;
+    const next = [...state.sequence];
+    next.splice(index + 1, 0, copy);
+    set({ sequence: next, selectedClipIds: [copy.id] });
+    get().selectClip(copy.id);
+    persistProject(get());
+  },
+
+  selectAllClips: () => {
+    set({ selectedClipIds: get().sequence.map((clip) => clip.id) });
+  },
+
+  toggleSnapping: () => set({ snapping: !get().snapping }),
+  toggleLinkedSelection: () =>
+    set({ linkedSelection: !get().linkedSelection }),
 
   scrubTo: (clipId, sourceTime) => {
     const clip = get().sequence.find((item) => item.id === clipId);
@@ -2604,16 +2671,21 @@ export const useEditorStore = create<EditorState>()(
     return true;
   },
 
-  removeClip: (clipId) => {
+  removeClip: (clipId, keepAsset = false) => {
     if (get().trackStates.V1.locked) return;
     const sequence = get().sequence.filter((clip) => clip.id !== clipId);
-    set({ sequence });
+    set({
+      sequence,
+      selectedClipIds: get().selectedClipIds.filter((id) => id !== clipId),
+    });
     // Garbage-collect assets whose clips are all gone (frees media storage).
-    const used = new Set(sequence.map((clip) => clip.assetId));
-    const orphaned = get().assets.filter((asset) => !used.has(asset.id));
-    if (orphaned.length > 0) {
-      for (const asset of orphaned) void deleteMediaFile(asset.mediaId);
-      set({ assets: get().assets.filter((asset) => used.has(asset.id)) });
+    if (!keepAsset) {
+      const used = new Set(sequence.map((clip) => clip.assetId));
+      const orphaned = get().assets.filter((asset) => !used.has(asset.id));
+      if (orphaned.length > 0) {
+        for (const asset of orphaned) void deleteMediaFile(asset.mediaId);
+        set({ assets: get().assets.filter((asset) => used.has(asset.id)) });
+      }
     }
     persistProject(get());
 
@@ -2915,6 +2987,9 @@ export const useEditorStore = create<EditorState>()(
       assets: [],
       sequence: [],
       activeClipId: null,
+      selectedClipIds: [],
+      snapping: true,
+      linkedSelection: true,
       assetsLoading: false,
       pendingTrim: null,
       pendingSeek: null,

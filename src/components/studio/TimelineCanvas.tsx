@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 /**
@@ -11,16 +11,22 @@ import { cn } from "@/lib/utils";
 export function TimelineCanvas({
   children,
   className,
+  height,
 }: {
   children: ReactNode;
   className?: string;
+  height?: number;
 }) {
+  const style: CSSProperties | undefined = height
+    ? { height: `${height}px` }
+    : undefined;
   return (
     <section
       data-tour="timeline-canvas"
       aria-label="Timeline canvas"
+      style={style}
       className={cn(
-        "min-h-0 shrink-0 border-t border-studio-border bg-studio-bg",
+        "flex h-[var(--studio-timeline-h)] min-h-0 shrink-0 flex-col overflow-hidden border-t border-studio-border bg-studio-bg",
         className
       )}
     >

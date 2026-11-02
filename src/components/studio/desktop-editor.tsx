@@ -19,6 +19,7 @@ import {
 import { TimelineCanvas } from "@/components/studio/TimelineCanvas";
 import { WorkspaceSwitcher } from "@/components/studio/WorkspaceSwitcher";
 import { requestEditorTab } from "@/lib/editor-events";
+import { windowControl } from "@/lib/tauri";
 import { useEditorStore } from "@/store/editor";
 
 /**
@@ -40,6 +41,49 @@ export function DesktopEditor({
 }) {
   const [workspacePage, setWorkspacePage] = useState<WorkspacePage>("edit");
   const [leftTab, setLeftTab] = useState<LeftPanelTab>("media");
+  const [leftWidth, setLeftWidth] = useState(236);
+  const [rightWidth, setRightWidth] = useState(300);
+  const [timelineHeight, setTimelineHeight] = useState(270);
+
+  const startResize =
+    (kind: "left" | "right" | "timeline") =>
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      const startX = event.clientX;
+      const startY = event.clientY;
+      const startLeft = leftWidth;
+      const startRight = rightWidth;
+      const startTimeline = timelineHeight;
+      const previousCursor = document.body.style.cursor;
+      const previousSelect = document.body.style.userSelect;
+      document.body.style.cursor =
+        kind === "timeline" ? "row-resize" : "col-resize";
+      document.body.style.userSelect = "none";
+
+      const onMove = (move: PointerEvent) => {
+        if (kind === "left") {
+          setLeftWidth(
+            Math.min(360, Math.max(170, startLeft + move.clientX - startX))
+          );
+        } else if (kind === "right") {
+          setRightWidth(
+            Math.min(420, Math.max(220, startRight - (move.clientX - startX)))
+          );
+        } else {
+          setTimelineHeight(
+            Math.min(440, Math.max(170, startTimeline - (move.clientY - startY)))
+          );
+        }
+      };
+      const onUp = () => {
+        document.body.style.cursor = previousCursor;
+        document.body.style.userSelect = previousSelect;
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+      };
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+    };
 
   // Global keyboard shortcuts: undo/redo, play/pause, frame step, marks, razor.
   useEffect(() => {
@@ -67,6 +111,27 @@ export function DesktopEditor({
         } else if (lower === "y" || (lower === "z" && event.shiftKey)) {
           event.preventDefault();
           state.redo();
+        } else if (lower === "e") {
+          event.preventDefault();
+          onExport?.();
+        } else if (lower === "d") {
+          event.preventDefault();
+          state.duplicateActiveClip();
+        } else if (lower === "x") {
+          event.preventDefault();
+          state.cutActiveClip();
+        } else if (lower === "c") {
+          event.preventDefault();
+          state.copyActiveClip();
+        } else if (lower === "v") {
+          event.preventDefault();
+          state.pasteClip();
+        } else if (lower === "a") {
+          event.preventDefault();
+          state.selectAllClips();
+        } else if (lower === "s") {
+          event.preventDefault();
+          void state.checkpoint();
         }
         return;
       }
@@ -82,6 +147,29 @@ export function DesktopEditor({
       } else if (key === "ArrowRight") {
         event.preventDefault();
         state.stepFrame(1);
+      } else if (key === "Home") {
+        event.preventDefault();
+        state.seek(0);
+      } else if (key === "End") {
+        event.preventDefault();
+        state.seek(state.duration);
+      } else if (key === "+" || key === "=") {
+        event.preventDefault();
+        window.dispatchEvent(
+          new CustomEvent<number>("forgevyn:timeline-zoom", { detail: 12 })
+        );
+      } else if (key === "-") {
+        event.preventDefault();
+        window.dispatchEvent(
+          new CustomEvent<number>("forgevyn:timeline-zoom", { detail: -12 })
+        );
+      } else if (key === "F11") {
+        event.preventDefault();
+        void windowControl("fullscreen").then((handled) => {
+          if (handled) return;
+          if (document.fullscreenElement) void document.exitFullscreen();
+          else void document.documentElement.requestFullscreen?.();
+        });
       } else if (lower === "i") {
         event.preventDefault();
         state.setMarkIn(state.currentTime);
@@ -91,6 +179,15 @@ export function DesktopEditor({
       } else if (lower === "s" && !event.shiftKey) {
         event.preventDefault();
         state.splitActiveClip();
+      } else if (event.key === "Delete" && !event.shiftKey) {
+        event.preventDefault();
+        const ids =
+          state.selectedClipIds.length > 0
+            ? state.selectedClipIds
+            : state.activeClipId
+              ? [state.activeClipId]
+              : [];
+        ids.forEach((id) => state.removeClip(id));
       } else if (event.key === "Delete" && event.shiftKey) {
         event.preventDefault();
         if (state.activeClipId) state.rippleDeleteClip(state.activeClipId);
@@ -98,7 +195,7 @@ export function DesktopEditor({
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [onExport]);
 
   const handleWorkspacePage = useCallback(
     (page: WorkspacePage) => {
@@ -139,17 +236,47 @@ export function DesktopEditor({
         onSelectPage={handleWorkspacePage}
       />
 
-      <div className="grid min-h-0 flex-1 grid-cols-[200px_minmax(0,1fr)_220px] gap-2 p-2 lg:grid-cols-[236px_minmax(0,1fr)_300px] xl:grid-cols-[260px_minmax(0,1fr)_320px]">
+      <div
+        className="grid min-h-0 flex-1 gap-1 p-2"
+        style={{
+          gridTemplateColumns: `${leftWidth}px 6px minmax(0,1fr) 6px ${rightWidth}px`,
+        }}
+      >
         <LeftPanel
           activeTab={leftTab}
           onTabChange={setLeftTab}
           aiContent={<AIAssistantPanel />}
         />
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize media panel"
+          data-tour="left-panel-resizer"
+          onPointerDown={startResize("left")}
+          className="my-2 cursor-col-resize rounded bg-studio-border/50 transition-colors hover:bg-violet-500/60"
+        />
         <DualViewport program={<ProgramPreview />} />
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize inspector panel"
+          data-tour="inspector-resizer"
+          onPointerDown={startResize("right")}
+          className="my-2 cursor-col-resize rounded bg-studio-border/50 transition-colors hover:bg-violet-500/60"
+        />
         <InspectorPanel onBatchExport={onBatchExport} />
       </div>
 
-      <TimelineCanvas>
+      <div
+        role="separator"
+        aria-orientation="horizontal"
+        aria-label="Resize timeline"
+        data-tour="timeline-resizer"
+        onPointerDown={startResize("timeline")}
+        className="mx-2 mb-1 h-1.5 shrink-0 cursor-row-resize rounded bg-studio-border/50 transition-colors hover:bg-violet-500/60"
+      />
+
+      <TimelineCanvas height={timelineHeight}>
         <PremiereTimeline />
       </TimelineCanvas>
 

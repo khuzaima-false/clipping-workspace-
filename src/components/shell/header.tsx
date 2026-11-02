@@ -8,7 +8,6 @@ import {
   HardDrive,
   LogIn,
   Menu,
-  Moon,
   Search,
   User,
   ChevronsUpDown,
@@ -112,12 +111,6 @@ export function Header({ onMenuClick, variant = "default" }: HeaderProps) {
       >
         <Logo size="sm" />
       </Link>
-
-      {isEditor && (
-        <span className="text-sm font-semibold tracking-tight text-zinc-300">
-          Studio
-        </span>
-      )}
 
       {/* Active channel switcher — global Zustand state (studio omits it) */}
       {!isEditor && (
@@ -230,14 +223,6 @@ export function Header({ onMenuClick, variant = "default" }: HeaderProps) {
           <ArrowLeft className="h-4 w-4" aria-hidden />
           Back to Projects
         </Link>
-      )}
-
-      {/* Theme badge (studio omits it) */}
-      {!isEditor && (
-      <span className="hidden items-center gap-1.5 rounded-full border border-zinc-800 bg-zinc-900 px-2.5 py-1 text-xs font-medium text-zinc-400 sm:flex">
-        <Moon className="h-3.5 w-3.5 text-violet-400" aria-hidden />
-        Dark
-      </span>
       )}
 
       {/* Desktop shell: local identity, never a cloud sign-in wall.
