@@ -5,11 +5,18 @@
   --foreground: #f4f4f5;
   --brand-from: #7c3aed;
   --brand-to: #3b82f6;
+  /* DaVinci-inspired studio surfaces */
+  --studio-bg: #121316;
+  --studio-panel: #18191d;
+  --studio-border: #26282e;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-studio-bg: var(--studio-bg);
+  --color-studio-panel: var(--studio-panel);
+  --color-studio-border: var(--studio-border);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -94,6 +101,21 @@ body {
   background: rgb(9 9 11 / 0.55);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
+}
+
+/* --- Studio (DaVinci-style) surfaces ------------------------------------- */
+.studio-panel {
+  border: 1px solid var(--studio-border);
+  background: var(--studio-panel);
+  border-radius: 6px;
+}
+
+.studio-shell {
+  background: var(--studio-bg);
+}
+
+.studio-seam {
+  border-color: var(--studio-border);
 }
 
 /* --- Brand --------------------------------------------------------------- */

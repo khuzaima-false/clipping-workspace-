@@ -15,7 +15,8 @@ export type EditorTabRequest =
   | "audio"
   | "stickers"
   | "record"
-  | "studio";
+  | "studio"
+  | "color";
 
 const TAB_EVENT = "forgevyn:panel-tab";
 

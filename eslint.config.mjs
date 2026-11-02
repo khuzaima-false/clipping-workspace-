@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Python dev-team environment / generated artifacts.
+    "agents/.venv/**",
+    "agents/out/**",
   ]),
 ]);
 

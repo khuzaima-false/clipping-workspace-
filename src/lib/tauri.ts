@@ -54,3 +54,65 @@ export const TAURI_ENTRY_SCRIPT = `(function(){try{var w=window;if(!("__TAURI_IN
 
 /** Pre-paint launch state for the desktop shell (inert in browsers). */
 export const TAURI_ENTRY_STYLE = `html[data-tauri-entry]{background:#09090b}html[data-tauri-entry] body{visibility:hidden!important}html[data-tauri-entry]::after{content:"Opening Forgevyn\\2026";position:fixed;inset:0;display:grid;place-items:center;background:#09090b;color:#a1a1aa;font:500 13px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;letter-spacing:.01em}`;
+
+/* ------------------------------------------------------------------ */
+/* Inspector <-> Rust frame-processing payloads                        */
+/* ------------------------------------------------------------------ */
+
+export type InspectorWheelPoint = {
+  x: number;
+  y: number;
+  r?: number;
+  g?: number;
+  b?: number;
+  lum?: number;
+  sat?: number;
+};
+
+export type InspectorColorWheels = {
+  lift: InspectorWheelPoint;
+  gamma: InspectorWheelPoint;
+  gain: InspectorWheelPoint;
+};
+
+export type InspectorClipTransform = {
+  x: number;
+  y: number;
+  scale: number;
+  rotation: number;
+  opacity: number;
+};
+
+export type InspectorParams = {
+  clipId: string | null;
+  transform: InspectorClipTransform;
+  colorWheels: InspectorColorWheels;
+};
+
+/**
+ * Mirrors the current Inspector state into the Tauri backend. No-ops in a
+ * browser and never throws into the editor if the command is unavailable.
+ */
+export async function syncInspectorParams(
+  params: InspectorParams
+): Promise<void> {
+  if (!isTauriEnvironment()) return;
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("sync_inspector_params", { params });
+  } catch (error) {
+    console.warn("[tauri] sync_inspector_params failed", error);
+  }
+}
+
+/** Reads the latest Inspector snapshot from the desktop shell (debug/tests). */
+export async function getInspectorParams(): Promise<InspectorParams | null> {
+  if (!isTauriEnvironment()) return null;
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    return await invoke<InspectorParams | null>("get_inspector_params");
+  } catch (error) {
+    console.warn("[tauri] get_inspector_params failed", error);
+    return null;
+  }
+}

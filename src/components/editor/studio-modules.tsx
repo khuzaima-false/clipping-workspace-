@@ -301,7 +301,7 @@ function Slider({
 }
 
 const fieldClass =
-  "w-full rounded-lg border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-[11px] text-zinc-100 focus:border-violet-500 focus:outline-none";
+  "w-full rounded-lg border border-studio-border bg-zinc-950 px-2 py-1.5 text-[11px] text-zinc-100 focus:border-violet-500 focus:outline-none";
 
 /** 1. Cricket Jersey & Match-Day Poster designer. */
 export function StudioPanel() {
@@ -363,7 +363,7 @@ export function StudioPanel() {
               "shrink-0 rounded-full border px-3 py-1.5 text-[11px] transition-colors",
               template === item.id
                 ? "border-violet-500 bg-violet-600/15 text-violet-200"
-                : "border-zinc-800 bg-zinc-950/60 text-zinc-300 hover:border-zinc-600"
+                : "border-studio-border bg-zinc-950/60 text-zinc-300 hover:border-zinc-600"
             )}
           >
             {item.label}
@@ -371,7 +371,7 @@ export function StudioPanel() {
         ))}
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950/60">
+      <div className="overflow-hidden rounded-xl border border-studio-border bg-zinc-950/60">
         <canvas ref={canvasRef} width={280} height={280} className="h-40 w-full" />
       </div>
 
@@ -411,11 +411,11 @@ export function StudioPanel() {
       <div className="grid grid-cols-2 gap-2">
         <label className="block">
           <span className="mb-1 block text-[10px] text-zinc-400">Text color</span>
-          <input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="h-8 w-full rounded border border-zinc-800 bg-zinc-950" />
+          <input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="h-8 w-full rounded border border-studio-border bg-zinc-950" />
         </label>
         <label className="block">
           <span className="mb-1 block text-[10px] text-zinc-400">Stroke color</span>
-          <input type="color" value={strokeColor} onChange={(e) => setStrokeColor(e.target.value)} className="h-8 w-full rounded border border-zinc-800 bg-zinc-950" />
+          <input type="color" value={strokeColor} onChange={(e) => setStrokeColor(e.target.value)} className="h-8 w-full rounded border border-studio-border bg-zinc-950" />
         </label>
       </div>
 
@@ -579,7 +579,7 @@ export function AiStudioSection({ selected }: { selected: TextOverlay | null }) 
   const canProcessImage = Boolean(selected?.imageSrc);
 
   return (
-    <div className="space-y-2 border-t border-zinc-800 pt-3">
+    <div className="space-y-2 border-t border-studio-border pt-3">
       <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
         AI Studio
       </p>
@@ -588,7 +588,7 @@ export function AiStudioSection({ selected }: { selected: TextOverlay | null }) 
         type="button"
         disabled={busy || !canProcessImage}
         onClick={() => selected?.imageSrc && void runRemoval(selected.imageSrc, "overlay")}
-        className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-950/60 px-2 py-2 text-[11px] text-zinc-200 hover:border-zinc-600 disabled:opacity-40"
+        className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-studio-border bg-zinc-950/60 px-2 py-2 text-[11px] text-zinc-200 hover:border-zinc-600 disabled:opacity-40"
       >
         <Sparkles className="h-3.5 w-3.5 text-violet-400" aria-hidden /> Remove background (image)
       </button>
@@ -600,7 +600,7 @@ export function AiStudioSection({ selected }: { selected: TextOverlay | null }) 
           if (frame) void runRemoval(frame, "frame");
           else setError("No video frame available.");
         }}
-        className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-950/60 px-2 py-2 text-[11px] text-zinc-200 hover:border-zinc-600 disabled:opacity-40"
+        className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-studio-border bg-zinc-950/60 px-2 py-2 text-[11px] text-zinc-200 hover:border-zinc-600 disabled:opacity-40"
       >
         <Sparkles className="h-3.5 w-3.5 text-fuchsia-400" aria-hidden /> Remove background (current frame)
       </button>
@@ -689,7 +689,7 @@ export function BatchTools({
               resetColorAdjustments();
               if (preset.id !== "none") setColorAdjustment(preset.patch);
             }}
-            className="rounded-md border border-zinc-800 bg-zinc-950/60 px-1.5 py-1 text-[10px] text-zinc-300 hover:border-zinc-600"
+            className="rounded-md border border-studio-border bg-zinc-950/60 px-1.5 py-1 text-[10px] text-zinc-300 hover:border-zinc-600"
           >
             {preset.label}
           </button>
@@ -703,7 +703,7 @@ export function BatchTools({
             key={ratio}
             type="button"
             onClick={() => setAspect(ratio)}
-            className="inline-flex items-center justify-center gap-1 rounded-md border border-zinc-800 bg-zinc-950/60 px-1.5 py-1 text-[10px] text-zinc-300 hover:border-zinc-600"
+            className="inline-flex items-center justify-center gap-1 rounded-md border border-studio-border bg-zinc-950/60 px-1.5 py-1 text-[10px] text-zinc-300 hover:border-zinc-600"
           >
             <Crop className="h-3 w-3" aria-hidden /> {ratio}
           </button>
@@ -713,7 +713,7 @@ export function BatchTools({
       <button
         type="button"
         onClick={() => setQueueOpen(true)}
-        className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-950/60 px-2 py-2 text-[11px] text-zinc-200 hover:border-zinc-600"
+        className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-studio-border bg-zinc-950/60 px-2 py-2 text-[11px] text-zinc-200 hover:border-zinc-600"
       >
         <Download className="h-3.5 w-3.5 text-violet-400" aria-hidden /> Batch export queue
       </button>
@@ -723,7 +723,7 @@ export function BatchTools({
           {selectedIds.map((id) => (
             <li
               key={id}
-              className="truncate rounded-lg border border-zinc-800 bg-zinc-950/60 px-2 py-1.5 text-[11px] text-zinc-300"
+              className="truncate rounded-lg border border-studio-border bg-zinc-950/60 px-2 py-1.5 text-[11px] text-zinc-300"
             >
               {nameFor(id)}
             </li>

@@ -30,7 +30,7 @@ import {
   exportVideo,
   type ExportSegment,
 } from "@/lib/exporter";
-import { DesktopEditor } from "@/components/editor/desktop-editor";
+import { DesktopEditor } from "@/components/studio/desktop-editor";
 import { MobileEditor } from "@/components/editor/mobile-editor";
 import { ExportDialog, type ExportRun } from "@/components/editor/export-dialog";
 import { useAutosave } from "@/hooks/use-autosave";
@@ -535,7 +535,7 @@ function EditorView() {
   const exportPercent = exporting ? exportRun?.percent ?? 0 : 0;
 
   return (
-    <div className="flex w-full max-w-full min-w-0 flex-col gap-4 max-md:h-full max-md:min-h-0 max-md:overflow-x-hidden">
+    <div className="flex h-full min-h-0 w-full max-w-full min-w-0 flex-col gap-4 max-md:overflow-x-hidden md:h-full md:min-h-0">
       {/* Top bar */}
       <div className="flex w-full max-w-full min-w-0 flex-wrap items-center gap-3 max-md:overflow-hidden">
         <div className="min-w-0 flex-1" data-tour="editor-title">
@@ -683,6 +683,8 @@ function EditorView() {
           {/* Desktop: Premiere-style 4-panel workspace */}
           <div className="hidden md:flex md:min-h-0 md:flex-1 md:flex-col">
             <DesktopEditor
+              title={project.title}
+              onExport={() => void handleExport()}
               onBatchExport={(ids) => void handleBatchExport(ids)}
             />
           </div>

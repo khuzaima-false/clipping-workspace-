@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   AlignCenter,
@@ -11,11 +11,8 @@ import {
   Camera,
   Captions,
   Diamond,
-  Eye,
-  EyeOff,
   Film,
   LoaderCircle,
-  Lock,
   Mic,
   MonitorPlay,
   Music,
@@ -31,7 +28,6 @@ import {
   Square,
   Trash2,
   Undo2,
-  Unlock,
   Volume2,
   VolumeX,
   Zap,
@@ -85,8 +81,6 @@ import {
   TRACK_KEYS,
   isLaneDimmed,
   visibleLayerFlags,
-  type TrackField,
-  type TrackKey,
 } from "@/lib/tracks";
 import {
   createLevelMeter,
@@ -103,8 +97,8 @@ import {
   StudioPanel,
 } from "@/components/editor/studio-modules";
 import { cn } from "@/lib/utils";
+import { TrackHeader as StudioTrackHeader } from "@/components/studio/TrackHeader";
 import { Modal } from "@/components/ui/modal";
-import { AdPlaceholder } from "@/components/monetization/ad-placeholder";
 import type { TransitionType } from "@/lib/video-storage";
 
 type CinematicPreset = {
@@ -166,7 +160,7 @@ function formatTimecode(seconds: number, fps: number): string {
 }
 
 const panelTitle =
-  "border-b border-zinc-800 px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-zinc-400";
+  "border-b border-studio-border px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-zinc-400";
 
 /** The three Lumetri sub-tabs (kept short so all three fit one row). */
 type LumetriTab = "wheels" | "corrections" | "presets";
@@ -261,7 +255,7 @@ function ColorWheel({
           onClick={onReset}
           title={`Reset ${title}`}
           aria-label={`Reset ${title}`}
-          className="inline-flex shrink-0 items-center gap-1 rounded-md border border-zinc-800 bg-zinc-950/60 px-1.5 py-0.5 text-[9px] font-medium text-zinc-400 transition-colors hover:border-zinc-600 hover:text-zinc-100"
+          className="inline-flex shrink-0 items-center gap-1 rounded-md border border-studio-border bg-zinc-950/60 px-1.5 py-0.5 text-[9px] font-medium text-zinc-400 transition-colors hover:border-zinc-600 hover:text-zinc-100"
         >
           <RotateCcw className="h-2.5 w-2.5" aria-hidden />
           Reset
@@ -422,7 +416,7 @@ function ScreenCamRecorder() {
           Screen / camera capture isn&apos;t supported in this browser.
         </p>
       )}
-      <div className="overflow-hidden rounded-xl border border-zinc-800 bg-black">
+      <div className="overflow-hidden rounded-xl border border-studio-border bg-black">
         <video ref={videoRef} muted playsInline className="aspect-video w-full object-contain" />
       </div>
 
@@ -501,7 +495,7 @@ function ScreenCamRecorder() {
           type="button"
           disabled={!!recording || !isCaptureSupported("screen")}
           onClick={() => void start("screen")}
-          className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-950/60 px-2 py-2 text-[11px] text-zinc-200 hover:border-zinc-600 disabled:opacity-40"
+          className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-studio-border bg-zinc-950/60 px-2 py-2 text-[11px] text-zinc-200 hover:border-zinc-600 disabled:opacity-40"
         >
           <MonitorPlay className="h-3.5 w-3.5 text-violet-400" aria-hidden /> Record screen
         </button>
@@ -509,7 +503,7 @@ function ScreenCamRecorder() {
           type="button"
           disabled={!!recording || !isCaptureSupported("webcam")}
           onClick={() => void start("webcam")}
-          className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-950/60 px-2 py-2 text-[11px] text-zinc-200 hover:border-zinc-600 disabled:opacity-40"
+          className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-studio-border bg-zinc-950/60 px-2 py-2 text-[11px] text-zinc-200 hover:border-zinc-600 disabled:opacity-40"
         >
           <Camera className="h-3.5 w-3.5 text-fuchsia-400" aria-hidden /> Record cam
         </button>
@@ -534,14 +528,11 @@ function ScreenCamRecorder() {
 /* ------------------------------------------------------------------ */
 /* Left column: AI Assistant placeholder (DeepSeek integration pending) */
 /* ------------------------------------------------------------------ */
-function AIAssistantPanel() {
+export function AIAssistantPanel() {
   return (
-    <section
-      className="glass-card flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl"
-      data-tour="ai-panel"
-    >
+    <section className="studio-panel flex min-h-0 flex-1 flex-col overflow-hidden rounded-md">
       {/* Header: logo + title in one flex row so they can never overlap. */}
-      <div className="flex items-center gap-2 border-b border-zinc-800 px-3 py-2">
+      <div className="flex items-center gap-2 border-b border-studio-border px-3 py-2">
         <span
           className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-violet-500/40 to-fuchsia-500/25 ring-1 ring-inset ring-violet-500/40"
           aria-hidden
@@ -554,7 +545,7 @@ function AIAssistantPanel() {
       </div>
       <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 p-5 text-center">
         <span
-          className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500/35 to-fuchsia-500/20 ring-1 ring-inset ring-violet-500/40"
+          className="flex h-12 w-12 items-center justify-center rounded-md bg-gradient-to-br from-violet-500/35 to-fuchsia-500/20 ring-1 ring-inset ring-violet-500/40"
           aria-hidden
         >
           <Sparkles className="h-6 w-6 text-violet-200" />
@@ -649,9 +640,10 @@ const LEGACY_TAB_MAP: Record<
   properties: { category: "text", sub: "captions" },
   captions: { category: "text", sub: "captions" },
   stickers: { category: "text", sub: "stickers" },
+  color: { category: "color", sub: "wheels" },
 };
 
-function InspectorPanel({
+export function InspectorPanel({
   onBatchExport,
 }: {
   onBatchExport?: (clipIds: string[]) => void;
@@ -823,12 +815,12 @@ function InspectorPanel({
   };
 
   return (
-    <section className="glass-card flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl" data-tour="inspector-panel">
+    <section className="studio-panel flex min-h-0 flex-1 flex-col overflow-hidden rounded-md" data-tour="inspector-panel">
       <div className={panelTitle}>Inspector</div>
 
       {/* Top-level categories. */}
       <div
-        className="custom-scrollbar flex items-center gap-1 overflow-x-auto whitespace-nowrap border-b border-zinc-800 px-1 py-1"
+        className="custom-scrollbar flex items-center gap-1 overflow-x-auto whitespace-nowrap border-b border-studio-border px-1 py-1"
         data-tour="inspector-categories"
         role="tablist"
         aria-label="Inspector categories"
@@ -859,7 +851,7 @@ function InspectorPanel({
       {/* Nested sub-tabs for the active category. */}
       {activeCategory.subs.length > 1 && (
         <div
-          className="custom-scrollbar flex items-center gap-1 overflow-x-auto whitespace-nowrap border-b border-zinc-800/70 bg-zinc-950/30 px-2 py-1"
+          className="custom-scrollbar flex items-center gap-1 overflow-x-auto whitespace-nowrap border-b border-studio-border/70 bg-zinc-950/30 px-2 py-1"
           data-tour="inspector-subtabs"
           role="tablist"
           aria-label={`${activeCategory.label} sections`}
@@ -951,7 +943,7 @@ function InspectorPanel({
                         "flex min-w-0 flex-1 items-center gap-2 rounded-lg border px-2 py-2 text-left text-xs transition-colors",
                         clip.id === activeClipId
                           ? "border-violet-500/50 bg-violet-500/10 text-violet-100"
-                          : "border-zinc-800 bg-zinc-950/50 text-zinc-300 hover:border-zinc-600"
+                          : "border-studio-border bg-zinc-950/50 text-zinc-300 hover:border-zinc-600"
                       )}
                     >
                       <Film className="h-3.5 w-3.5 shrink-0 text-violet-400" aria-hidden />
@@ -966,7 +958,7 @@ function InspectorPanel({
                       type="button"
                       onClick={() => removeClip(clip.id)}
                       aria-label={`Remove ${nameFor(clip.assetId)}`}
-                      className="shrink-0 rounded-lg border border-zinc-800 p-2 text-zinc-500 transition-colors hover:border-red-500/40 hover:text-red-400"
+                      className="shrink-0 rounded-lg border border-studio-border p-2 text-zinc-500 transition-colors hover:border-red-500/40 hover:text-red-400"
                     >
                       <Trash2 className="h-3.5 w-3.5" aria-hidden />
                     </button>
@@ -981,7 +973,7 @@ function InspectorPanel({
         {is("effects", "effects") && (
           <div className="space-y-3">
             {/* Sticky search — filters all effect groups by name. */}
-            <div className="sticky -top-3 z-10 -mx-3 -mt-3 border-b border-zinc-800 bg-zinc-950/95 px-3 py-2 backdrop-blur">
+            <div className="sticky -top-3 z-10 -mx-3 -mt-3 border-b border-studio-border bg-zinc-950/95 px-3 py-2 backdrop-blur">
               <input
                 type="text"
                 value={effectQuery}
@@ -989,7 +981,7 @@ function InspectorPanel({
                 placeholder="Search 80+ effects..."
                 aria-label="Search effects"
                 data-tour="effect-search"
-                className="w-full rounded-lg border border-zinc-800 bg-zinc-900/70 px-2.5 py-1.5 text-[11px] text-zinc-100 placeholder:text-zinc-600 focus:border-violet-500 focus:outline-none"
+                className="w-full rounded-lg border border-studio-border bg-zinc-900/70 px-2.5 py-1.5 text-[11px] text-zinc-100 placeholder:text-zinc-600 focus:border-violet-500 focus:outline-none"
               />
             </div>
 
@@ -1010,7 +1002,7 @@ function InspectorPanel({
                       key={type}
                       type="button"
                       onClick={() => addEffect(type, currentTime)}
-                      className="rounded-lg border border-zinc-800 bg-zinc-950/60 px-2 py-2 text-left text-[11px] text-zinc-200 transition-colors hover:border-violet-500/50 hover:text-violet-200"
+                      className="rounded-lg border border-studio-border bg-zinc-950/60 px-2 py-2 text-left text-[11px] text-zinc-200 transition-colors hover:border-violet-500/50 hover:text-violet-200"
                     >
                       {effectLabel(type)}
                     </button>
@@ -1020,7 +1012,7 @@ function InspectorPanel({
             ))}
 
             {activeEffects.length > 0 && (
-              <div className="space-y-2 border-t border-zinc-800 pt-3">
+              <div className="space-y-2 border-t border-studio-border pt-3">
                 <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
                   Applied ({activeEffects.length})
                 </p>
@@ -1069,7 +1061,7 @@ function InspectorPanel({
             )}
 
             {/* AI background removal lives with the other effects. */}
-            <div className="border-t border-zinc-800 pt-3">
+            <div className="border-t border-studio-border pt-3">
               <AiStudioSection selected={selected} />
             </div>
           </div>
@@ -1083,7 +1075,7 @@ function InspectorPanel({
                   Select a text overlay (Captions tab or timeline) to edit its text,
                   font, colors, animation and transform.
                 </p>
-                <div className="space-y-1.5 rounded-lg border border-zinc-800 bg-zinc-950/50 p-2">
+                <div className="space-y-1.5 rounded-lg border border-studio-border bg-zinc-950/50 p-2">
                   <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
                     <Diamond className="h-3 w-3" aria-hidden /> Clip keyframes &amp;
                     transform
@@ -1095,7 +1087,7 @@ function InspectorPanel({
                   <button
                     type="button"
                     onClick={() => requestEditorTab("clip")}
-                    className="inline-flex items-center gap-1 rounded-md border border-zinc-800 bg-zinc-950/60 px-2 py-1 text-[10px] text-zinc-200 hover:border-violet-500/60 hover:text-violet-200"
+                    className="inline-flex items-center gap-1 rounded-md border border-studio-border bg-zinc-950/60 px-2 py-1 text-[10px] text-zinc-200 hover:border-violet-500/60 hover:text-violet-200"
                   >
                     Open Clip transform →
                   </button>
@@ -1111,7 +1103,7 @@ function InspectorPanel({
                     value={selected.text}
                     onChange={(e) => patchSelected({ text: e.target.value })}
                     rows={2}
-                    className="w-full resize-none rounded-lg border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-[11px] text-zinc-100 focus:border-violet-500 focus:outline-none"
+                    className="w-full resize-none rounded-lg border border-studio-border bg-zinc-950 px-2 py-1.5 text-[11px] text-zinc-100 focus:border-violet-500 focus:outline-none"
                   />
                 </label>
 
@@ -1122,7 +1114,7 @@ function InspectorPanel({
                   <select
                     value={selected.fontFamily}
                     onChange={(e) => patchSelected({ fontFamily: e.target.value })}
-                    className="w-full rounded-lg border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-[11px] text-zinc-100"
+                    className="w-full rounded-lg border border-studio-border bg-zinc-950 px-2 py-1.5 text-[11px] text-zinc-100"
                   >
                     {FONT_FAMILIES.map((font) => (
                       <option key={font} value={font}>
@@ -1133,7 +1125,7 @@ function InspectorPanel({
                 </label>
 
                 {/* ── Text Color ─────────────────────────────────────── */}
-                <div className="space-y-1 rounded-lg border border-zinc-800 bg-zinc-950/50 p-2">
+                <div className="space-y-1 rounded-lg border border-studio-border bg-zinc-950/50 p-2">
                   <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
                     Text Color
                   </p>
@@ -1143,7 +1135,7 @@ function InspectorPanel({
                       value={selected.fillColor}
                       onChange={(e) => patchSelected({ fillColor: e.target.value })}
                       aria-label="Text color"
-                      className="h-7 w-12 shrink-0 rounded border border-zinc-800 bg-zinc-950"
+                      className="h-7 w-12 shrink-0 rounded border border-studio-border bg-zinc-950"
                     />
                     <span className="text-[10px] tabular-nums text-zinc-500">
                       {selected.fillColor}
@@ -1152,7 +1144,7 @@ function InspectorPanel({
                 </div>
 
                 {/* ── Background Pill ────────────────────────────────── */}
-                <div className="space-y-1 rounded-lg border border-zinc-800 bg-zinc-950/50 p-2">
+                <div className="space-y-1 rounded-lg border border-studio-border bg-zinc-950/50 p-2">
                   <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
                     Background Pill
                   </p>
@@ -1162,7 +1154,7 @@ function InspectorPanel({
                       value={selected.bgColor || "#000000"}
                       onChange={(e) => patchSelected({ bgColor: e.target.value })}
                       aria-label="Background color"
-                      className="h-7 w-12 shrink-0 rounded border border-zinc-800 bg-zinc-950"
+                      className="h-7 w-12 shrink-0 rounded border border-studio-border bg-zinc-950"
                     />
                     <label className="flex min-w-0 flex-1 items-center gap-2">
                       <span className="text-[10px] text-zinc-500">Opacity</span>
@@ -1200,7 +1192,7 @@ function InspectorPanel({
                 </div>
 
                 {/* ── Text Shadow / Stroke ───────────────────────────── */}
-                <div className="space-y-1.5 rounded-lg border border-zinc-800 bg-zinc-950/50 p-2">
+                <div className="space-y-1.5 rounded-lg border border-studio-border bg-zinc-950/50 p-2">
                   <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
                     Text Shadow / Stroke
                   </p>
@@ -1218,7 +1210,7 @@ function InspectorPanel({
                         })
                       }
                       aria-label="Stroke color"
-                      className="h-7 w-12 shrink-0 rounded border border-zinc-800 bg-zinc-950"
+                      className="h-7 w-12 shrink-0 rounded border border-studio-border bg-zinc-950"
                     />
                     <label className="flex min-w-0 flex-1 items-center gap-2">
                       <span className="text-[10px] text-zinc-500">Stroke</span>
@@ -1253,7 +1245,7 @@ function InspectorPanel({
                         })
                       }
                       aria-label="Shadow color"
-                      className="h-7 w-12 shrink-0 rounded border border-zinc-800 bg-zinc-950"
+                      className="h-7 w-12 shrink-0 rounded border border-studio-border bg-zinc-950"
                     />
                     <label className="flex min-w-0 flex-1 items-center gap-2">
                       <span className="text-[10px] text-zinc-500">Shadow</span>
@@ -1295,7 +1287,7 @@ function InspectorPanel({
                           "flex items-center justify-center rounded-lg border py-1.5",
                           selected.alignment === id
                             ? "border-violet-500 bg-violet-600/15 text-violet-200"
-                            : "border-zinc-800 bg-zinc-950/60 text-zinc-400"
+                            : "border-studio-border bg-zinc-950/60 text-zinc-400"
                         )}
                       >
                         <Icon className="h-3.5 w-3.5" aria-hidden />
@@ -1384,7 +1376,7 @@ function InspectorPanel({
             )}
 
             {selected && (
-              <div className="space-y-2 border-t border-zinc-800 pt-3" data-tour="motion-presets">
+              <div className="space-y-2 border-t border-studio-border pt-3" data-tour="motion-presets">
                 <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
                   Motion preset
                 </p>
@@ -1402,7 +1394,7 @@ function InspectorPanel({
                           "rounded-lg border px-2 py-1.5 text-left text-[11px] transition-colors",
                           active
                             ? "border-violet-500 bg-violet-600/15 text-violet-200"
-                            : "border-zinc-800 bg-zinc-950/60 text-zinc-300 hover:border-zinc-600"
+                            : "border-studio-border bg-zinc-950/60 text-zinc-300 hover:border-zinc-600"
                         )}
                       >
                         {preset.label}
@@ -1421,7 +1413,7 @@ function InspectorPanel({
             )}
 
             {/* Global caption animation + style (applies to AI captions) */}
-            <div className="space-y-2 border-t border-zinc-800 pt-3">
+            <div className="space-y-2 border-t border-studio-border pt-3">
               <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
                 Caption Style
               </p>
@@ -1432,7 +1424,7 @@ function InspectorPanel({
                   onChange={(e) =>
                     setCaptionStyle({ animation: e.target.value as CaptionAnimation })
                   }
-                  className="w-full rounded-lg border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-[11px] text-zinc-100"
+                  className="w-full rounded-lg border border-studio-border bg-zinc-950 px-2 py-1.5 text-[11px] text-zinc-100"
                 >
                   <option value="none">None</option>
                   <option value="pop">Pop-in</option>
@@ -1471,7 +1463,7 @@ function InspectorPanel({
                   type="color"
                   value={captionStyle.highlightColor}
                   onChange={(e) => setCaptionStyle({ highlightColor: e.target.value })}
-                  className="h-6 w-12 rounded border border-zinc-800 bg-zinc-950"
+                  className="h-6 w-12 rounded border border-studio-border bg-zinc-950"
                 />
               </label>
             </div>
@@ -1504,7 +1496,7 @@ function InspectorPanel({
                   value={chromaKey.color}
                   onChange={(e) => setChromaKey({ color: e.target.value, enabled: true })}
                   aria-label="Key color"
-                  className="h-8 w-12 shrink-0 rounded border border-zinc-800 bg-zinc-950"
+                  className="h-8 w-12 shrink-0 rounded border border-studio-border bg-zinc-950"
                 />
                 <button
                   type="button"
@@ -1514,7 +1506,7 @@ function InspectorPanel({
                     "inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-2 py-1.5 text-[11px] transition-colors",
                     eyedropper
                       ? "border-violet-500 bg-violet-600/15 text-violet-200"
-                      : "border-zinc-800 bg-zinc-950/60 text-zinc-300 hover:border-zinc-600"
+                      : "border-studio-border bg-zinc-950/60 text-zinc-300 hover:border-zinc-600"
                   )}
                 >
                   <Pipette className="h-3.5 w-3.5" aria-hidden />
@@ -1558,7 +1550,7 @@ function InspectorPanel({
               <button
                 type="button"
                 onClick={resetChromaKey}
-                className="w-full rounded-lg border border-zinc-800 bg-zinc-950/60 px-2 py-2 text-[11px] text-zinc-300 hover:border-zinc-600"
+                className="w-full rounded-lg border border-studio-border bg-zinc-950/60 px-2 py-2 text-[11px] text-zinc-300 hover:border-zinc-600"
               >
                 Reset chroma key
               </button>
@@ -1610,7 +1602,7 @@ function InspectorPanel({
                   type="button"
                   onClick={() => setTrimStart(currentTime)}
                   disabled={duration <= 0}
-                  className="rounded-lg border border-zinc-800 bg-zinc-950/60 px-2 py-2 text-[11px] text-zinc-300 hover:border-zinc-600 disabled:opacity-40"
+                  className="rounded-lg border border-studio-border bg-zinc-950/60 px-2 py-2 text-[11px] text-zinc-300 hover:border-zinc-600 disabled:opacity-40"
                 >
                   Set In @ playhead
                 </button>
@@ -1618,7 +1610,7 @@ function InspectorPanel({
                   type="button"
                   onClick={() => setTrimEnd(currentTime)}
                   disabled={duration <= 0}
-                  className="rounded-lg border border-zinc-800 bg-zinc-950/60 px-2 py-2 text-[11px] text-zinc-300 hover:border-zinc-600 disabled:opacity-40"
+                  className="rounded-lg border border-studio-border bg-zinc-950/60 px-2 py-2 text-[11px] text-zinc-300 hover:border-zinc-600 disabled:opacity-40"
                 >
                   Set Out @ playhead
                 </button>
@@ -1627,14 +1619,14 @@ function InspectorPanel({
                 type="button"
                 onClick={resetTrim}
                 disabled={duration <= 0}
-                className="w-full rounded-lg border border-zinc-800 bg-zinc-950/60 px-2 py-2 text-[11px] text-zinc-300 hover:border-zinc-600 disabled:opacity-40"
+                className="w-full rounded-lg border border-studio-border bg-zinc-950/60 px-2 py-2 text-[11px] text-zinc-300 hover:border-zinc-600 disabled:opacity-40"
               >
                 Reset trim (full clip)
               </button>
             </div>
 
             {/* Framing / crop */}
-            <div className="space-y-2 border-t border-zinc-800 pt-3">
+            <div className="space-y-2 border-t border-studio-border pt-3">
               <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
                 Framing
               </p>
@@ -1649,7 +1641,7 @@ function InspectorPanel({
                       "rounded-lg border px-2 py-2 text-[11px] transition-colors",
                       fit === mode
                         ? "border-violet-500 bg-violet-600/15 text-violet-200"
-                        : "border-zinc-800 bg-zinc-950/60 text-zinc-300 hover:border-zinc-600"
+                        : "border-studio-border bg-zinc-950/60 text-zinc-300 hover:border-zinc-600"
                     )}
                   >
                     {mode === "contain" ? "Fit" : "Fill & Crop"}
@@ -1694,7 +1686,7 @@ function InspectorPanel({
                   setFit("contain");
                   setOffset(0, 0);
                 }}
-                className="w-full rounded-lg border border-zinc-800 bg-zinc-950/60 px-2 py-2 text-[11px] text-zinc-300 hover:border-zinc-600"
+                className="w-full rounded-lg border border-studio-border bg-zinc-950/60 px-2 py-2 text-[11px] text-zinc-300 hover:border-zinc-600"
               >
                 Reset framing
               </button>
@@ -1727,8 +1719,8 @@ function InspectorPanel({
 
               {!activeClip || !clipPose ? (
                 <p className="text-[10px] leading-4 text-zinc-600">
-                  Select a clip on the V1 timeline to animate its position, scale
-                  and rotation.
+                  Select a clip on the V1 timeline to animate its position, scale,
+                  rotation and opacity.
                 </p>
               ) : (
                 <>
@@ -1771,6 +1763,15 @@ function InspectorPanel({
                         value: clipPose.rotation,
                         suffix: "°",
                       },
+                      {
+                        key: "opacity" as const,
+                        label: "Opacity",
+                        min: 0,
+                        max: 1,
+                        step: 0.01,
+                        value: clipPose.opacity,
+                        suffix: "%",
+                      },
                     ] as const
                   ).map((property) => {
                     // Does an existing keyframe sit exactly on the playhead?
@@ -1785,7 +1786,8 @@ function InspectorPanel({
                           </span>
                           <span className="flex items-center gap-1.5">
                             <span className="text-[10px] tabular-nums text-zinc-400">
-                              {property.key === "scale"
+                              {property.key === "scale" ||
+                              property.key === "opacity"
                                 ? `${Math.round(property.value * 100)}${property.suffix}`
                                 : `${Math.round(property.value)}${property.suffix}`}
                             </span>
@@ -1801,7 +1803,7 @@ function InspectorPanel({
                                 "flex h-5 w-5 items-center justify-center rounded border transition-colors",
                                 onKeyframe
                                   ? "border-amber-400 bg-amber-400/20 text-amber-300"
-                                  : "border-zinc-800 bg-zinc-950/60 text-zinc-500 hover:border-amber-500/60 hover:text-amber-300"
+                                  : "border-studio-border bg-zinc-950/60 text-zinc-500 hover:border-amber-500/60 hover:text-amber-300"
                               )}
                             >
                               <Diamond className="h-2.5 w-2.5" aria-hidden />
@@ -1830,7 +1832,7 @@ function InspectorPanel({
                     <button
                       type="button"
                       onClick={() => addClipTransformKeyframe(activeClip.id)}
-                      className="inline-flex items-center gap-1 rounded-md border border-zinc-800 bg-zinc-950/60 px-2 py-1 text-[10px] text-zinc-200 hover:border-amber-500/60 hover:text-amber-200"
+                      className="inline-flex items-center gap-1 rounded-md border border-studio-border bg-zinc-950/60 px-2 py-1 text-[10px] text-zinc-200 hover:border-amber-500/60 hover:text-amber-200"
                     >
                       <Plus className="h-3 w-3" aria-hidden /> Add keyframe @{" "}
                       {currentTime.toFixed(2)}s
@@ -1843,6 +1845,7 @@ function InspectorPanel({
                           y: 0,
                           scale: 1,
                           rotation: 0,
+                          opacity: 1,
                         })
                       }
                       className="text-[10px] text-zinc-500 hover:text-zinc-200"
@@ -1856,7 +1859,7 @@ function InspectorPanel({
                       {clipKeyframes.map((frame) => (
                         <li
                           key={frame.id}
-                          className="flex items-center gap-2 rounded-md border border-zinc-800 bg-zinc-950/60 px-2 py-1 text-[10px] text-zinc-300"
+                          className="flex items-center gap-2 rounded-md border border-studio-border bg-zinc-950/60 px-2 py-1 text-[10px] text-zinc-300"
                         >
                           <Diamond className="h-2.5 w-2.5 text-amber-300" aria-hidden />
                           <span className="flex-1 tabular-nums">
@@ -1865,7 +1868,8 @@ function InspectorPanel({
                           <span className="text-zinc-500">
                             {Math.round(frame.x)},{Math.round(frame.y)} ·{" "}
                             {Math.round(frame.scale * 100)}% ·{" "}
-                            {Math.round(frame.rotation)}°
+                            {Math.round(frame.rotation)}° ·{" "}
+                            {Math.round((frame.opacity ?? 1) * 100)}%
                           </span>
                           <button
                             type="button"
@@ -1893,7 +1897,7 @@ function InspectorPanel({
 
             {/* Overlay keyframes (moved here from the old text Properties tab) */}
             {selected && (
-              <div className="space-y-2 border-t border-zinc-800 pt-3">
+              <div className="space-y-2 border-t border-studio-border pt-3">
                 <div className="flex items-center justify-between">
                   <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
                     <Diamond className="h-3 w-3" aria-hidden /> Text / Overlay Keyframes
@@ -1901,7 +1905,7 @@ function InspectorPanel({
                   <button
                     type="button"
                     onClick={() => addOverlayKeyframe(selected.id)}
-                    className="inline-flex items-center gap-1 rounded-md border border-zinc-800 bg-zinc-950/60 px-2 py-1 text-[10px] text-zinc-200 hover:border-zinc-600"
+                    className="inline-flex items-center gap-1 rounded-md border border-studio-border bg-zinc-950/60 px-2 py-1 text-[10px] text-zinc-200 hover:border-zinc-600"
                   >
                     <Plus className="h-3 w-3" aria-hidden /> Add @ playhead
                   </button>
@@ -1917,7 +1921,7 @@ function InspectorPanel({
                       {overlayKeyframes.map((frame) => (
                         <li
                           key={frame.id}
-                          className="flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-950/60 px-2 py-1 text-[10px] text-zinc-300"
+                          className="flex items-center gap-2 rounded-lg border border-studio-border bg-zinc-950/60 px-2 py-1 text-[10px] text-zinc-300"
                         >
                           <Diamond className="h-3 w-3 text-amber-300" aria-hidden />
                           <span className="flex-1 tabular-nums">
@@ -1952,7 +1956,7 @@ function InspectorPanel({
             {is("clip", "transform") && (
             <>
             {/* Platform framing presets + canvas fill */}
-            <div className="space-y-2 border-t border-zinc-800 pt-3">
+            <div className="space-y-2 border-t border-studio-border pt-3">
               <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
                 Platform framing
               </p>
@@ -1970,7 +1974,7 @@ function InspectorPanel({
                       "rounded-lg border px-2 py-2 text-left text-[11px] transition-colors",
                       aspect === preset.id
                         ? "border-violet-500 bg-violet-600/15 text-violet-200"
-                        : "border-zinc-800 bg-zinc-950/60 text-zinc-300 hover:border-zinc-600"
+                        : "border-studio-border bg-zinc-950/60 text-zinc-300 hover:border-zinc-600"
                     )}
                   >
                     <span className="block font-medium">{preset.label}</span>
@@ -1986,7 +1990,7 @@ function InspectorPanel({
                   "inline-flex w-full items-center justify-center gap-1.5 rounded-lg border px-2 py-2 text-[11px] transition-colors",
                   canvasFill === "blur"
                     ? "border-violet-500 bg-violet-600/15 text-violet-200"
-                    : "border-zinc-800 bg-zinc-950/60 text-zinc-300 hover:border-zinc-600"
+                    : "border-studio-border bg-zinc-950/60 text-zinc-300 hover:border-zinc-600"
                 )}
               >
                 <Sparkles className="h-3.5 w-3.5" aria-hidden />
@@ -2009,7 +2013,7 @@ function InspectorPanel({
                 onChange={(e) =>
                   setCaptionLanguage(e.target.value as CaptionLanguageId)
                 }
-                className="w-full rounded-lg border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-[11px] text-zinc-100 focus:border-violet-500 focus:outline-none"
+                className="w-full rounded-lg border border-studio-border bg-zinc-950 px-2 py-1.5 text-[11px] text-zinc-100 focus:border-violet-500 focus:outline-none"
               >
                 {CAPTION_LANGUAGES.map((language) => (
                   <option key={language.id} value={language.id}>
@@ -2055,7 +2059,7 @@ function InspectorPanel({
             )}
 
             {autoCaptionCount > 0 && (
-              <div className="flex items-center justify-between rounded-lg border border-zinc-800 bg-zinc-950/60 px-2 py-1.5">
+              <div className="flex items-center justify-between rounded-lg border border-studio-border bg-zinc-950/60 px-2 py-1.5">
                 <span className="text-[10px] text-zinc-400">
                   {autoCaptionCount} AI caption{autoCaptionCount === 1 ? "" : "s"}
                 </span>
@@ -2070,7 +2074,7 @@ function InspectorPanel({
             )}
 
             {/* Social caption styles + on-device script generator */}
-            <div className="space-y-2 border-t border-zinc-800 pt-3">
+            <div className="space-y-2 border-t border-studio-border pt-3">
               <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
                 Caption styles ({CAPTION_PRESETS.length})
               </p>
@@ -2085,7 +2089,7 @@ function InspectorPanel({
                       "flex items-center gap-1.5 overflow-hidden rounded-lg border px-1.5 py-1.5 text-left text-[10px] transition-colors",
                       captionStyle.preset === preset.id
                         ? "border-violet-500 bg-violet-600/15 text-violet-200"
-                        : "border-zinc-800 bg-zinc-950/60 text-zinc-300 hover:border-zinc-600"
+                        : "border-studio-border bg-zinc-950/60 text-zinc-300 hover:border-zinc-600"
                     )}
                   >
                     <span
@@ -2107,7 +2111,7 @@ function InspectorPanel({
                   onChange={(e) => setScript(e.target.value)}
                   rows={3}
                   placeholder="Type or paste your script…"
-                  className="w-full resize-none rounded-lg border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-[11px] text-zinc-100 focus:border-violet-500 focus:outline-none"
+                  className="w-full resize-none rounded-lg border border-studio-border bg-zinc-950 px-2 py-1.5 text-[11px] text-zinc-100 focus:border-violet-500 focus:outline-none"
                 />
               </label>
               <div className="grid grid-cols-2 gap-2">
@@ -2115,7 +2119,7 @@ function InspectorPanel({
                   type="button"
                   onClick={() => void generateCaptionsFromScript(script)}
                   disabled={!script.trim()}
-                  className="rounded-lg border border-zinc-800 bg-zinc-950/60 px-2 py-2 text-[11px] text-zinc-200 hover:border-zinc-600 disabled:opacity-40"
+                  className="rounded-lg border border-studio-border bg-zinc-950/60 px-2 py-2 text-[11px] text-zinc-200 hover:border-zinc-600 disabled:opacity-40"
                 >
                   Generate captions
                 </button>
@@ -2146,7 +2150,7 @@ function InspectorPanel({
                     "inline-flex items-center justify-center gap-1.5 rounded-lg border px-2 py-2 text-[11px] disabled:opacity-40",
                     dictating
                       ? "border-red-500/40 bg-red-500/10 text-red-300"
-                      : "border-zinc-800 bg-zinc-950/60 text-zinc-200 hover:border-zinc-600"
+                      : "border-studio-border bg-zinc-950/60 text-zinc-200 hover:border-zinc-600"
                   )}
                 >
                   <Mic className="h-3.5 w-3.5" aria-hidden />
@@ -2158,7 +2162,7 @@ function InspectorPanel({
             <button
               type="button"
               onClick={addOverlay}
-              className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-2 text-[11px] text-zinc-200 hover:border-zinc-600"
+              className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-studio-border bg-zinc-950/60 px-3 py-2 text-[11px] text-zinc-200 hover:border-zinc-600"
             >
               <Plus className="h-3.5 w-3.5" aria-hidden /> Add Text / Caption Overlay
             </button>
@@ -2172,7 +2176,7 @@ function InspectorPanel({
                       "flex items-center gap-1 rounded-lg border px-2 py-1.5 text-[11px]",
                       overlay.id === selectedId
                         ? "border-violet-500/50 bg-violet-500/10"
-                        : "border-zinc-800 bg-zinc-950/60"
+                        : "border-studio-border bg-zinc-950/60"
                     )}
                   >
                     <Captions className="h-3 w-3 shrink-0 text-violet-400" aria-hidden />
@@ -2202,7 +2206,7 @@ function InspectorPanel({
             )}
 
             {transcriptCaptions.length > 0 && (
-              <div className="space-y-2 border-t border-zinc-800 pt-3" data-tour="transcript">
+              <div className="space-y-2 border-t border-studio-border pt-3" data-tour="transcript">
                 <div className="flex items-center justify-between">
                   <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
                     Transcript · edit like text
@@ -2211,7 +2215,7 @@ function InspectorPanel({
                     <button
                       type="button"
                       onClick={() => setSelectedWords(new Set())}
-                      className="rounded-md border border-zinc-800 bg-zinc-950/60 px-2 py-0.5 text-[10px] text-zinc-400 transition-colors hover:border-zinc-600 hover:text-zinc-100"
+                      className="rounded-md border border-studio-border bg-zinc-950/60 px-2 py-0.5 text-[10px] text-zinc-400 transition-colors hover:border-zinc-600 hover:text-zinc-100"
                     >
                       Clear
                     </button>
@@ -2222,7 +2226,7 @@ function InspectorPanel({
                   cut and the timeline ripples to match, and every caption stays
                   in sync.
                 </p>
-                <div className="custom-scrollbar max-h-48 space-y-2 overflow-y-auto rounded-lg border border-zinc-800 bg-zinc-950/40 p-2">
+                <div className="custom-scrollbar max-h-48 space-y-2 overflow-y-auto rounded-lg border border-studio-border bg-zinc-950/40 p-2">
                   {transcriptCaptions.map((overlay) => (
                     <p
                       key={overlay.id}
@@ -2305,7 +2309,7 @@ function InspectorPanel({
                         key={effect.id}
                         type="button"
                         onClick={() => void addSoundEffect(effect.id)}
-                        className="rounded-lg border border-zinc-800 bg-zinc-950/60 px-2 py-2 text-left text-[11px] text-zinc-200 transition-colors hover:border-violet-500/50"
+                        className="rounded-lg border border-studio-border bg-zinc-950/60 px-2 py-2 text-left text-[11px] text-zinc-200 transition-colors hover:border-violet-500/50"
                       >
                         {effect.label}
                       </button>
@@ -2315,7 +2319,7 @@ function InspectorPanel({
               </div>
             ))}
 
-            <label className="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-950/60 px-2 py-2 text-[11px] text-zinc-200 hover:border-zinc-600">
+            <label className="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-studio-border bg-zinc-950/60 px-2 py-2 text-[11px] text-zinc-200 hover:border-zinc-600">
               <Music className="h-3.5 w-3.5 text-violet-400" aria-hidden /> Import audio
               <input
                 type="file"
@@ -2329,7 +2333,7 @@ function InspectorPanel({
               />
             </label>
 
-            <div className="space-y-2 border-t border-zinc-800 pt-3">
+            <div className="space-y-2 border-t border-studio-border pt-3">
               <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
                 Mixer
               </p>
@@ -2340,7 +2344,7 @@ function InspectorPanel({
                   {audioTracks.map((track) => (
                     <li
                       key={track.id}
-                      className="space-y-1.5 rounded-lg border border-zinc-800 bg-zinc-950/60 p-2"
+                      className="space-y-1.5 rounded-lg border border-studio-border bg-zinc-950/60 p-2"
                     >
                       <div className="flex items-center gap-1.5">
                         <AudioLines className="h-3.5 w-3.5 shrink-0 text-violet-400" aria-hidden />
@@ -2460,7 +2464,7 @@ function InspectorPanel({
                     "rounded-lg border px-2 py-2 text-left text-[11px] transition-colors",
                     speedPreset === card.id
                       ? "border-violet-500 bg-violet-600/15 text-violet-200"
-                      : "border-zinc-800 bg-zinc-950/60 text-zinc-300 hover:border-zinc-600"
+                      : "border-studio-border bg-zinc-950/60 text-zinc-300 hover:border-zinc-600"
                   )}
                 >
                   <span className="flex items-center gap-1 font-medium">
@@ -2471,7 +2475,7 @@ function InspectorPanel({
                 </button>
               ))}
             </div>
-            <div className="border-t border-zinc-800 pt-3">
+            <div className="border-t border-studio-border pt-3">
               <VelocityCurveEditor />
               <p className="mt-1 text-[10px] text-zinc-500">
                 Active:{" "}
@@ -2521,7 +2525,7 @@ function InspectorPanel({
                       const src = stickerImageSrc(sticker);
                       if (src) addStickerImage(src);
                     }}
-                    className="flex aspect-square items-center justify-center overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950/60 p-1 hover:border-zinc-600"
+                    className="flex aspect-square items-center justify-center overflow-hidden rounded-lg border border-studio-border bg-zinc-950/60 p-1 hover:border-zinc-600"
                   >
                     {sticker.emoji ? (
                       <span className="text-2xl">{sticker.emoji}</span>
@@ -2615,7 +2619,7 @@ function TransitionModal({
               setClipTransition(clip.id, null);
               onClose();
             }}
-            className="rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-2 text-xs text-zinc-300 transition-colors hover:border-zinc-600"
+            className="rounded-lg border border-studio-border bg-zinc-950/60 px-3 py-2 text-xs text-zinc-300 transition-colors hover:border-zinc-600"
           >
             Remove
           </button>
@@ -2644,7 +2648,7 @@ function TransitionModal({
               "group space-y-1.5 rounded-lg border p-2 text-left text-[11px] transition-colors",
               type === preset.id
                 ? "border-violet-500 bg-violet-600/15 text-violet-200"
-                : "border-zinc-800 bg-zinc-950/60 text-zinc-300 hover:border-zinc-600"
+                : "border-studio-border bg-zinc-950/60 text-zinc-300 hover:border-zinc-600"
             )}
           >
             <TransitionPreview type={preset.id} />
@@ -2679,7 +2683,7 @@ function TransitionModal({
 /* ------------------------------------------------------------------ */
 /* Top-center: Program monitor + transport                              */
 /* ------------------------------------------------------------------ */
-function ProgramPreview() {
+export function ProgramPreview() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const overlayDrag = useOverlayCanvasDrag(canvasRef);
@@ -3002,8 +3006,8 @@ function ProgramPreview() {
   const res = ASPECT_RESOLUTIONS[aspect];
 
   return (
-    <section className="glass-card flex min-h-0 flex-col overflow-hidden rounded-2xl" data-tour="program-monitor">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-800 px-3 py-2">
+    <section className="studio-panel flex min-h-0 flex-1 flex-col overflow-hidden rounded-md" data-tour="program-monitor">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-studio-border px-3 py-2">
         <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
           Program Monitor
         </span>
@@ -3019,7 +3023,7 @@ function ProgramPreview() {
                 "shrink-0 rounded-md px-2 py-1 text-[10px] font-semibold transition-colors",
                 aspect === option
                   ? "brand-gradient text-white"
-                  : "border border-zinc-800 bg-zinc-950/60 text-zinc-400 hover:text-zinc-100"
+                  : "border border-studio-border bg-zinc-950/60 text-zinc-400 hover:text-zinc-100"
               )}
             >
               {option}
@@ -3039,7 +3043,7 @@ function ProgramPreview() {
             "shrink-0 rounded-md px-2 py-1 text-[10px] font-semibold transition-colors",
             hdRendering
               ? "bg-violet-600/20 text-violet-200 ring-1 ring-inset ring-violet-500/40"
-              : "border border-zinc-800 bg-zinc-950/60 text-zinc-500"
+              : "border border-studio-border bg-zinc-950/60 text-zinc-500"
           )}
         >
           HD
@@ -3053,7 +3057,7 @@ function ProgramPreview() {
             "shrink-0 rounded-md px-2 py-1 text-[10px] font-semibold transition-colors",
             canvasFill === "blur"
               ? "bg-violet-600/20 text-violet-200 ring-1 ring-inset ring-violet-500/40"
-              : "border border-zinc-800 bg-zinc-950/60 text-zinc-500"
+              : "border border-studio-border bg-zinc-950/60 text-zinc-500"
           )}
         >
           Blur Fill
@@ -3110,7 +3114,7 @@ function ProgramPreview() {
       </div>
 
       {/* Transport */}
-      <div className="space-y-2 border-t border-zinc-800 px-3 py-2" data-tour="transport">
+      <div className="space-y-2 border-t border-studio-border px-3 py-2" data-tour="transport">
         <div className="flex flex-wrap items-center gap-2">
           <span className="shrink-0 rounded bg-zinc-950 px-2 py-1 font-mono text-[11px] tabular-nums text-emerald-300 ring-1 ring-inset ring-zinc-800">
             {formatTimecode(currentTime, fps)} / {formatTimecode(duration, fps)}
@@ -3134,7 +3138,7 @@ function ProgramPreview() {
             disabled={!canUndo}
             aria-label="Undo"
             title="Undo (Ctrl+Z)"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-950/60 text-zinc-300 transition-colors hover:border-zinc-600 disabled:cursor-not-allowed disabled:opacity-40"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-studio-border bg-zinc-950/60 text-zinc-300 transition-colors hover:border-zinc-600 disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Undo2 className="h-3.5 w-3.5" aria-hidden />
           </button>
@@ -3144,7 +3148,7 @@ function ProgramPreview() {
             disabled={!canRedo}
             aria-label="Redo"
             title="Redo (Ctrl+Y)"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-950/60 text-zinc-300 transition-colors hover:border-zinc-600 disabled:cursor-not-allowed disabled:opacity-40"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-studio-border bg-zinc-950/60 text-zinc-300 transition-colors hover:border-zinc-600 disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Redo2 className="h-3.5 w-3.5" aria-hidden />
           </button>
@@ -3163,7 +3167,7 @@ function ProgramPreview() {
             aria-pressed={loop}
             className={cn(
               "inline-flex shrink-0 items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[11px]",
-              loop ? "border-violet-500/50 bg-violet-500/10 text-violet-200" : "border-zinc-800 bg-zinc-950/60 text-zinc-300"
+              loop ? "border-violet-500/50 bg-violet-500/10 text-violet-200" : "border-studio-border bg-zinc-950/60 text-zinc-300"
             )}
           >
             <Repeat className="h-3.5 w-3.5" aria-hidden /> Loop
@@ -3178,7 +3182,7 @@ function ProgramPreview() {
               "inline-flex shrink-0 items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[11px] disabled:opacity-40",
               markIn !== null
                 ? "border-sky-500/50 bg-sky-500/10 text-sky-200"
-                : "border-zinc-800 bg-zinc-950/60 text-zinc-300"
+                : "border-studio-border bg-zinc-950/60 text-zinc-300"
             )}
           >
             <Scissors className="h-3.5 w-3.5" aria-hidden /> Mark In
@@ -3195,7 +3199,7 @@ function ProgramPreview() {
               "inline-flex shrink-0 items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[11px] disabled:opacity-40",
               markOut !== null
                 ? "border-sky-500/50 bg-sky-500/10 text-sky-200"
-                : "border-zinc-800 bg-zinc-950/60 text-zinc-300"
+                : "border-studio-border bg-zinc-950/60 text-zinc-300"
             )}
           >
             <Scissors className="h-3.5 w-3.5 -scale-x-100" aria-hidden /> Mark Out
@@ -3208,7 +3212,7 @@ function ProgramPreview() {
               type="button"
               onClick={clearMarks}
               title="Clear In/Out marks"
-              className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-zinc-800 bg-zinc-950/60 px-2.5 py-1.5 text-[11px] text-zinc-400 transition-colors hover:border-zinc-600 hover:text-zinc-200"
+              className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-studio-border bg-zinc-950/60 px-2.5 py-1.5 text-[11px] text-zinc-400 transition-colors hover:border-zinc-600 hover:text-zinc-200"
             >
               Clear marks
             </button>
@@ -3366,7 +3370,7 @@ function LumetriPanel({
         "flex items-center gap-1.5 overflow-hidden rounded-lg border px-1.5 py-1.5 text-left text-[10px] transition-colors",
         presetId === preset.id
           ? "border-violet-500 bg-violet-600/15 text-violet-200"
-          : "border-zinc-800 bg-zinc-950/60 text-zinc-300 hover:border-zinc-600"
+          : "border-studio-border bg-zinc-950/60 text-zinc-300 hover:border-zinc-600"
       )}
     >
       <span
@@ -3382,7 +3386,7 @@ function LumetriPanel({
     <section
       className={cn(
         "flex min-h-0 flex-col overflow-hidden",
-        embedded ? "flex-1" : "glass-card rounded-2xl"
+        embedded ? "flex-1" : "studio-panel rounded-md"
       )}
       data-tour="lumetri-panel"
     >
@@ -3392,7 +3396,7 @@ function LumetriPanel({
 
           {/* Three compact sub-tabs so the panel never becomes a wall of sliders. */}
           <div
-            className="flex items-center gap-1 border-b border-zinc-800 px-2 py-1.5"
+            className="flex items-center gap-1 border-b border-studio-border px-2 py-1.5"
             role="tablist"
             aria-label="Lumetri sections"
             data-tour="lumetri-tabs"
@@ -3484,7 +3488,7 @@ function LumetriPanel({
               value={Math.round(adjustments[key])}
               onChange={(e) => setColorAdjustment({ [key]: Number(e.target.value) })}
               aria-label={`${label} value`}
-              className="w-14 shrink-0 rounded-md border border-zinc-800 bg-zinc-950 px-1.5 py-1 text-right text-[11px] tabular-nums text-zinc-100 focus:border-violet-500 focus:outline-none"
+              className="w-14 shrink-0 rounded-md border border-studio-border bg-zinc-950 px-1.5 py-1 text-right text-[11px] tabular-nums text-zinc-100 focus:border-violet-500 focus:outline-none"
             />
           </div>
         ))}
@@ -3492,7 +3496,7 @@ function LumetriPanel({
         <button
           type="button"
           onClick={resetColorAdjustments}
-          className="w-full rounded-lg border border-zinc-800 bg-zinc-950/60 px-2 py-2 text-[11px] text-zinc-300 transition-colors hover:border-zinc-600"
+          className="w-full rounded-lg border border-studio-border bg-zinc-950/60 px-2 py-2 text-[11px] text-zinc-300 transition-colors hover:border-zinc-600"
         >
           Reset Color Adjustments
         </button>
@@ -3510,7 +3514,7 @@ function LumetriPanel({
             <button
               type="button"
               onClick={() => setShowMore((v) => !v)}
-              className="rounded-md border border-zinc-800 bg-zinc-950/60 px-2 py-0.5 text-[10px] text-violet-300 transition-colors hover:border-zinc-600"
+              className="rounded-md border border-studio-border bg-zinc-950/60 px-2 py-0.5 text-[10px] text-violet-300 transition-colors hover:border-zinc-600"
             >
               {showMore ? "Less" : "More (+15)"}
             </button>
@@ -3570,7 +3574,7 @@ function LumetriPanel({
 /* Bottom: multi-track Premiere timeline                                */
 /* ------------------------------------------------------------------ */
 
-function PremiereTimeline() {
+export function PremiereTimeline() {
   const assets = useEditorStore((s) => s.assets);
   const sequence = useEditorStore((s) => s.sequence);
   const overlays = useEditorStore((s) => s.overlays);
@@ -3998,7 +4002,7 @@ function PremiereTimeline() {
     scroller.scrollLeft = Math.max(0, centreTime * pps - centre);
   }, [pps]);
 
-  const zoomTo = (next: number) => {
+  const zoomTo = useCallback((next: number) => {
     const clamped = Math.min(200, Math.max(12, Math.round(next)));
     if (clamped === pps) return;
     const scroller = scrollRef.current;
@@ -4006,7 +4010,25 @@ function PremiereTimeline() {
       pendingZoomCentre.current = (scroller.scrollLeft + scroller.clientWidth / 2) / pps;
     }
     setPps(clamped);
-  };
+  }, [pps]);
+
+  const zoomToRef = useRef(zoomTo);
+  const ppsRef = useRef(pps);
+  useEffect(() => {
+    zoomToRef.current = zoomTo;
+    ppsRef.current = pps;
+  }, [pps, zoomTo]);
+  useEffect(() => {
+    const handleZoom = (event: Event) => {
+      const detail = Number((event as CustomEvent<number>).detail);
+      if (Number.isFinite(detail)) {
+        zoomToRef.current(ppsRef.current + detail);
+      }
+    };
+    window.addEventListener("forgevyn:timeline-zoom", handleZoom);
+    return () =>
+      window.removeEventListener("forgevyn:timeline-zoom", handleZoom);
+  }, []);
 
   const audioByLane = (lane: number) =>
     audioTracks.filter((track, index) => trackLane(track, index) === lane);
@@ -4094,68 +4116,10 @@ function PremiereTimeline() {
     };
   }, [menu]);
 
-  const TrackHeader = ({ keyName }: { keyName: TrackKey }) => {
-    const t = trackStates[keyName];
-    const dimmed = isLaneDimmed(keyName, trackStates);
-    const btn =
-      "flex h-5 w-5 items-center justify-center rounded text-[9px] font-bold transition-colors";
-    const toggle = (field: TrackField) => setTrackFlag(keyName, field);
-    return (
-      <div
-        className={cn(
-          "relative flex h-12 w-24 shrink-0 items-center gap-1 border-b border-r border-zinc-800 bg-zinc-900/60 px-1.5",
-          dimmed && "opacity-55",
-          t.locked && "bg-amber-500/5 ring-1 ring-inset ring-amber-500/30"
-        )}
-      >
-        <span className="mr-0.5 w-6 shrink-0 text-[10px] font-semibold text-zinc-300">{keyName}</span>
-        <button type="button" aria-label={`Mute ${keyName}`} aria-pressed={t.muted} onClick={() => toggle("muted")} className={cn(btn, t.muted ? "bg-amber-500/30 text-amber-300" : "text-zinc-500 hover:text-zinc-200")}>M</button>
-        <button type="button" aria-label={`Solo ${keyName}`} aria-pressed={t.solo} onClick={() => toggle("solo")} className={cn(btn, t.solo ? "bg-sky-500/30 text-sky-300" : "text-zinc-500 hover:text-zinc-200")}>S</button>
-        <button
-          type="button"
-          aria-label={`${t.locked ? "Unlock" : "Lock"} ${keyName}`}
-          aria-pressed={t.locked}
-          title={t.locked ? "Track locked — edits blocked" : "Lock track"}
-          onClick={() => toggle("locked")}
-          className={cn(btn, t.locked ? "bg-amber-500/30 text-amber-300" : "text-zinc-500 hover:text-zinc-200")}
-        >
-          {t.locked ? <Lock className="h-3 w-3" aria-hidden /> : <Unlock className="h-3 w-3" aria-hidden />}
-        </button>
-        {keyName === "A2" ? (
-          <button
-            type="button"
-            aria-label={voiceRecording ? "Stop voiceover" : "Record voiceover"}
-            title="Record voiceover (microphone)"
-            onClick={() => void toggleVoiceover()}
-            className={cn(btn, voiceRecording ? "bg-red-500/30 text-red-300" : "text-zinc-500 hover:text-zinc-200")}
-          >
-            {voiceRecording ? <Square className="h-3 w-3" aria-hidden /> : <Mic className="h-3 w-3" aria-hidden />}
-          </button>
-        ) : (
-          <button
-            type="button"
-            aria-label={`${t.isVisible ? "Hide" : "Show"} ${keyName}`}
-            aria-pressed={!t.isVisible}
-            title={t.isVisible ? "Hide this lane (skip in preview + export)" : "Show this lane"}
-            onClick={() => toggle("isVisible")}
-            className={cn(btn, t.isVisible ? "text-zinc-500 hover:text-zinc-200" : "bg-zinc-500/20 text-amber-300")}
-          >
-            {t.isVisible ? <Eye className="h-3 w-3" aria-hidden /> : <EyeOff className="h-3 w-3" aria-hidden />}
-          </button>
-        )}
-        {keyName === "A2" && voiceRecording && (
-          <span className="absolute inset-x-1.5 bottom-0.5 h-0.5 overflow-hidden rounded-full bg-zinc-700">
-            <span className="block h-full bg-red-400" style={{ width: `${Math.round(voiceLevel * 100)}%` }} />
-          </span>
-        )}
-      </div>
-    );
-  };
-
   return (
-    <section className="glass-card flex min-h-0 flex-col overflow-hidden rounded-2xl" data-tour="timeline">
+    <section className="studio-panel flex min-h-0 flex-col overflow-hidden rounded-md" data-tour="timeline">
       {/* Timeline toolbar */}
-      <div className="flex items-center gap-2 border-b border-zinc-800 px-3 py-2" data-tour="timeline-toolbar">
+      <div className="flex items-center gap-2 border-b border-studio-border px-3 py-2" data-tour="timeline-toolbar">
         <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
           Timeline
         </span>
@@ -4174,7 +4138,7 @@ function PremiereTimeline() {
             onClick={() => {
               if (activeClipId) splitClip(activeClipId, currentTime);
             }}
-            className="inline-flex items-center gap-1 rounded-lg border border-zinc-800 bg-zinc-950/60 px-2 py-1 text-[10px] text-zinc-300 transition-colors hover:border-zinc-600 disabled:cursor-not-allowed disabled:opacity-40"
+            className="inline-flex items-center gap-1 rounded-lg border border-studio-border bg-zinc-950/60 px-2 py-1 text-[10px] text-zinc-300 transition-colors hover:border-zinc-600 disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Scissors className="h-3.5 w-3.5" aria-hidden /> Split
           </button>
@@ -4187,18 +4151,18 @@ function PremiereTimeline() {
             onClick={() => {
               if (activeClipId) rippleDeleteClip(activeClipId);
             }}
-            className="inline-flex items-center gap-1 rounded-lg border border-zinc-800 bg-zinc-950/60 px-2 py-1 text-[10px] text-zinc-300 transition-colors hover:border-zinc-600 disabled:cursor-not-allowed disabled:opacity-40"
+            className="inline-flex items-center gap-1 rounded-lg border border-studio-border bg-zinc-950/60 px-2 py-1 text-[10px] text-zinc-300 transition-colors hover:border-zinc-600 disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Trash2 className="h-3.5 w-3.5" aria-hidden /> Ripple Del
           </button>
         </div>
 
         <div className="ml-auto flex items-center gap-1.5" data-tour="timeline-zoom">
-          <button type="button" aria-label="Zoom out" onClick={() => zoomTo(pps - 12)} className="rounded-lg border border-zinc-800 bg-zinc-950/60 p-1.5 text-zinc-300 hover:border-zinc-600">
+          <button type="button" aria-label="Zoom out" onClick={() => zoomTo(pps - 12)} className="rounded-lg border border-studio-border bg-zinc-950/60 p-1.5 text-zinc-300 hover:border-zinc-600">
             <ZoomOut className="h-3.5 w-3.5" aria-hidden />
           </button>
           <input type="range" min={12} max={200} step={4} value={pps} onChange={(e) => zoomTo(Number(e.target.value))} aria-label="Timeline zoom" className="w-28 accent-violet-500" />
-          <button type="button" aria-label="Zoom in" onClick={() => zoomTo(pps + 12)} className="rounded-lg border border-zinc-800 bg-zinc-950/60 p-1.5 text-zinc-300 hover:border-zinc-600">
+          <button type="button" aria-label="Zoom in" onClick={() => zoomTo(pps + 12)} className="rounded-lg border border-studio-border bg-zinc-950/60 p-1.5 text-zinc-300 hover:border-zinc-600">
             <ZoomIn className="h-3.5 w-3.5" aria-hidden />
           </button>
         </div>
@@ -4207,9 +4171,18 @@ function PremiereTimeline() {
       <div className="flex min-h-0 flex-1">
         {/* Track headers column */}
         <div className="flex shrink-0 flex-col" data-tour="track-headers">
-          <div className="h-6 w-24 border-b border-r border-zinc-800 bg-zinc-900/60" />
+          <div className="h-6 w-24 border-b border-r border-studio-border bg-zinc-900/60" />
           {TRACK_KEYS.map((keyName) => (
-            <TrackHeader key={keyName} keyName={keyName} />
+            <StudioTrackHeader
+              key={keyName}
+              keyName={keyName}
+              track={trackStates[keyName]}
+              dimmed={isLaneDimmed(keyName, trackStates)}
+              voiceRecording={voiceRecording}
+              voiceLevel={voiceLevel}
+              onToggle={(field) => setTrackFlag(keyName, field)}
+              onToggleVoiceover={() => void toggleVoiceover()}
+            />
           ))}
         </div>
 
@@ -4218,7 +4191,9 @@ function PremiereTimeline() {
           <div className="relative" style={{ width: `${Math.max(timelineDuration * pps, 400)}px` }} ref={laneRef}>
             {/* Ruler */}
             <div
-              className="relative h-6 select-none border-b border-zinc-800 bg-zinc-900/40"
+              data-testid="timeline-ruler"
+              aria-label="Timeline timecode ruler"
+              className="relative h-6 select-none border-b border-studio-border bg-zinc-900/40"
               data-tour="timeline-ruler"
               onPointerDown={onScrubPointerDown}
               onPointerMove={onScrubPointerMove}
@@ -4226,7 +4201,7 @@ function PremiereTimeline() {
               {Array.from({ length: ticks + 1 }).map((_, i) => {
                 const t = i * 5;
                 return (
-                  <div key={i} className="absolute top-0 h-full border-l border-zinc-800 pl-1 text-[9px] tabular-nums text-zinc-500" style={{ left: `${t * pps}px` }}>
+                  <div key={i} className="absolute top-0 h-full border-l border-studio-border pl-1 text-[9px] tabular-nums text-zinc-500" style={{ left: `${t * pps}px` }}>
                     {formatTimecode(t, fps).slice(3, 8)}
                   </div>
                 );
@@ -4264,7 +4239,7 @@ function PremiereTimeline() {
             </div>
 
             {/* V3 — adjustment / effect layers (pink) */}
-            <div className={cn("relative h-12 border-b border-zinc-800 bg-zinc-950/40", isLaneDimmed("V3", trackStates) && "opacity-40")} data-tour="v3-lane">
+            <div className={cn("relative h-12 border-b border-studio-border bg-zinc-950/40", isLaneDimmed("V3", trackStates) && "opacity-40")} data-tour="v3-lane">
               {activeEffects.map((fx) => (
                 <div
                   key={fx.id}
@@ -4318,7 +4293,7 @@ function PremiereTimeline() {
             </div>
 
             {/* V2 — text / overlay layers (pink) */}
-            <div className={cn("relative h-12 border-b border-zinc-800 bg-zinc-950/40", isLaneDimmed("V2", trackStates) && "opacity-40")} data-tour="v2-lane">
+            <div className={cn("relative h-12 border-b border-studio-border bg-zinc-950/40", isLaneDimmed("V2", trackStates) && "opacity-40")} data-tour="v2-lane">
               {overlays.map((o) => (
                 <div
                   key={o.id}
@@ -4393,7 +4368,7 @@ function PremiereTimeline() {
             </div>
 
             {/* V1 — video clips (purple/blue) with trim handles */}
-            <div className={cn("relative h-12 border-b border-zinc-800 bg-zinc-950/40", isLaneDimmed("V1", trackStates) && "opacity-40")} data-tour="v1-lane">
+            <div className={cn("relative h-12 border-b border-studio-border bg-zinc-950/40", isLaneDimmed("V1", trackStates) && "opacity-40")} data-tour="v1-lane">
               {videoBlocks.map(({ clip, start, dur }) => {
                 const dragging = clipPreview?.id === clip.id;
                 const displayStart = dragging && clipPreview ? clipPreview.start : start;
@@ -4514,7 +4489,7 @@ function PremiereTimeline() {
                   key={keyName}
                   data-tour={keyName === "A1" ? "a1-lane" : undefined}
                   className={cn(
-                    "relative h-12 border-b border-zinc-800 bg-zinc-950/40",
+                    "relative h-12 border-b border-studio-border bg-zinc-950/40",
                     isLaneDimmed(keyName, trackStates) && "opacity-40",
                     laneState.locked && "ring-1 ring-inset ring-amber-500/20"
                   )}
@@ -4720,94 +4695,5 @@ function PremiereTimeline() {
         onClose={() => setTransitionClipId(null)}
       />
     </section>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-export function DesktopEditor({
-  onBatchExport,
-}: {
-  onBatchExport?: (clipIds: string[]) => void;
-}) {
-  // Global keyboard shortcuts: undo/redo, play/pause, frame step, marks, razor.
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      const target = event.target as HTMLElement | null;
-      if (target) {
-        const tag = target.tagName;
-        if (
-          tag === "INPUT" ||
-          tag === "TEXTAREA" ||
-          tag === "SELECT" ||
-          target.isContentEditable
-        ) {
-          return;
-        }
-      }
-      const state = useEditorStore.getState();
-      const key = event.key;
-      const lower = key.toLowerCase();
-
-      if (event.ctrlKey || event.metaKey) {
-        // Undo/redo are truly global (work on every screen size).
-        if (lower === "z" && !event.shiftKey) {
-          event.preventDefault();
-          state.undo();
-        } else if (lower === "y" || (lower === "z" && event.shiftKey)) {
-          event.preventDefault();
-          state.redo();
-        }
-        return;
-      }
-
-      // The remaining single-key shortcuts belong to the desktop workspace.
-      if (!window.matchMedia("(min-width: 768px)").matches) return;
-
-      if (key === " ") {
-        event.preventDefault();
-        if (state.videoEl) state.setPlaying(!state.playing);
-      } else if (key === "ArrowLeft") {
-        event.preventDefault();
-        state.stepFrame(-1);
-      } else if (key === "ArrowRight") {
-        event.preventDefault();
-        state.stepFrame(1);
-      } else if (lower === "i") {
-        event.preventDefault();
-        state.setMarkIn(state.currentTime);
-      } else if (lower === "o") {
-        event.preventDefault();
-        state.setMarkOut(state.currentTime);
-      } else if (lower === "s" && !event.shiftKey) {
-        // Razor: split the active clip at the playhead.
-        event.preventDefault();
-        state.splitActiveClip();
-      } else if (event.key === "Delete" && event.shiftKey) {
-        // Shift+Delete: ripple delete the active clip.
-        event.preventDefault();
-        if (state.activeClipId) state.rippleDeleteClip(state.activeClipId);
-      }
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
-
-  return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3">
-      <div
-        className="grid min-h-0 gap-3 lg:grid-cols-[236px_minmax(0,1fr)_256px] xl:grid-cols-[264px_minmax(0,1fr)_288px] 2xl:grid-cols-[300px_minmax(0,1fr)_320px]"
-        style={{ height: "min(66vh, 780px)", minHeight: 440 }}
-      >
-        {/* Left column: dedicated AI assistant placeholder + reserved ad slot. */}
-        <div className="flex min-h-0 flex-col gap-3">
-          <AIAssistantPanel />
-          <AdPlaceholder />
-        </div>
-        <ProgramPreview />
-        {/* Right column: unified inspector (categories → sub-tabs). */}
-        <InspectorPanel onBatchExport={onBatchExport} />
-      </div>
-      <PremiereTimeline />
-    </div>
   );
 }

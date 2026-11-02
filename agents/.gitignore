@@ -1,0 +1,22 @@
+# Python virtualenv
+.venv/
+venv/
+
+# Bytecode / caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Secrets — keep .env.example tracked
+.env
+.env.*
+!.env.example
+
+# CrewAI local state
+.crewai/
+storage/
+
+# Generated dev plans (--out)
+out/

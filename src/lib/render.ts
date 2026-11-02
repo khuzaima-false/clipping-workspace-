@@ -105,7 +105,13 @@ export type SceneConfig = {
    * multiplier and rotation in degrees). Resolved from the clip's keyframes at
    * the current source time by the caller.
    */
-  clipTransform?: { x: number; y: number; scale: number; rotation: number };
+  clipTransform?: {
+    x: number;
+    y: number;
+    scale: number;
+    rotation: number;
+    opacity?: number;
+  };
   /** Internal: mirror flags resolved from the active effect frame. */
   effectFlipX?: boolean;
   effectFlipY?: boolean;
@@ -1327,6 +1333,9 @@ function drawFrameTransformed(
     config.chromaKey?.enabled ? keyedVideoFrame(video, config.chromaKey) : video;
   // Per-clip transform (position / scale / rotation) around the frame centre.
   const clip = config.clipTransform;
+  if (clip?.opacity !== undefined) {
+    ctx.globalAlpha *= Math.max(0, Math.min(1, clip.opacity));
+  }
   if (
     clip &&
     (clip.x !== 0 || clip.y !== 0 || clip.scale !== 1 || clip.rotation !== 0)

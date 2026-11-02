@@ -34,6 +34,11 @@ import {
   type TrackKey,
   type TrackState,
 } from "@/lib/tracks";
+import {
+  isTauriEnvironment,
+  syncInspectorParams,
+  type InspectorParams,
+} from "@/lib/tauri";
 import { computeWaveformPeaks } from "@/lib/waveform-peaks";
 import type { CaptionLanguageId } from "@/lib/transcribe";
 
@@ -974,12 +979,16 @@ export type ClipTransform = {
   y: number;
   scale: number;
   rotation: number;
+  /** Frame opacity, 0..1. */
+  opacity: number;
 };
 
-export type ClipTransformKeyframe = ClipTransform & {
+export type ClipTransformKeyframe = Omit<ClipTransform, "opacity"> & {
   id: string;
   /** Source-time position (seconds) of the keyframe. */
   time: number;
+  /** Optional for projects created before clip opacity support. */
+  opacity?: number;
 };
 
 export const DEFAULT_CLIP_TRANSFORM: ClipTransform = {
@@ -987,6 +996,7 @@ export const DEFAULT_CLIP_TRANSFORM: ClipTransform = {
   y: 0,
   scale: 1,
   rotation: 0,
+  opacity: 1,
 };
 
 /**
@@ -1011,6 +1021,7 @@ export function resolveClipTransform(
     y: frame.y,
     scale: frame.scale,
     rotation: frame.rotation,
+    opacity: frame.opacity ?? 1,
   });
 
   if (sourceTime <= frames[0].time) return poseOf(frames[0]);
@@ -1029,10 +1040,47 @@ export function resolveClipTransform(
         y: mix(a.y, b.y),
         scale: mix(a.scale, b.scale),
         rotation: mix(a.rotation, b.rotation),
+        opacity: mix(a.opacity ?? 1, b.opacity ?? 1),
       };
     }
   }
   return base;
+}
+
+type InspectorSyncSource = {
+  activeClipId: string | null;
+  sequence: TimelineClip[];
+  currentTime: number;
+  colorWheels: ColorWheels;
+};
+
+let inspectorSyncTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Debounced, Tauri-only mirror of the Inspector parameters. */
+function queueInspectorSync(state: InspectorSyncSource): void {
+  if (!isTauriEnvironment()) return;
+  if (inspectorSyncTimer) clearTimeout(inspectorSyncTimer);
+  inspectorSyncTimer = setTimeout(() => {
+    const activeClip =
+      state.sequence.find((clip) => clip.id === state.activeClipId) ?? null;
+    const transform = resolveClipTransform(activeClip, state.currentTime);
+    const params: InspectorParams = {
+      clipId: activeClip?.id ?? null,
+      transform: {
+        x: transform.x,
+        y: transform.y,
+        scale: transform.scale,
+        rotation: transform.rotation,
+        opacity: transform.opacity,
+      },
+      colorWheels: {
+        lift: { ...state.colorWheels.lift },
+        gamma: { ...state.colorWheels.gamma },
+        gain: { ...state.colorWheels.gain },
+      },
+    };
+    void syncInspectorParams(params);
+  }, 60);
 }
 
 function createOverlay(duration: number): TextOverlay {
@@ -2523,6 +2571,7 @@ export const useEditorStore = create<EditorState>()(
         ),
       });
       persistProject(get());
+      queueInspectorSync(get());
       return;
     }
 
@@ -2542,6 +2591,7 @@ export const useEditorStore = create<EditorState>()(
       ),
     });
     persistProject(get());
+    queueInspectorSync(get());
   },
 
   addClipTransformKeyframe: (clipId) => {
@@ -2564,6 +2614,7 @@ export const useEditorStore = create<EditorState>()(
       ),
     });
     persistProject(get());
+    queueInspectorSync(get());
   },
 
   removeClipTransformKeyframe: (clipId, keyframeId) => {
@@ -2581,6 +2632,7 @@ export const useEditorStore = create<EditorState>()(
       ),
     });
     persistProject(get());
+    queueInspectorSync(get());
   },
 
   clearClipTransformKeyframes: (clipId) => {
@@ -2591,6 +2643,7 @@ export const useEditorStore = create<EditorState>()(
       ),
     });
     persistProject(get());
+    queueInspectorSync(get());
   },
 
   setClipTransition: (clipId, type, duration) => {
@@ -3060,22 +3113,27 @@ export const useEditorStore = create<EditorState>()(
         },
       },
     });
+    queueInspectorSync(get());
   },
 
-  resetColorWheel: (region) =>
+  resetColorWheel: (region) => {
     set({
       colorWheels: {
         ...get().colorWheels,
         // Replace (not merge) so any legacy trims are cleared too.
         [region]: { x: 0, y: 0 },
       },
-    }),
+    });
+    queueInspectorSync(get());
+  },
 
-  resetColorAdjustments: () =>
+  resetColorAdjustments: () => {
     set({
       colorAdjustments: DEFAULT_COLOR_ADJUSTMENTS,
       colorWheels: DEFAULT_COLOR_WHEELS,
-    }),
+    });
+    queueInspectorSync(get());
+  },
 
   addAudioFiles: async (files) => {
     const list = Array.from(files).filter(

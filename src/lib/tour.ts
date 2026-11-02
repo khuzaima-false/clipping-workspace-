@@ -38,7 +38,7 @@ const LEFT_STEPS: TourStep[] = [
   {
     target: "inspector-panel",
     title: "🎛️ The Inspector",
-    body: "Every editing tool now lives in one place on the right: colour grading, media, effects, clip properties and text/captions. The left column is reserved for the upcoming DeepSeek AI assistant, so the workspace stays symmetric.",
+    body: "Every editing tool now lives in one place on the right: colour grading, media, effects, clip properties and text/captions. The left panel keeps the Media Pool, Effects and DeepSeek AI tabs together, so the workspace stays symmetric.",
     placement: "left",
   },
   {
@@ -51,13 +51,13 @@ const LEFT_STEPS: TourStep[] = [
     target: "media-bin",
     open: ["inspector-cat-media", "inspector-sub-media-library"],
     title: "Media › Library",
-    body: "Import MP4/WebM files (multi-select supported) from the pinned action bar, then scroll the media bin below it independently — the list keeps its own scrollbar so long sequences never push the panel or the reserved ad space out of place. Each row shows its trimmed length, a checkbox for batch export, and a trash icon to remove it.",
+    body: "Import MP4/WebM files (multi-select supported) from the pinned action bar, then scroll the media bin below it independently — the list keeps its own scrollbar so long sequences never push the panel out of place. Each row shows its trimmed length, a checkbox for batch export, and a trash icon to remove it.",
     placement: "left",
   },
   {
-    target: "ai-panel",
-    title: "✨ AI Assistant — Coming Soon",
-    body: "The entire left column is now a dedicated AI container, sized and styled for the upcoming DeepSeek integration (script-to-timeline, smart cuts, caption rewrites and prompt-driven edits). It's a placeholder today; every editing tool has moved to the Inspector on the right.",
+    target: "studio-left-panel",
+    title: "Left panel & AI assistant",
+    body: "Media Pool, Effects and DeepSeek AI now share one high-density left panel. Import clips, add effects, or open the DeepSeek AI tab for the upcoming script-to-timeline and prompt-driven editing tools. The Inspector on the right still owns clip transforms and colour.",
     placement: "right",
   },
   {

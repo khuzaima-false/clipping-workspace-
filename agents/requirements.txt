@@ -1,0 +1,10 @@
+# CrewAI dev-team CLI for Forgevyn.
+# Requires Python 3.10–3.13 (CrewAI 1.15.33 is not compatible with 3.14+).
+crewai[litellm]==1.15.33
+crewai-tools==1.15.33
+json-repair==0.60.1
+python-dotenv==1.2.4
+
+# LLM provider SDK. Keep <3 to match crewai's own constraint.
+openai>=2.30.0,<3.0.0
+pydantic>=2.11.9,<2.13.0

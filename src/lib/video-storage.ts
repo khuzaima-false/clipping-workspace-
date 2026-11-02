@@ -120,7 +120,13 @@ export type TimelineClip = {
    * Base transform for the clip's video frame: `x`/`y` are percentage offsets
    * from centre, `scale` is a multiplier and `rotation` is in degrees.
    */
-  transform?: { x: number; y: number; scale: number; rotation: number };
+  transform?: {
+    x: number;
+    y: number;
+    scale: number;
+    rotation: number;
+    opacity?: number;
+  };
   /** Animated transform keyframes, timed in source seconds. */
   transformKeyframes?: {
     id: string;
@@ -129,6 +135,7 @@ export type TimelineClip = {
     y: number;
     scale: number;
     rotation: number;
+    opacity?: number;
   }[];
 };
 

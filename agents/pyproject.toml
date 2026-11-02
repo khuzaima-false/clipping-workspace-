@@ -1,0 +1,5 @@
+[tool.ruff]
+# CrewAI supports Python 3.10-3.13; keep the code compatible with 3.10.
+target-version = "py310"
+exclude = ["archive", ".venv", "out"]
+line-length = 100
