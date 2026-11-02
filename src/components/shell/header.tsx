@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SignOutButton } from "@/components/auth/sign-out-button";
+import { AuthModal } from "@/components/auth/auth-modal";
 import { Logo } from "@/components/ui/logo";
 import { useWorkspaceStore } from "@/store/workspace";
 import { useAuth } from "@/hooks/use-auth";
@@ -35,6 +36,8 @@ export function Header({ onMenuClick, variant = "default" }: HeaderProps) {
   const desktop = useIsTauri();
   const [channelOpen, setChannelOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [authOpen, setAuthOpen] = useState(false);
+  const [cloudSignedIn, setCloudSignedIn] = useState(false);
 
   const channels = useWorkspaceStore((state) => state.channels);
   const activeChannelId = useWorkspaceStore((state) => state.activeChannelId);
@@ -103,7 +106,7 @@ export function Header({ onMenuClick, variant = "default" }: HeaderProps) {
 
       {/* Brand — in the studio it is the only left-side element. */}
       <Link
-        href={desktop ? "/editor" : "/dashboard"}
+        href="/dashboard"
         aria-label="Forgevyn Clipping home"
         className={cn("flex items-center", !isEditor && "lg:hidden")}
       >
@@ -240,23 +243,34 @@ export function Header({ onMenuClick, variant = "default" }: HeaderProps) {
       {/* Desktop shell: local identity, never a cloud sign-in wall.
           Web: user profile menu, or a sign-in CTA when signed out. */}
       {isLocalDesktop ? (
-        <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-zinc-800 bg-zinc-900 px-2.5 py-1 text-xs font-medium text-zinc-400">
-          <HardDrive className="h-3.5 w-3.5 text-emerald-400" aria-hidden />
-          Local
-        </span>
+        <div className="flex shrink-0 items-center gap-2">
+          <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-zinc-800 bg-zinc-900 px-2.5 py-1 text-xs font-medium text-zinc-400">
+            <HardDrive className="h-3.5 w-3.5 text-emerald-400" aria-hidden />
+            Local
+          </span>
+          <button
+            type="button"
+            onClick={() => setAuthOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-900/70 px-2.5 py-1.5 text-xs font-medium text-zinc-300 transition-colors hover:border-violet-500/60 hover:text-white"
+          >
+            <LogIn className="h-3.5 w-3.5" aria-hidden />
+            {cloudSignedIn ? "Cloud linked" : "Cloud sign-in"}
+          </button>
+        </div>
       ) : authLoading ? (
         <span
           aria-hidden
           className="h-8 w-8 animate-pulse rounded-full border border-zinc-800 bg-zinc-900"
         />
       ) : !isAuthenticated ? (
-        <Link
-          href="/login"
+        <button
+          type="button"
+          onClick={() => setAuthOpen(true)}
           className="inline-flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-violet-500"
         >
           <LogIn className="h-4 w-4" aria-hidden />
           Sign in
-        </Link>
+        </button>
       ) : (
         <div className="relative" ref={profileRef}>
         <button
@@ -306,6 +320,12 @@ export function Header({ onMenuClick, variant = "default" }: HeaderProps) {
         )}
         </div>
       )}
+
+      <AuthModal
+        open={authOpen}
+        onClose={() => setAuthOpen(false)}
+        onAuthenticated={() => setCloudSignedIn(true)}
+      />
     </header>
   );
 }

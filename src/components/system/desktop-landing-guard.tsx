@@ -3,7 +3,8 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useIsTauri } from "@/hooks/use-is-tauri";
-import { getOrCreateLocalProject } from "@/lib/local-projects";
+import { activeLocalProjectId } from "@/lib/local-projects";
+import { resolveStartupHref } from "@/lib/startup-router";
 
 /**
  * Landing-page desktop gate.
@@ -11,7 +12,7 @@ import { getOrCreateLocalProject } from "@/lib/local-projects";
  * The inline head script already redirects before first paint; this component
  * is the React-level guarantee. In the desktop shell it renders a solid black
  * launch screen (so no marketing HTML can remain visible) and replaces the
- * route with the local editor project. In a browser it renders nothing.
+ * route with the remembered project or the Project Manager dashboard.
  */
 export function DesktopLandingGuard() {
   const isDesktop = useIsTauri();
@@ -19,7 +20,7 @@ export function DesktopLandingGuard() {
 
   useEffect(() => {
     if (!isDesktop) return;
-    router.replace(`/editor?id=${getOrCreateLocalProject()}`);
+    router.replace(resolveStartupHref(activeLocalProjectId()));
   }, [isDesktop, router]);
 
   if (!isDesktop) return null;

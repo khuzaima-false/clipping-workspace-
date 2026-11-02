@@ -36,7 +36,6 @@ import { ExportDialog, type ExportRun } from "@/components/editor/export-dialog"
 import { useAutosave } from "@/hooks/use-autosave";
 import {
   buildLocalProject,
-  getOrCreateLocalProject,
   isLocalProjectId,
   rememberLocalProject,
   renameLocalProject,
@@ -108,7 +107,7 @@ function EditorView() {
       // Desktop shell: never contact the cloud. A cloud project id arriving
       // from a stale bookmark/link is swapped for the local desktop project.
       if (isTauriEnvironment() && !isLocalProjectId(projectId)) {
-        router.replace(`/editor?id=${getOrCreateLocalProject()}`);
+        router.replace("/dashboard");
         return;
       }
 
@@ -164,56 +163,11 @@ function EditorView() {
     };
   }, [projectId, router]);
 
-  // No project id: jump straight into the most recent project so the landing
-  // CTA opens real work. With no account or no projects, seed a browser demo
-  // project instead of dead-ending on "No project selected".
+  // No project id: the Project Manager dashboard is the launch surface.
+  // A project is opened explicitly with ?id=<project-id>.
   useEffect(() => {
     if (projectId) return;
-    let cancelled = false;
-
-    async function openLatest() {
-      // Desktop shell: fully local-first — no session lookup, no network.
-      if (isTauriEnvironment()) {
-        if (!cancelled) {
-          router.replace(`/editor?id=${getOrCreateLocalProject()}`);
-        }
-        return;
-      }
-
-      try {
-        const supabase = createClient();
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-        if (cancelled) return;
-        if (!user) {
-          router.replace(`/editor?id=${getOrCreateLocalProject()}`);
-          return;
-        }
-        const { data } = await supabase
-          .from("projects")
-          .select("id")
-          .eq("user_id", user.id)
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        if (cancelled) return;
-        router.replace(
-          data?.id ? `/editor?id=${data.id}` : `/editor?id=${getOrCreateLocalProject()}`
-        );
-      } catch {
-        // Supabase unavailable (offline or not configured) — the studio still
-        // works locally, so open a demo project rather than an empty state.
-        if (!cancelled) {
-          router.replace(`/editor?id=${getOrCreateLocalProject()}`);
-        }
-      }
-    }
-
-    void openLatest();
-    return () => {
-      cancelled = true;
-    };
+    router.replace("/dashboard");
   }, [projectId, router]);
 
   // Load the project's media library + clip sequence from IndexedDB.
@@ -537,7 +491,10 @@ function EditorView() {
   return (
     <div className="flex h-full min-h-0 w-full max-w-full min-w-0 flex-col gap-4 max-md:overflow-x-hidden md:h-full md:min-h-0">
       {/* Top bar */}
-      <div className="flex w-full max-w-full min-w-0 flex-wrap items-center gap-3 max-md:overflow-hidden">
+      <div
+        data-tour="header-bar"
+        className="flex w-full max-w-full min-w-0 flex-wrap items-center gap-3 max-md:overflow-hidden"
+      >
         <div className="min-w-0 flex-1" data-tour="editor-title">
           {loading ? (
             <Skeleton className="h-6 w-48" />

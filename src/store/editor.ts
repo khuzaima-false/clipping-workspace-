@@ -8,6 +8,7 @@ import {
   saveVideoSource,
   type StoredAssetMeta,
   type StoredAudio,
+  type ProjectMedia,
   type TimelineClip,
   type TransitionType,
   type VideoAsset,
@@ -39,6 +40,23 @@ import {
   syncInspectorParams,
   type InspectorParams,
 } from "@/lib/tauri";
+import {
+  createLocalProject,
+  getLocalProjectRecord,
+  updateLocalProjectRecord,
+} from "@/lib/local-projects";
+import {
+  createProjectDirectory,
+  getProjectParent,
+  loadProjectManifest,
+  saveProjectManifest,
+} from "@/lib/project-fs";
+import {
+  deserializeProject,
+  downloadProjectFile,
+  readProjectFile,
+  serializeProject,
+} from "@/lib/project-file";
 import { computeWaveformPeaks } from "@/lib/waveform-peaks";
 import type { CaptionLanguageId } from "@/lib/transcribe";
 
@@ -1140,6 +1158,8 @@ type EditorState = {
 
   /** Active project id — keys the locally persisted source video. */
   projectId: string | null;
+  /** Monotonic switch id used to discard stale async project loads. */
+  projectEpoch: number;
   /** True when a project is open but its source video isn't stored locally. */
   videoMissing: boolean;
   /** True while restoring a persisted source video from IndexedDB. */
@@ -1302,6 +1322,14 @@ type EditorState = {
   setSaveStatus: (status: SaveStatus) => void;
   /** Forces an immediate IndexedDB checkpoint of the active project. */
   checkpoint: () => Promise<void>;
+  /** Downloads the current project as a portable `.forgevyn` JSON file. */
+  exportProjectFile: () => Promise<void>;
+  /** Imports a `.forgevyn` file into a NEW local project (non-destructive). */
+  importProjectFile: (file: File) => Promise<{
+    ok: boolean;
+    newProjectId?: string;
+    error?: string;
+  }>;
   resetEditor: () => void;
   seek: (time: number) => void;
   /** Moves the playhead by `delta` frames (negative steps backwards). */
@@ -1422,10 +1450,8 @@ function isVideoFile(file: File): boolean {
   );
 }
 
-/** Serializes the project's media metadata to IndexedDB (best-effort). */
-function persistProject(state: EditorState): Promise<void> {
-  if (!state.projectId) return Promise.resolve();
-  const token = ++checkpointToken;
+/** Serializes the current edit state into the portable media shape. */
+function projectMediaFromState(state: EditorState): ProjectMedia {
   const assetMeta: StoredAssetMeta[] = state.assets.map(
     ({ id, mediaId, name, type, size, updatedAt }) => ({
       id,
@@ -1437,7 +1463,22 @@ function persistProject(state: EditorState): Promise<void> {
     })
   );
   const audioMeta: StoredAudio[] = state.audioTracks.map(
-    ({ id, mediaId, name, startTime, volume, trimStart, duration, muted, solo, fadeIn, fadeOut, synth, lane, peaks }) => ({
+    ({
+      id,
+      mediaId,
+      name,
+      startTime,
+      volume,
+      trimStart,
+      duration,
+      muted,
+      solo,
+      fadeIn,
+      fadeOut,
+      synth,
+      lane,
+      peaks,
+    }) => ({
       id,
       mediaId,
       name,
@@ -1454,7 +1495,7 @@ function persistProject(state: EditorState): Promise<void> {
       peaks,
     })
   );
-  return saveProjectMedia(state.projectId, {
+  return {
     assets: assetMeta,
     sequence: state.sequence,
     overlays: state.overlays,
@@ -1462,15 +1503,55 @@ function persistProject(state: EditorState): Promise<void> {
     trackStates: state.trackStates,
     currentTime: state.currentTime,
     savedAt: Date.now(),
-  })
+  };
+}
+
+/** Mirrors the latest checkpoint into `<project>/.forgevyn/project.forgevyn`. */
+async function syncProjectManifest(
+  projectId: string,
+  media: ProjectMedia
+): Promise<void> {
+  const record = getLocalProjectRecord(projectId);
+  if (!record?.manifestPath) return;
+  const file = serializeProject({
+    id: projectId,
+    title: record.title,
+    settings: {
+      storageMode: record.storageMode,
+      rootPath: record.rootPath,
+    },
+    media,
+  });
+  await saveProjectManifest(record.manifestPath, file);
+}
+
+/** Serializes the project's media metadata to IndexedDB (best-effort). */
+function persistProject(state: EditorState): Promise<void> {
+  if (!state.projectId) return Promise.resolve();
+  const token = ++checkpointToken;
+  const projectId = state.projectId;
+  const projectEpoch = state.projectEpoch;
+  const media = projectMediaFromState(state);
+  return saveProjectMedia(projectId, media)
     .then(() => {
-      if (token === checkpointToken) {
+      const current = useEditorStore.getState();
+      if (
+        token === checkpointToken &&
+        current.projectId === projectId &&
+        current.projectEpoch === projectEpoch
+      ) {
         useEditorStore.setState({ saveStatus: "saved" });
       }
+      void syncProjectManifest(projectId, media);
     })
     .catch(() => {
       // IndexedDB can fail (quota / private mode); the session still works.
-      if (token === checkpointToken) {
+      const current = useEditorStore.getState();
+      if (
+        token === checkpointToken &&
+        current.projectId === projectId &&
+        current.projectEpoch === projectEpoch
+      ) {
         useEditorStore.setState({ saveStatus: "unsaved" });
       }
     });
@@ -1623,6 +1704,7 @@ export const useEditorStore = create<EditorState>()(
   videoError: null,
 
   projectId: null,
+  projectEpoch: 0,
   videoMissing: false,
   videoRestoring: false,
 
@@ -1672,6 +1754,61 @@ export const useEditorStore = create<EditorState>()(
       return;
     }
     await persistProject(state);
+  },
+  exportProjectFile: async () => {
+    const state = get();
+    if (!state.projectId) return;
+    const record = getLocalProjectRecord(state.projectId);
+    const file = serializeProject({
+      id: state.projectId,
+      title: record?.title ?? "Forgevyn Project",
+      settings: {
+        storageMode: record?.storageMode ?? "browser",
+        rootPath: record?.rootPath,
+      },
+      media: projectMediaFromState(state),
+    });
+    downloadProjectFile(file);
+  },
+  importProjectFile: async (file) => {
+    const parsed = await readProjectFile(file);
+    if (!parsed.ok) return { ok: false, error: parsed.error };
+
+    const storageMode = isTauriEnvironment() ? "app" : "browser";
+    const id = createLocalProject({
+      title: parsed.file.title,
+      storageMode,
+      status: "draft",
+    });
+    await saveProjectMedia(id, parsed.file.timeline);
+
+    if (isTauriEnvironment()) {
+      const parent = await getProjectParent("app");
+      if (parent) {
+        const directory = await createProjectDirectory(parent, parsed.file.title);
+        if (directory) {
+          updateLocalProjectRecord(id, {
+            storageMode: "app",
+            rootPath: directory.path,
+            manifestPath: directory.projectJsonPath,
+            updatedAt: Date.now(),
+          });
+          const manifest = serializeProject({
+            id,
+            title: parsed.file.title,
+            settings: {
+              storageMode: "app",
+              rootPath: directory.path,
+              importedFrom: file.name,
+            },
+            media: parsed.file.timeline,
+          });
+          await saveProjectManifest(directory.projectJsonPath, manifest);
+        }
+      }
+    }
+
+    return { ok: true, newProjectId: id };
   },
   colorAdjustments: DEFAULT_COLOR_ADJUSTMENTS,
   colorWheels: DEFAULT_COLOR_WHEELS,
@@ -2174,10 +2311,26 @@ export const useEditorStore = create<EditorState>()(
   setCaptionLanguage: (language) => set({ captionLanguage: language }),
 
   loadProjectMedia: async (projectId) => {
-    set({ projectId, assetsLoading: true });
+    const epoch = get().projectEpoch + 1;
+    set({ projectId, projectEpoch: epoch, assetsLoading: true });
     try {
-      const media = await loadProjectMedia(projectId);
-      if (get().projectId !== projectId) return;
+      let media = await loadProjectMedia(projectId);
+      if (get().projectEpoch !== epoch) return;
+
+      // Desktop projects also mirror their edit metadata into
+      // <root>/.forgevyn/project.forgevyn. If IndexedDB was cleared, recover the
+      // timeline from that portable manifest instead of starting empty.
+      const record = getLocalProjectRecord(projectId);
+      if (
+        record?.manifestPath &&
+        media.assets.length === 0 &&
+        media.sequence.length === 0
+      ) {
+        const raw = await loadProjectManifest(record.manifestPath);
+        const parsed = deserializeProject(raw);
+        if (parsed.ok) media = parsed.file.timeline;
+      }
+      if (get().projectEpoch !== epoch) return;
 
       // Rehydrate asset blobs from media storage (migrating legacy inline blobs).
       const assets: VideoAsset[] = [];
@@ -2251,6 +2404,7 @@ export const useEditorStore = create<EditorState>()(
         });
       }
 
+      if (get().projectEpoch !== epoch) return;
       set({
         assets,
         sequence,
@@ -2274,6 +2428,7 @@ export const useEditorStore = create<EditorState>()(
                 firstClip.trimEnd
               )
             : null;
+        if (get().projectEpoch !== epoch) return;
         set({
           activeClipId: firstClip.id,
           pendingTrim: {
@@ -2289,7 +2444,9 @@ export const useEditorStore = create<EditorState>()(
       }
       if (assets.length === 0) set({ videoMissing: true });
     } catch {
-      set({ assetsLoading: false, videoMissing: true });
+      if (get().projectEpoch === epoch) {
+        set({ assetsLoading: false, videoMissing: true });
+      }
     }
   },
 
@@ -2752,6 +2909,7 @@ export const useEditorStore = create<EditorState>()(
       videoName: null,
       videoError: null,
       projectId: null,
+      projectEpoch: get().projectEpoch + 1,
       videoMissing: false,
       videoRestoring: false,
       assets: [],

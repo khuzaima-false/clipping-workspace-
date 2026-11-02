@@ -14,6 +14,11 @@ import {
   X,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import {
+  deleteLocalProject,
+  isLocalProjectId,
+  renameLocalProject,
+} from "@/lib/local-projects";
 import { useWorkspaceStore } from "@/store/workspace";
 import { useProjectsStore } from "@/store/projects";
 import type { Project } from "@/types/database";
@@ -138,6 +143,12 @@ export default function ProjectsPage() {
     setRenameBusy(true);
     setRenameError(null);
     try {
+      if (isLocalProjectId(renaming.id)) {
+        renameLocalProject(renaming.id, title);
+        setRenaming(null);
+        await loadProjects();
+        return;
+      }
       const supabase = createClient();
       const {
         data: { user },
@@ -168,6 +179,12 @@ export default function ProjectsPage() {
     setDeleteBusy(true);
     setDeleteError(null);
     try {
+      if (isLocalProjectId(deleting.id)) {
+        deleteLocalProject(deleting.id);
+        setDeleting(null);
+        await loadProjects();
+        return;
+      }
       const supabase = createClient();
       const {
         data: { user },

@@ -4,6 +4,7 @@ import { useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { AlertCircle, CheckCircle2, Gift, Loader2, LogIn, UserPlus } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { persistAuthSession } from "@/lib/auth-session";
 
 type Mode = "sign-in" | "sign-up";
 
@@ -25,7 +26,16 @@ function getReferrerServerSnapshot(): string | null {
   return null;
 }
 
-export function LoginForm() {
+export function LoginForm({
+  onAuthenticated,
+  redirectTo = "/dashboard",
+  embedded = false,
+}: {
+  onAuthenticated?: () => void;
+  /** Set to null when hosted in a modal that should close in place. */
+  redirectTo?: string | null;
+  embedded?: boolean;
+} = {}) {
   const router = useRouter();
 
   const [mode, setMode] = useState<Mode>("sign-in");
@@ -77,9 +87,17 @@ export function LoginForm() {
         }
 
         if (data.session) {
-          setBanner({ tone: "success", message: "Signed in. Redirecting…" });
-          router.push("/dashboard");
-          router.refresh();
+          void persistAuthSession({
+            accessToken: data.session.access_token,
+            refreshToken: data.session.refresh_token,
+            email: data.user?.email ?? undefined,
+          });
+          onAuthenticated?.();
+          setBanner({ tone: "success", message: "Signed in." });
+          if (redirectTo) {
+            router.push(redirectTo);
+            router.refresh();
+          }
         }
       } else {
         const { data, error } = await supabase.auth.signUp({
@@ -100,9 +118,17 @@ export function LoginForm() {
 
         if (data.session) {
           // Email confirmation disabled: session issued immediately.
-          setBanner({ tone: "success", message: "Account created. Redirecting…" });
-          router.push("/dashboard");
-          router.refresh();
+          void persistAuthSession({
+            accessToken: data.session.access_token,
+            refreshToken: data.session.refresh_token,
+            email: data.user?.email ?? undefined,
+          });
+          onAuthenticated?.();
+          setBanner({ tone: "success", message: "Account created." });
+          if (redirectTo) {
+            router.push(redirectTo);
+            router.refresh();
+          }
         } else {
           setBanner({
             tone: "success",
@@ -127,7 +153,7 @@ export function LoginForm() {
   const isSignIn = mode === "sign-in";
 
   return (
-    <div className="glass-card w-full max-w-md rounded-2xl p-6 shadow-2xl shadow-black/40 sm:p-8">
+    <div className={embedded ? "w-full" : "glass-card w-full max-w-md rounded-2xl p-6 shadow-2xl shadow-black/40 sm:p-8"}>
       <div className="mb-6">
         <h1 className="text-xl font-semibold tracking-tight text-zinc-50">
           {isSignIn ? "Welcome back" : "Create your account"}

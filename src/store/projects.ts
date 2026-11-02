@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { createClient } from "@/lib/supabase/client";
 import { isTauriEnvironment } from "@/lib/tauri";
+import { listLocalProjects } from "@/lib/local-projects";
 import type { Project } from "@/types/database";
 
 type ProjectsState = {
@@ -24,9 +25,11 @@ export const useProjectsStore = create<ProjectsState>((set) => ({
   setProjects: (projects) => set({ projects, error: null }),
 
   loadProjects: async () => {
-    // Desktop shell is local-first: projects live in IndexedDB, never Supabase.
+    const localProjects = listLocalProjects();
+    // Desktop shell is local-first: projects live in localStorage/IndexedDB,
+    // never Supabase.
     if (isTauriEnvironment()) {
-      set({ projects: [], loading: false, error: null });
+      set({ projects: localProjects, loading: false, error: null });
       return;
     }
     set({ loading: true, error: null });
@@ -38,11 +41,9 @@ export const useProjectsStore = create<ProjectsState>((set) => ({
       } = await supabase.auth.getUser();
 
       if (!user) {
-        set({
-          projects: [],
-          loading: false,
-          error: "You must be signed in to view projects.",
-        });
+        // Signed-out visitors still get their browser-local projects; the
+        // dashboard is now a first-class landing surface, not a login wall.
+        set({ projects: localProjects, loading: false, error: null });
         return;
       }
 
@@ -55,9 +56,21 @@ export const useProjectsStore = create<ProjectsState>((set) => ({
 
       if (error) throw new Error(error.message);
 
-      set({ projects: (data ?? []) as Project[], loading: false, error: null });
+      const merged = new Map<string, Project>();
+      for (const project of [
+        ...((data ?? []) as Project[]),
+        ...localProjects,
+      ]) {
+        merged.set(project.id, project);
+      }
+      const projects = [...merged.values()].sort(
+        (a, b) =>
+          new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+      );
+      set({ projects, loading: false, error: null });
     } catch (err) {
       set({
+        projects: localProjects,
         loading: false,
         error: err instanceof Error ? err.message : "Failed to load projects.",
       });

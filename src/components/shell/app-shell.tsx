@@ -1,18 +1,40 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { Sidebar } from "./sidebar";
 import { Header } from "./header";
+import { useIsTauri } from "@/hooks/use-is-tauri";
 import { cn } from "@/lib/utils";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const pathname = usePathname();
+  const desktop = useIsTauri();
+
+  useEffect(() => {
+    if (desktop) {
+      document.documentElement.removeAttribute("data-tauri-entry");
+    }
+  }, [desktop]);
 
   // The studio is a full-bleed workspace: no nav rail, a slim header, and no
   // max-width cap so the program monitor can use every available pixel.
   const isEditor = pathname?.startsWith("/editor") ?? false;
+
+  // Packaged app: no web sidebar, search bar, marketing header, or login rail.
+  // The dashboard and editor provide their own native top surfaces.
+  if (desktop) {
+    return (
+      <div className="relative flex h-dvh max-h-dvh w-full flex-col overflow-hidden bg-studio-bg text-zinc-100">
+        <main className="relative min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
+          <div className="relative mx-auto h-full w-full max-w-none">
+            {children}
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="relative flex h-dvh max-h-dvh w-full max-w-full overflow-hidden bg-zinc-950 text-zinc-100">

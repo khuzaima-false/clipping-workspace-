@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   AudioLines,
   Download,
@@ -114,7 +115,10 @@ export function EditorMenuBar({
   const [open, setOpen] = useState<MenuId | null>(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [fileError, setFileError] = useState<string | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const projectFileInput = useRef<HTMLInputElement>(null);
+  const router = useRouter();
   const playing = useEditorStore((state) => state.playing);
   const saveStatus = useEditorStore((state) => state.saveStatus);
 
@@ -155,11 +159,40 @@ export function EditorMenuBar({
     s.setPlaying(!s.playing);
   };
 
+  async function handleProjectImport(
+    event: React.ChangeEvent<HTMLInputElement>
+  ) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    const result = await useEditorStore.getState().importProjectFile(file);
+    if (result.ok && result.newProjectId) {
+      setFileError(null);
+      router.push(`/editor?id=${encodeURIComponent(result.newProjectId)}`);
+    } else {
+      setFileError(result.error ?? "Could not import that project file.");
+    }
+  }
+
   const menuBody: Record<MenuId, React.ReactNode> = {
     file: (
       <>
+        <MenuItem
+          label="Project Manager"
+          onSelect={() => run(() => router.push("/dashboard"))}
+        />
+        <MenuDivider />
         <MenuItem label="New project" shortcut="Ctrl+N" disabled onSelect={() => {}} />
         <MenuItem label="Open project" shortcut="Ctrl+O" disabled onSelect={() => {}} />
+        <MenuDivider />
+        <MenuItem
+          label="Export project (.forgevyn)"
+          onSelect={() => run(() => void state().exportProjectFile())}
+        />
+        <MenuItem
+          label="Import project (.forgevyn)…"
+          onSelect={() => run(() => projectFileInput.current?.click())}
+        />
         <MenuDivider />
         <MenuItem
           label="Export video…"
@@ -350,8 +383,15 @@ export function EditorMenuBar({
         className="sticky top-0 z-30 hidden h-8 shrink-0 items-center gap-0.5 border-b border-studio-border bg-studio-panel px-2 text-[11px] md:flex"
       >
         <span className="mr-1 flex items-center gap-1.5 pr-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-          <span className="h-1.5 w-1.5 rounded-full bg-violet-400" aria-hidden />
-          Forgevyn
+          <button
+            type="button"
+            onClick={() => router.push("/dashboard")}
+            className="flex items-center gap-1.5 rounded px-1 py-0.5 hover:text-zinc-200"
+            aria-label="Open Project Manager"
+          >
+            <span className="h-1.5 w-1.5 rounded-full bg-violet-400" aria-hidden />
+            Forgevyn
+          </button>
         </span>
 
         {MENUS.map((menu) => (
@@ -427,6 +467,24 @@ export function EditorMenuBar({
           </button>
         </div>
       </div>
+
+      <input
+        ref={projectFileInput}
+        type="file"
+        accept=".forgevyn,application/json"
+        className="sr-only"
+        onChange={(event) => void handleProjectImport(event)}
+      />
+
+      {fileError && (
+        <button
+          type="button"
+          onClick={() => setFileError(null)}
+          className="fixed bottom-12 left-1/2 z-[70] -translate-x-1/2 rounded-md border border-red-500/30 bg-[#2a1215] px-3 py-2 text-xs text-red-200 shadow-xl"
+        >
+          {fileError} · dismiss
+        </button>
+      )}
 
       <Modal
         open={shortcutsOpen}
