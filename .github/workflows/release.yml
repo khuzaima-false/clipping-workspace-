@@ -30,7 +30,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: macos-latest
+          # Build the universal .dmg on the Intel macOS runner. macos-latest
+          # points at an arm64 runner, which is frequently capacity-constrained
+          # and can leave the job unacquired. The Intel runner cross-compiles
+          # both x86_64 and aarch64 for the universal bundle.
+          - platform: macos-26-intel
             label: macOS (Universal .dmg)
             args: --target universal-apple-darwin
           - platform: ubuntu-22.04
@@ -52,10 +56,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -63,7 +67,7 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          targets: ${{ startsWith(matrix.platform, 'macos') && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
