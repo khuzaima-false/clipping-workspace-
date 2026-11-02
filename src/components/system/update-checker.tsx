@@ -4,6 +4,11 @@ import { useEffect, useState } from "react";
 import { Download, RefreshCw } from "lucide-react";
 import type { DownloadEvent, Update } from "@tauri-apps/plugin-updater";
 import { isTauriEnvironment } from "@/lib/tauri";
+import {
+  runUpdateCheck,
+  UPDATE_CHECK_EVENT,
+  type UpdateCheckOutcome,
+} from "@/lib/updater";
 
 type Phase =
   | "idle"
@@ -30,33 +35,25 @@ export function UpdateChecker() {
   useEffect(() => {
     if (!isTauriEnvironment()) return;
 
-    let active = true;
-
-    async function checkForUpdate() {
-      try {
-        const { check } = await import("@tauri-apps/plugin-updater");
-        const found = await check({ timeout: 15_000 });
-
-        if (!active) return;
-
-        if (!found) {
-          setPhase("idle");
-          return;
-        }
-
-        setUpdate(found);
+    const onResult = (event: Event) => {
+      const outcome = (event as CustomEvent<UpdateCheckOutcome>).detail;
+      if (!outcome) return;
+      if (outcome.status === "available") {
+        setUpdate(outcome.update);
         setPhase("available");
-      } catch (err) {
-        // A failed check must never interrupt editing (offline, no release
-        // yet, unsigned dev build, etc.). Stay silent in the UI.
-        console.warn("[updater] update check failed:", err);
-        if (active) setPhase("idle");
+        setDismissed(false);
+      } else if (outcome.status === "error") {
+        console.warn("[updater] check error:", outcome.error);
+      } else {
+        setUpdate(null);
+        setPhase("idle");
       }
-    }
+    };
 
-    void checkForUpdate();
+    window.addEventListener(UPDATE_CHECK_EVENT, onResult);
+    void runUpdateCheck();
     return () => {
-      active = false;
+      window.removeEventListener(UPDATE_CHECK_EVENT, onResult);
     };
   }, []);
 

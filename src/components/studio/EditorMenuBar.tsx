@@ -3,18 +3,27 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  AlertCircle,
   AudioLines,
+  CheckCircle2,
   Download,
   Film,
+  Loader2,
   MonitorPlay,
   Pipette,
   Redo2,
+  RefreshCw,
   Scissors,
   Sparkles,
   Undo2,
 } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { cn } from "@/lib/utils";
+import {
+  runUpdateCheck,
+  UPDATER_ENDPOINT,
+  type UpdateCheckOutcome,
+} from "@/lib/updater";
 import { useEditorStore } from "@/store/editor";
 
 export type WorkspacePage =
@@ -116,6 +125,11 @@ export function EditorMenuBar({
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
+  const [updateOpen, setUpdateOpen] = useState(false);
+  const [updateChecking, setUpdateChecking] = useState(false);
+  const [updateOutcome, setUpdateOutcome] = useState<UpdateCheckOutcome | null>(
+    null
+  );
   const wrapRef = useRef<HTMLDivElement>(null);
   const projectFileInput = useRef<HTMLInputElement>(null);
   const router = useRouter();
@@ -172,6 +186,15 @@ export function EditorMenuBar({
     } else {
       setFileError(result.error ?? "Could not import that project file.");
     }
+  }
+
+  async function checkForUpdates() {
+    setUpdateOpen(true);
+    setUpdateChecking(true);
+    setUpdateOutcome(null);
+    const outcome = await runUpdateCheck();
+    setUpdateOutcome(outcome);
+    setUpdateChecking(false);
   }
 
   const menuBody: Record<MenuId, React.ReactNode> = {
@@ -361,6 +384,11 @@ export function EditorMenuBar({
     help: (
       <>
         <MenuItem
+          label="Check for updates"
+          onSelect={() => run(() => void checkForUpdates())}
+        />
+        <MenuDivider />
+        <MenuItem
           label="Keyboard shortcuts"
           shortcut="?"
           onSelect={() => run(() => setShortcutsOpen(true))}
@@ -523,6 +551,84 @@ export function EditorMenuBar({
           persistence.
         </p>
       </Modal>
+      <Modal
+        open={updateOpen}
+        onClose={() => {
+          if (!updateChecking) setUpdateOpen(false);
+        }}
+        title="Check for updates"
+      >
+        {updateChecking || !updateOutcome ? (
+          <div className="flex items-center gap-3 rounded-md border border-studio-border bg-[#121316] p-4">
+            <Loader2 className="h-5 w-5 animate-spin text-violet-300" aria-hidden />
+            <div>
+              <p className="text-sm font-medium text-zinc-200">
+                Checking GitHub Releases…
+              </p>
+              <p className="mt-1 break-all text-[10px] text-zinc-600">
+                {UPDATER_ENDPOINT}
+              </p>
+            </div>
+          </div>
+        ) : updateOutcome.status === "available" ? (
+          <div className="space-y-3">
+            <p className="flex items-center gap-2 text-sm font-medium text-emerald-300">
+              <CheckCircle2 className="h-4 w-4" aria-hidden />
+              Update v{updateOutcome.update.version} is available
+            </p>
+            <p className="text-xs text-zinc-400">
+              You are running v{updateOutcome.currentVersion}. The update banner
+              is ready below — choose Update Now to download and restart.
+            </p>
+          </div>
+        ) : updateOutcome.status === "uptodate" ? (
+          <div className="space-y-3">
+            <p className="flex items-center gap-2 text-sm font-medium text-emerald-300">
+              <CheckCircle2 className="h-4 w-4" aria-hidden />
+              You&apos;re up to date
+            </p>
+            <p className="text-xs text-zinc-400">
+              Current version: v{updateOutcome.currentVersion}. No newer signed
+              release is published at this endpoint.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <p className="flex items-center gap-2 text-sm font-medium text-red-300">
+              <AlertCircle className="h-4 w-4" aria-hidden />
+              Update check failed
+            </p>
+            <p className="rounded-md border border-red-500/30 bg-red-500/10 p-3 text-xs leading-5 text-red-200">
+              {updateOutcome.error}
+            </p>
+            <p className="text-xs leading-5 text-zinc-500">
+              Private GitHub repositories do not expose release assets to the
+              updater. Make the release repository public or serve a public
+              <code className="mx-1 rounded bg-zinc-800 px-1 py-0.5 text-[10px] text-zinc-300">
+                latest.json
+              </code>
+              proxy.
+            </p>
+          </div>
+        )}
+
+        <p className="mt-4 break-all rounded-md border border-studio-border bg-[#121316] p-2 text-[10px] text-zinc-600">
+          Endpoint: {updateOutcome?.endpoint ?? UPDATER_ENDPOINT}
+        </p>
+
+        <div className="mt-4 flex justify-end">
+          <button
+            type="button"
+            onClick={() => setUpdateOpen(false)}
+            disabled={updateChecking}
+            className="inline-flex items-center gap-1.5 rounded-md border border-studio-border px-3 py-2 text-xs font-medium text-zinc-300 transition-colors hover:bg-zinc-800 disabled:opacity-60"
+          >
+            <RefreshCw className="h-3.5 w-3.5" aria-hidden />
+            {updateChecking ? "Checking…" : "Close"}
+          </button>
+        </div>
+      </Modal>
+
     </>
   );
 }
