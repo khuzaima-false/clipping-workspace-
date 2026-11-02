@@ -117,7 +117,7 @@ const GITHUB_REPO = (
 const DESKTOP_RELEASE_TAG =
   process.env.NEXT_PUBLIC_DESKTOP_RELEASE_TAG?.trim() ?? "";
 /** Keep in sync with `src-tauri/tauri.conf.json` + `Cargo.toml`. */
-const APP_VERSION = "0.1.3";
+const APP_VERSION = "0.1.4";
 const RELEASES_URL = `https://github.com/${GITHUB_REPO}/releases`;
 /** A configured tag (e.g. `v0.1.0`) is authoritative for asset names. */
 const RELEASE_VERSION = (DESKTOP_RELEASE_TAG || `v${APP_VERSION}`).replace(
