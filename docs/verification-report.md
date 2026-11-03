@@ -7,7 +7,18 @@
 ## Verdict
 
 **PASS for frontend/static gates and desktop UI interaction.**  
-**PARTIAL for native Tauri runtime:** the Rust toolchain is not installed in this environment, so `cargo check` / a real `tauri dev` IPC exercise could not be run.
+**PARTIAL for native Tauri runtime:** Rust is installed, but the local MSVC linker is unavailable; the native build is running in GitHub Actions instead.
+
+## Local Toolchain Attempt
+
+- Installed Rustup and stable Rust **1.99.1** (`x86_64-pc-windows-msvc`).
+- `cargo check` downloaded/compiled the dependency graph and failed at the native linker:
+  - `error: linker link.exe not found`
+- Microsoft Visual Studio C++ Build Tools installation could not complete because the environment is non-admin and the UAC prompt was declined (`0x80070642` / installer exit `1602`).
+- Because the pushed commit is on `origin/main`, the Tauri release workflow was triggered for tag `v0.1.4` at commit `994293f`:
+  - **Run:** `41571850999`
+  - **URL:** https://github.com/khuzaima-false/clipping-workspace-/actions/runs/41571850999
+  - Windows, macOS, and Linux jobs were assigned and in progress when checked.
 
 ## Static Gates
 
@@ -74,11 +85,11 @@ The Tauri shell was exercised through the app’s Tauri-detection path:
 
 **Undo semantic assertion is inconclusive in the synthetic harness.** Menu Undo and `Ctrl+Z` invoked without exceptions, but a clip-count assertion after a synthetic paste did not observe a reverted count. This may be pre-existing history-capture timing in the simulated harness and is flagged for a real desktop run rather than marked as a menu crash.
 
-## Native Checks Not Run
+## Native Checks Not Run Locally
 
 - `cargo check`
 - Real `window_control` fullscreen/maximize/minimize IPC
 - Real `.forgevyn` disk write/read through the native folder picker
 - Real updater fetch (release assets are currently private; see updater diagnostic)
 
-These require a Rust toolchain and an actual Tauri window.
+These require the MSVC linker/Build Tools and an actual Tauri window. The CI Tauri build above is the authoritative native compile/build check.
