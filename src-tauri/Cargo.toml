@@ -1,4 +1,4 @@
-﻿[package]
+[package]
 name = "forgevyn"
 version = "0.1.5"
 description = "Forgevyn â€” professional client-side video studio, packaged as a native desktop app"
