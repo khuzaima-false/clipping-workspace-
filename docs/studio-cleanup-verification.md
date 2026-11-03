@@ -58,6 +58,17 @@ Validated the desktop shell at the `md+` breakpoint:
 - No StorageManager/quota trigger in the body.
 - Mobile remains on its existing top bar (`md:hidden` / `hidden md:flex` split preserved).
 
+## Native Build
+
+- Run `41580718361` completed successfully from cleanup commit `808fb57` / tag `v0.1.4`.
+- Windows, macOS Universal, and Linux jobs all passed.
+- The `v0.1.4` release assets were refreshed for the cleanup build, including:
+  - `Forgevyn_0.1.4_x64-setup.exe` and `.msi`
+  - `Forgevyn_0.1.4_universal.dmg` and `.app.tar.gz`
+  - `Forgevyn_0.1.4_amd64.AppImage`, `.deb`, and `.rpm`
+  - matching signatures and `latest.json`
+- The public updater manifest is reachable at HTTP 200 with `"version": "0.1.4"`. The installed build is also `0.1.4`, so no update prompt is expected; testing a newer prompt would require a release version above `0.1.4`, which is intentionally out of scope.
+
 ## Open Native Note
 
-The local Rust toolchain is installed, but the local Tauri link step still requires MSVC Build Tools. This environment is non-admin and the UAC prompt was declined, so native compilation remains a CI-only check. Static frontend gates are unaffected.
+The local Rust toolchain is installed, but the local Tauri link step still requires MSVC Build Tools. This environment is non-admin and the UAC prompt was declined, so local native runtime testing remains unavailable. The CI native build above is successful, and static frontend gates are unaffected.

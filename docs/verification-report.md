@@ -2,12 +2,12 @@
 
 **Date:** 2026-11-03  
 **Tester:** `Tester_Agent`  
-**Scope:** compact DaVinci-style menu, production menu actions, resizable panels, desktop shell, Tauri window controls, and project JSON bindings.
+**Scope:** compact DaVinci-style menu, production menu actions, resizable panels, desktop shell, Tauri window controls, project JSON bindings, and the AI/Deliver/storage cleanup.
 
 ## Verdict
 
-**PASS for frontend/static gates and desktop UI interaction.**  
-**PARTIAL for native Tauri runtime:** Rust is installed, but the local MSVC linker is unavailable; the native build is running in GitHub Actions instead.
+**PASS for frontend/static gates, desktop UI interaction, and CI native compilation/packaging.**  
+**PARTIAL for local native runtime:** Rust is installed, but the local MSVC linker is unavailable, so the actual Tauri window/IPC was not exercised locally.
 
 ## Local Toolchain Attempt
 
@@ -15,11 +15,16 @@
 - `cargo check` downloaded/compiled the dependency graph and failed at the native linker:
   - `error: linker link.exe not found`
 - Microsoft Visual Studio C++ Build Tools installation could not complete because the environment is non-admin and the UAC prompt was declined (`0x80070642` / installer exit `1602`).
-- Because the pushed commit is on `origin/main`, the Tauri release workflow was triggered for tag `v0.1.4` at commit `994293f`:
+- The earlier `v0.1.4` build from commit `994293f` completed successfully:
   - **Run:** `41571850999` — **completed successfully**
   - **URL:** https://github.com/khuzaima-false/clipping-workspace-/actions/runs/41571850999
   - macOS, Windows, and Linux jobs all completed successfully.
   - Published assets are all named **`Forgevyn_0.1.4_*`** (including `Forgevyn_0.1.4_universal.dmg`).
+- The structural-cleanup commit `808fb57` was tagged `v0.1.4` and pushed, triggering a fresh cross-platform build:
+  - **Run:** `41580718361` — **completed successfully**
+  - **URL:** https://github.com/khuzaima-false/clipping-workspace-/actions/runs/41580718361
+  - macOS, Windows, and Linux jobs all completed successfully.
+  - Refreshed assets: `Forgevyn_0.1.4_x64-setup.exe`, `Forgevyn_0.1.4_x64_en-US.msi`, `Forgevyn_0.1.4_universal.dmg`, `Forgevyn_0.1.4_amd64.AppImage`, `Forgevyn_0.1.4_amd64.deb`, `Forgevyn-0.1.4-1.x86_64.rpm`, plus signatures and `latest.json`.
   - No `v0.1.5` tag or release exists.
 
 ## Static Gates
@@ -63,9 +68,12 @@ The Tauri shell was exercised through the app’s Tauri-detection path:
   - `left-panel-resizer`
   - `inspector-resizer`
   - `timeline-resizer`
-- Left panel now contains **Media Pool** and **DeepSeek AI** only; duplicate Effects tab removed.
-- Browser `StorageManager` quota widget removed from the editor toolbar.
-- Top-right export control is compact (`Export 1080p`).
+- The desktop page title bar is hidden; the compact menu bar is the sole desktop header.
+- Brand is flush left; there is no centered/stray project-title text.
+- Aspect-ratio buttons, export resolution, and Tutorial are in the menu toolbar next to the brand at `lg+` (Tauri minimum width is 1024).
+- The top-right menu action is **Export**; there is no Deliver tab, button, or navigation entry.
+- Left panel is one **full-width Media Pool** with Import and media list; the Media Pool / AI tab split and DeepSeek AI panel are gone.
+- Browser `StorageManager` quota widget and its component/lib files are removed.
 - Timeline default height is controlled and resizable; the timeline body scrolls independently.
 
 ### Interaction results
@@ -77,11 +85,12 @@ The Tauri shell was exercised through the app’s Tauri-detection path:
 - **Trim → Snapping**: toggled from “On” to “Off” and persisted in the menu label.
 - **Trim → Linked selection**: menu state present and toggle wired.
 - **View → Color page**: switched the workspace page and opened Inspector wheels/correction/presets.
-- **Help → Check for updates**: opened the diagnostic dialog and displayed its error/endpoint state without crashing.
+- **Help → Check for updates**: endpoint is now public; `latest.json` returns HTTP 200 with version `0.1.4`. The installed build is also `0.1.4`, so no update prompt is expected. The diagnostic dialog remains available from Help.
+- **AI/Deliver removal**: app DOM and source audit show no DeepSeek AI panel/tab, no Deliver tab/button/link, and no storage quota trigger.
 - **Panel resizers**:
   - Left panel width changed from `236 px` to `266 px` after drag.
   - Timeline height increased from `270 px` to `350 px` after drag.
-- Browser console showed no React/hydration/menu exceptions. The only error was the expected updater failure while simulating Tauri without real Tauri IPC internals.
+- Browser console showed no React/hydration/menu exceptions. The synthetic Tauri harness cannot exercise the real updater plugin; the public manifest was verified separately over HTTPS.
 
 ## Open Finding
 
@@ -92,6 +101,10 @@ The Tauri shell was exercised through the app’s Tauri-detection path:
 - `cargo check`
 - Real `window_control` fullscreen/maximize/minimize IPC
 - Real `.forgevyn` disk write/read through the native folder picker
-- Real updater fetch (release assets are currently private; see updater diagnostic)
+- Real updater install prompt: the public endpoint now serves `latest.json` (HTTP 200, version `0.1.4`), but the installed build is the same version, so an actual newer-version prompt remains untested without violating the no-`0.1.5` constraint.
 
 These require the MSVC linker/Build Tools and an actual Tauri window. The CI Tauri build above is the authoritative native compile/build check.
+
+## Cleanup Detail
+
+See `docs/studio-cleanup-verification.md` for the focused structural-cleanup gate results and removal audit.
