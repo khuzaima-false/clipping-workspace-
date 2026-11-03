@@ -2,7 +2,8 @@
 
 **Date:** 2026-11-03  
 **Tester:** `Tester_Agent`  
-**Scope:** compact DaVinci-style menu, production menu actions, resizable panels, desktop shell, Tauri window controls, project JSON bindings, and the AI/Deliver/storage cleanup.
+**App version:** `0.1.5`  
+**Scope:** compact DaVinci-style menu, production menu actions, resizable panels, desktop shell, Tauri window controls, project JSON bindings, the AI/Deliver/storage cleanup, and the 0.1.5 release build.
 
 ## Verdict
 
@@ -25,7 +26,12 @@
   - **URL:** https://github.com/khuzaima-false/clipping-workspace-/actions/runs/41580718361
   - macOS, Windows, and Linux jobs all completed successfully.
   - Refreshed assets: `Forgevyn_0.1.4_x64-setup.exe`, `Forgevyn_0.1.4_x64_en-US.msi`, `Forgevyn_0.1.4_universal.dmg`, `Forgevyn_0.1.4_amd64.AppImage`, `Forgevyn_0.1.4_amd64.deb`, `Forgevyn-0.1.4-1.x86_64.rpm`, plus signatures and `latest.json`.
-  - No `v0.1.5` tag or release exists.
+- The `v0.1.5` release build was triggered from commit `9d5a8d7` / tag `v0.1.5`:
+  - **Run:** `41583122718` — **completed successfully**
+  - **URL:** https://github.com/khuzaima-false/clipping-workspace-/actions/runs/41583122718
+  - macOS, Windows, and Linux jobs all completed successfully.
+  - Published assets are named **`Forgevyn_0.1.5_*`**: Windows setup/MSI, macOS universal DMG/app tarball, Linux AppImage/deb/rpm, signatures, and `latest.json`.
+  - The public updater manifest now reports `"version": "0.1.5"`; an installed `0.1.4` build now sees a newer release.
 
 ## Static Gates
 
@@ -85,7 +91,7 @@ The Tauri shell was exercised through the app’s Tauri-detection path:
 - **Trim → Snapping**: toggled from “On” to “Off” and persisted in the menu label.
 - **Trim → Linked selection**: menu state present and toggle wired.
 - **View → Color page**: switched the workspace page and opened Inspector wheels/correction/presets.
-- **Help → Check for updates**: endpoint is now public; `latest.json` returns HTTP 200 with version `0.1.4`. The installed build is also `0.1.4`, so no update prompt is expected. The diagnostic dialog remains available from Help.
+- **Help → Check for updates**: endpoint is public; `latest.json` returns HTTP 200 with version `0.1.5`. The update path is now newer than the previously installed `0.1.4` build; the actual prompt still needs to be exercised on a machine with `0.1.4` installed.
 - **AI/Deliver removal**: app DOM and source audit show no DeepSeek AI panel/tab, no Deliver tab/button/link, and no storage quota trigger.
 - **Panel resizers**:
   - Left panel width changed from `236 px` to `266 px` after drag.
@@ -101,7 +107,7 @@ The Tauri shell was exercised through the app’s Tauri-detection path:
 - `cargo check`
 - Real `window_control` fullscreen/maximize/minimize IPC
 - Real `.forgevyn` disk write/read through the native folder picker
-- Real updater install prompt: the public endpoint now serves `latest.json` (HTTP 200, version `0.1.4`), but the installed build is the same version, so an actual newer-version prompt remains untested without violating the no-`0.1.5` constraint.
+- Real updater install prompt: the public endpoint now serves `latest.json` (HTTP 200, version `0.1.5`), and the previous installed build is `0.1.4`; the actual prompt and install should be exercised on a machine with `0.1.4` installed, which remains the only unrun local runtime check.
 
 These require the MSVC linker/Build Tools and an actual Tauri window. The CI Tauri build above is the authoritative native compile/build check.
 

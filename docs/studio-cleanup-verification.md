@@ -1,7 +1,8 @@
 # Forgevyn Studio — Structural Cleanup Verification
 
 **Date:** 2026-11-03  
-**Tester:** `Tester_Agent`
+**Tester:** `Tester_Agent`  
+**App version:** `0.1.5`
 
 ## Verdict
 
@@ -60,14 +61,15 @@ Validated the desktop shell at the `md+` breakpoint:
 
 ## Native Build
 
-- Run `41580718361` completed successfully from cleanup commit `808fb57` / tag `v0.1.4`.
+- Run `41583122718` completed successfully from release commit `9d5a8d7` / tag `v0.1.5`.
 - Windows, macOS Universal, and Linux jobs all passed.
-- The `v0.1.4` release assets were refreshed for the cleanup build, including:
-  - `Forgevyn_0.1.4_x64-setup.exe` and `.msi`
-  - `Forgevyn_0.1.4_universal.dmg` and `.app.tar.gz`
-  - `Forgevyn_0.1.4_amd64.AppImage`, `.deb`, and `.rpm`
+- The `v0.1.5` release assets were published:
+  - `Forgevyn_0.1.5_x64-setup.exe` and `.msi`
+  - `Forgevyn_0.1.5_universal.dmg` and `.app.tar.gz`
+  - `Forgevyn_0.1.5_amd64.AppImage`, `.deb`, and `.rpm`
   - matching signatures and `latest.json`
-- The public updater manifest is reachable at HTTP 200 with `"version": "0.1.4"`. The installed build is also `0.1.4`, so no update prompt is expected; testing a newer prompt would require a release version above `0.1.4`, which is intentionally out of scope.
+- The public updater manifest is reachable at HTTP 200 with `"version": "0.1.5"`. An installed `0.1.4` build now has a newer version available and should show the update path; the actual in-app prompt still requires an installed `0.1.4` desktop build to exercise.
+- The earlier `0.1.4` cleanup build (`41580718361`) also completed successfully and remains available as the previous release.
 
 ## Open Native Note
 
