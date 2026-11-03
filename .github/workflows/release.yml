@@ -120,3 +120,28 @@ jobs:
           updaterJsonPreferNsis: true
           retryAttempts: 3
           args: ${{ matrix.args }}
+
+  finalize-manifest:
+    name: Normalize updater manifest
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Rewrite updater asset URLs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+          mkdir -p "$RUNNER_TEMP/updater"
+          gh release download "$tag" --pattern latest.json --dir "$RUNNER_TEMP/updater"
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" > "$RUNNER_TEMP/release.json"
+          node scripts/normalize-updater-manifest.mjs \
+            "$RUNNER_TEMP/updater/latest.json" \
+            "$RUNNER_TEMP/release.json"
+          gh release upload "$tag" "$RUNNER_TEMP/updater/latest.json" --clobber

@@ -71,6 +71,16 @@ Validated the desktop shell at the `md+` breakpoint:
 - The public updater manifest is reachable at HTTP 200 with `"version": "0.1.5"`. An installed `0.1.4` build now has a newer version available and should show the update path; the actual in-app prompt still requires an installed `0.1.4` desktop build to exercise.
 - The earlier `0.1.4` cleanup build (`41580718361`) also completed successfully and remains available as the previous release.
 
+## Updater Manifest Fix
+
+The update **check** was succeeding, but the published manifest pointed artifacts at `api.github.com/repos/.../releases/assets/<id>`. The desktop updater downloads unauthenticated, so this path is fragile: GitHub can return metadata or a rate-limit response instead of the installer, producing the post-check install error.
+
+- Rewrote all 13 platform URLs in the `v0.1.5` manifest to public `releases/download/v0.1.5/...` URLs and re-uploaded `latest.json`.
+- Verified the live `releases/latest/download/latest.json` serves the public URLs.
+- Added `scripts/normalize-updater-manifest.mjs` plus a `finalize-manifest` release-workflow job so future tag builds normalize the manifest automatically.
+
+The installed app may need **Help → Check for updates** or a restart to replace an already-fetched update object with the corrected manifest before clicking **Update Now**.
+
 ## Open Native Note
 
 The local Rust toolchain is installed, but the local Tauri link step still requires MSVC Build Tools. This environment is non-admin and the UAC prompt was declined, so local native runtime testing remains unavailable. The CI native build above is successful, and static frontend gates are unaffected.

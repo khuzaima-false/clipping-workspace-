@@ -32,6 +32,11 @@
   - macOS, Windows, and Linux jobs all completed successfully.
   - Published assets are named **`Forgevyn_0.1.5_*`**: Windows setup/MSI, macOS universal DMG/app tarball, Linux AppImage/deb/rpm, signatures, and `latest.json`.
   - The public updater manifest now reports `"version": "0.1.5"`; an installed `0.1.4` build now sees a newer release.
+- **Updater install fix:** The published manifest initially used `api.github.com/.../releases/assets/<id>` URLs. Those are the wrong transport for unauthenticated desktop updater downloads: they can return API metadata or hit the unauthenticated API rate limit after the update check succeeds, which is exactly the post-check failure shown by the app.
+  - All 13 platform entries in the live `v0.1.5` manifest were rewritten to public `releases/download/v0.1.5/...` URLs and the asset was re-uploaded.
+  - The live `releases/latest/download/latest.json` was verified to serve the public URLs.
+  - `scripts/normalize-updater-manifest.mjs` and a new `finalize-manifest` release-workflow job now prevent this for future tags.
+  - The update checker still displays a generic fallback for non-`Error` Tauri rejections; the direct manifest fix is the functional repair.
 
 ## Static Gates
 
