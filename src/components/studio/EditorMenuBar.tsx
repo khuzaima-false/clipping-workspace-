@@ -9,7 +9,6 @@ import {
   Download,
   Film,
   Loader2,
-  MonitorPlay,
   Pipette,
   Redo2,
   RefreshCw,
@@ -18,22 +17,26 @@ import {
   Undo2,
 } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
+import { TutorialLauncher } from "@/components/tutorial/guided-tour";
 import { cn } from "@/lib/utils";
 import { windowControl } from "@/lib/tauri";
+import {
+  EXPORT_RESOLUTIONS,
+  useEditorStore,
+  type ExportResolutionId,
+} from "@/store/editor";
 import {
   runUpdateCheck,
   UPDATER_ENDPOINT,
   type UpdateCheckOutcome,
 } from "@/lib/updater";
-import { useEditorStore } from "@/store/editor";
 
 export type WorkspacePage =
   | "cut"
   | "edit"
   | "fusion"
   | "color"
-  | "fairlight"
-  | "deliver";
+  | "fairlight";
 
 export const WORKSPACE_PAGES: {
   id: WorkspacePage;
@@ -50,12 +53,6 @@ export const WORKSPACE_PAGES: {
     label: "Fairlight",
     hint: "Audio timeline page",
     icon: AudioLines,
-  },
-  {
-    id: "deliver",
-    label: "Deliver",
-    hint: "Export / deliver page",
-    icon: MonitorPlay,
   },
 ];
 
@@ -114,11 +111,9 @@ function MenuDivider() {
 }
 
 export function EditorMenuBar({
-  title = "Forgevyn Studio",
   onExport,
   onSelectPage,
 }: {
-  title?: string;
   onExport?: () => void;
   onSelectPage?: (page: WorkspacePage) => void;
 }) {
@@ -139,6 +134,12 @@ export function EditorMenuBar({
   const selectedClipIds = useEditorStore((state) => state.selectedClipIds);
   const snapping = useEditorStore((state) => state.snapping);
   const linkedSelection = useEditorStore((state) => state.linkedSelection);
+  const aspect = useEditorStore((state) => state.aspect);
+  const setAspect = useEditorStore((state) => state.setAspect);
+  const exportResolution = useEditorStore((state) => state.exportResolution);
+  const setExportResolution = useEditorStore(
+    (state) => state.setExportResolution
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -412,7 +413,6 @@ export function EditorMenuBar({
             ["fusion", "Fusion page"],
             ["color", "Color page"],
             ["fairlight", "Fairlight page"],
-            ["deliver", "Deliver page"],
           ] as const
         ).map(([page, label]) => (
           <MenuItem
@@ -492,6 +492,59 @@ export function EditorMenuBar({
           <span className="studio-divider" aria-hidden />
         </span>
 
+        <div
+          role="group"
+          aria-label="Aspect ratio"
+          data-tour="aspect-group"
+          className="ml-1 hidden items-center gap-0.5 lg:flex"
+        >
+          {(["9:16", "16:9", "1:1", "21:9"] as const).map((option) => (
+            <button
+              key={option}
+              type="button"
+              onClick={() => setAspect(option)}
+              aria-pressed={aspect === option}
+              className={cn(
+                "h-5 rounded px-1 text-[9px] font-medium transition-colors",
+                aspect === option
+                  ? "bg-violet-600/25 text-violet-200 ring-1 ring-inset ring-violet-500/40"
+                  : "text-zinc-500 hover:bg-white/5 hover:text-zinc-200"
+              )}
+            >
+              {option}
+            </button>
+          ))}
+        </div>
+
+        <label
+          className="ml-1 hidden items-center lg:flex"
+          data-tour="export-resolution"
+        >
+          <span className="sr-only">Export resolution</span>
+          <select
+            value={exportResolution}
+            onChange={(event) =>
+              setExportResolution(event.target.value as ExportResolutionId)
+            }
+            aria-label="Export resolution"
+            className="h-5 rounded border border-studio-border bg-[#121316] px-1 text-[9px] text-zinc-300 outline-none focus:border-violet-500"
+          >
+            {(Object.keys(EXPORT_RESOLUTIONS) as ExportResolutionId[]).map(
+              (id) => (
+                <option key={id} value={id}>
+                  {EXPORT_RESOLUTIONS[id].label}
+                </option>
+              )
+            )}
+          </select>
+        </label>
+
+        <span className="hidden items-center lg:flex">
+          <TutorialLauncher className="h-5 gap-1 rounded px-1.5 py-0 text-[9px]" />
+        </span>
+
+        <span className="studio-divider ml-1" aria-hidden />
+
         {MENUS.map((menu) => (
           <div key={menu.id} className="relative">
             <button
@@ -519,12 +572,9 @@ export function EditorMenuBar({
           </div>
         ))}
 
-        <span className="pointer-events-none absolute left-1/2 hidden -translate-x-1/2 truncate text-[11px] font-medium text-zinc-500 xl:block">
-          {title}
-        </span>
-
         <div className="ml-auto flex items-center gap-1">
           <span
+            data-tour="save-indicator"
             title={saveStatus === "saved" ? "All changes saved" : "Unsaved changes"}
             className={cn(
               "mr-1 h-1.5 w-1.5 rounded-full",
@@ -554,6 +604,7 @@ export function EditorMenuBar({
           </button>
           <button
             type="button"
+            data-tour="export-button"
             aria-label="Export video"
             title="Export video"
             disabled={!onExport}
@@ -561,7 +612,7 @@ export function EditorMenuBar({
             className="ml-1 inline-flex h-6 items-center gap-1 rounded border border-violet-500/40 bg-violet-600/15 px-2 text-[10px] font-semibold text-violet-200 transition-colors hover:bg-violet-600/25 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Download className="h-3 w-3" aria-hidden />
-            Deliver
+            Export
           </button>
         </div>
       </div>

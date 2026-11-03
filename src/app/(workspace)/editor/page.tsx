@@ -492,7 +492,7 @@ function EditorView() {
       {/* Top bar */}
       <div
         data-tour="header-bar"
-        className="flex w-full max-w-full min-w-0 flex-wrap items-center gap-3 max-md:overflow-hidden"
+        className="flex w-full max-w-full min-w-0 flex-wrap items-center gap-3 max-md:overflow-hidden md:hidden"
       >
         <div className="min-w-0 flex-1" data-tour="editor-title">
           {loading ? (
@@ -638,7 +638,6 @@ function EditorView() {
           {/* Desktop: Premiere-style 4-panel workspace */}
           <div className="hidden md:flex md:min-h-0 md:flex-1 md:flex-col">
             <DesktopEditor
-              title={project.title}
               onExport={() => void handleExport()}
               onBatchExport={(ids) => void handleBatchExport(ids)}
             />

@@ -526,48 +526,6 @@ function ScreenCamRecorder() {
 /* ------------------------------------------------------------------ */
 /* Left column: AI Assistant placeholder (DeepSeek integration pending) */
 /* ------------------------------------------------------------------ */
-export function AIAssistantPanel() {
-  return (
-    <section className="studio-panel flex min-h-0 flex-1 flex-col overflow-hidden rounded-md">
-      {/* Header: logo + title in one flex row so they can never overlap. */}
-      <div className="flex items-center gap-2 border-b border-studio-border px-3 py-2">
-        <span
-          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-violet-500/40 to-fuchsia-500/25 ring-1 ring-inset ring-violet-500/40"
-          aria-hidden
-        >
-          <Sparkles className="h-3.5 w-3.5 text-violet-200" />
-        </span>
-        <span className="truncate text-[11px] font-semibold uppercase tracking-wider text-zinc-300">
-          AI Assistant
-        </span>
-      </div>
-      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 p-5 text-center">
-        <span
-          className="flex h-12 w-12 items-center justify-center rounded-md bg-gradient-to-br from-violet-500/35 to-fuchsia-500/20 ring-1 ring-inset ring-violet-500/40"
-          aria-hidden
-        >
-          <Sparkles className="h-6 w-6 text-violet-200" />
-        </span>
-        <div className="space-y-1.5">
-          <p className="text-sm font-semibold tracking-tight text-zinc-100">
-            DeepSeek AI Assistant
-          </p>
-          <p className="text-[11px] leading-5 text-zinc-500">
-            Script-to-timeline, smart cuts, caption rewrites and prompt-driven
-            edits — right here in the studio.
-          </p>
-        </div>
-        <span className="mt-1 rounded-full border border-violet-500/40 bg-violet-600/15 px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-violet-200">
-          Coming Soon
-        </span>
-        <p className="text-[10px] leading-4 text-zinc-600">
-          Every tool now lives in the Inspector on the right.
-        </p>
-      </div>
-    </section>
-  );
-}
-
 /* ------------------------------------------------------------------ */
 /* Right column: unified Inspector (categories + nested sub-tabs)       */
 /* ------------------------------------------------------------------ */
@@ -2701,7 +2659,6 @@ export function ProgramPreview() {
   const fps = useEditorStore((s) => s.fps);
   const hasVideo = useEditorStore((s) => s.videoEl !== null);
   const aspect = useEditorStore((s) => s.aspect);
-  const setAspect = useEditorStore((s) => s.setAspect);
   const hdRendering = useEditorStore((s) => s.hdRendering);
   const setHdRendering = useEditorStore((s) => s.setHdRendering);
   const canvasFill = useEditorStore((s) => s.canvasFill);
@@ -3006,24 +2963,6 @@ export function ProgramPreview() {
           Program Monitor
         </span>
         {/* Aspect-ratio switcher: 16:9 ↔ 9:16 ↔ 1:1 */}
-        <div className="flex items-center gap-1" role="group" aria-label="Aspect ratio" data-tour="aspect-group">
-          {(["9:16", "16:9", "1:1", "21:9"] as const).map((option) => (
-            <button
-              key={option}
-              type="button"
-              onClick={() => setAspect(option)}
-              aria-pressed={aspect === option}
-              className={cn(
-                "shrink-0 rounded-md px-2 py-1 text-[10px] font-semibold transition-colors",
-                aspect === option
-                  ? "brand-gradient text-white"
-                  : "border border-studio-border bg-zinc-950/60 text-zinc-400 hover:text-zinc-100"
-              )}
-            >
-              {option}
-            </button>
-          ))}
-        </div>
         <div className="flex items-center gap-2" data-tour="monitor-meta">
         <span className="text-[10px] tabular-nums text-zinc-500">
           {res.width}×{res.height} · {fps}fps

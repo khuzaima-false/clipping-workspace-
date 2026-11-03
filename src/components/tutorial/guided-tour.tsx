@@ -28,7 +28,19 @@ const SKIP_AFTER_MS = 800;
 
 function targetEl(key: string): HTMLElement | null {
   if (typeof document === "undefined") return null;
-  return document.querySelector<HTMLElement>(`[data-tour="${key}"]`);
+  const candidates = document.querySelectorAll<HTMLElement>(
+    `[data-tour="${key}"]`
+  );
+  return (
+    Array.from(candidates).find((element) => {
+      const style = window.getComputedStyle(element);
+      return (
+        style.display !== "none" &&
+        style.visibility !== "hidden" &&
+        element.getClientRects().length > 0
+      );
+    }) ?? null
+  );
 }
 
 export function TutorialLauncher({ className }: { className?: string }) {

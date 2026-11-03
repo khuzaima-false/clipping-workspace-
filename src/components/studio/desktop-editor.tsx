@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
-  AIAssistantPanel,
   InspectorPanel,
   PremiereTimeline,
   ProgramPreview,
@@ -12,10 +11,7 @@ import {
   type WorkspacePage,
 } from "@/components/studio/EditorMenuBar";
 import { DualViewport } from "@/components/studio/DualViewport";
-import {
-  LeftPanel,
-  type LeftPanelTab,
-} from "@/components/studio/LeftPanel";
+import { LeftPanel } from "@/components/studio/LeftPanel";
 import { TimelineCanvas } from "@/components/studio/TimelineCanvas";
 import { WorkspaceSwitcher } from "@/components/studio/WorkspaceSwitcher";
 import { requestEditorTab } from "@/lib/editor-events";
@@ -31,16 +27,13 @@ import { useEditorStore } from "@/store/editor";
  * bottom workspace switcher.
  */
 export function DesktopEditor({
-  title,
   onExport,
   onBatchExport,
 }: {
-  title?: string;
   onExport?: () => void;
   onBatchExport?: (clipIds: string[]) => void;
 }) {
   const [workspacePage, setWorkspacePage] = useState<WorkspacePage>("edit");
-  const [leftTab, setLeftTab] = useState<LeftPanelTab>("media");
   const [leftWidth, setLeftWidth] = useState(236);
   const [rightWidth, setRightWidth] = useState(300);
   const [timelineHeight, setTimelineHeight] = useState(270);
@@ -201,13 +194,6 @@ export function DesktopEditor({
     (page: WorkspacePage) => {
       setWorkspacePage(page);
 
-      if (page === "fusion") {
-        setLeftTab("ai");
-      }
-      if (page === "deliver") {
-        onExport?.();
-        return;
-      }
       if (page === "color") {
         requestEditorTab("color");
       }
@@ -225,13 +211,12 @@ export function DesktopEditor({
         .querySelector(target)
         ?.scrollIntoView({ block: "nearest", behavior: "smooth" });
     },
-    [onExport]
+    []
   );
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-studio-bg text-zinc-100">
       <EditorMenuBar
-        title={title ?? "Forgevyn Studio"}
         onExport={onExport}
         onSelectPage={handleWorkspacePage}
       />
@@ -242,11 +227,7 @@ export function DesktopEditor({
           gridTemplateColumns: `${leftWidth}px 6px minmax(0,1fr) 6px ${rightWidth}px`,
         }}
       >
-        <LeftPanel
-          activeTab={leftTab}
-          onTabChange={setLeftTab}
-          aiContent={<AIAssistantPanel />}
-        />
+        <LeftPanel />
         <div
           role="separator"
           aria-orientation="vertical"
