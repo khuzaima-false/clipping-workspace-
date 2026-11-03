@@ -16,9 +16,11 @@
   - `error: linker link.exe not found`
 - Microsoft Visual Studio C++ Build Tools installation could not complete because the environment is non-admin and the UAC prompt was declined (`0x80070642` / installer exit `1602`).
 - Because the pushed commit is on `origin/main`, the Tauri release workflow was triggered for tag `v0.1.4` at commit `994293f`:
-  - **Run:** `41571850999`
+  - **Run:** `41571850999` — **completed successfully**
   - **URL:** https://github.com/khuzaima-false/clipping-workspace-/actions/runs/41571850999
-  - Windows, macOS, and Linux jobs were assigned and in progress when checked.
+  - macOS, Windows, and Linux jobs all completed successfully.
+  - Published assets are all named **`Forgevyn_0.1.4_*`** (including `Forgevyn_0.1.4_universal.dmg`).
+  - No `v0.1.5` tag or release exists.
 
 ## Static Gates
 
