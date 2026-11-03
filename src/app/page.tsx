@@ -46,11 +46,7 @@ import {
 import { Logo } from "@/components/ui/logo";
 import { HeroPreview } from "@/components/marketing/hero-preview";
 import { DesktopLandingGuard } from "@/components/system/desktop-landing-guard";
-import {
-  DesktopDownloadMenu,
-  HeroAuthActions,
-  NavAuthActions,
-} from "@/components/marketing/auth-actions";
+
 
 export const metadata: Metadata = {
   alternates: { canonical: "/" },
@@ -286,8 +282,8 @@ const INTERFACES = [
   {
     icon: Smartphone,
     badge: "md:hidden",
-    title: "Mobile Studio",
-    tagline: "CapCut-style touch editing",
+    title: "Mobile Studio (Coming soon)",
+    tagline: "CapCut-style touch editing - in development",
     points: [
       "Touch drawers and quick-action bottom sheets",
       "Single-tap keyframing on the transport bar",
@@ -345,7 +341,6 @@ export default function LandingPage() {
               Pricing
             </a>
           </nav>
-          <NavAuthActions />
         </div>
       </header>
 
@@ -354,21 +349,36 @@ export default function LandingPage() {
         <div className="animate-fade-up">
           <span className="inline-flex items-center gap-2 rounded-full border border-violet-500/30 bg-violet-500/10 px-3 py-1 text-xs font-medium text-violet-200">
             <Sparkles className="h-3.5 w-3.5" aria-hidden />
-            {TOTAL_TOOLS} tools · 100% free · browser or desktop
+            {TOTAL_TOOLS} tools · 100% free · desktop app + web preview
           </span>
 
           <h1 className="mt-6 text-4xl font-bold leading-[1.05] tracking-tight text-white sm:text-5xl lg:text-6xl">
             Forgevyn | Free Professional{" "}
-            <span className="text-gradient">In-Browser Video Studio</span>
+            <span className="text-gradient">Desktop Video Studio</span>
           </h1>
 
           <p className="mt-6 max-w-xl text-base leading-7 text-zinc-400 sm:text-lg">
             Full-featured multi-track editing, Chroma key, keyframe animations,
             audio mixing and customizable templates — running 100% locally on
-            your own device, in the browser or in the desktop app.
+            your own device, plus a no-sign-in browser preview.
           </p>
 
-          <HeroAuthActions />
+          <div className="mt-8 flex flex-wrap items-center gap-3">
+            <Link
+              href="/editor?preview=1"
+              className="brand-gradient brand-gradient-hover inline-flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold text-white shadow-xl shadow-violet-900/30 transition-transform hover:scale-[1.03]"
+            >
+              Preview in web
+              <ArrowRight className="h-4 w-4" aria-hidden />
+            </Link>
+            <Link
+              href="/download"
+              className="inline-flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900/60 px-5 py-3 text-sm font-semibold text-zinc-200 backdrop-blur transition-colors hover:border-zinc-600 hover:text-white"
+            >
+              Download For Desktop
+              <Download className="h-4 w-4 text-violet-300" aria-hidden />
+            </Link>
+          </div>
 
           <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-zinc-500">
             <span className="inline-flex items-center gap-1.5">
@@ -550,10 +560,10 @@ export default function LandingPage() {
               ))}
             </ul>
             <Link
-              href="/login"
+              href="/editor?preview=1"
               className="brand-gradient brand-gradient-hover mt-8 inline-flex items-center justify-center gap-2 self-start rounded-xl px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-violet-900/30 transition-transform hover:scale-[1.03]"
             >
-              Launch Studio
+              Preview in web
               <ArrowRight className="h-4 w-4" aria-hidden />
             </Link>
           </div>
@@ -578,13 +588,19 @@ export default function LandingPage() {
             </p>
             <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
               <Link
-                href="/editor"
+                href="/editor?preview=1"
                 className="brand-gradient brand-gradient-hover inline-flex items-center gap-2 rounded-xl px-6 py-3.5 text-sm font-semibold text-white shadow-xl shadow-violet-900/30 transition-transform hover:scale-[1.03]"
               >
-                Try in Browser
+                Preview in web
                 <ArrowRight className="h-4 w-4" aria-hidden />
               </Link>
-              <DesktopDownloadMenu />
+              <Link
+                href="/download"
+                className="inline-flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900/60 px-6 py-3.5 text-sm font-semibold text-zinc-200 backdrop-blur transition-colors hover:border-zinc-600 hover:text-white"
+              >
+                Download For Desktop
+                <Download className="h-4 w-4 text-violet-300" aria-hidden />
+              </Link>
             </div>
             <p className="mx-auto mt-4 max-w-xl text-xs leading-5 text-zinc-500">
               Zero Cloud Fees. 100% Private. Browser mode saves to local browser
@@ -625,19 +641,11 @@ export default function LandingPage() {
             ]}
           />
           <FooterCol
-            title="Workspace"
+            title="Product"
             links={[
-              { label: "Dashboard", href: "/dashboard" },
-              { label: "Projects", href: "/projects" },
-              { label: "Launch Editor", href: "/editor" },
-            ]}
-          />
-          <FooterCol
-            title="Account"
-            links={[
-              { label: "Sign in", href: "/login" },
-              { label: "Create account", href: "/login" },
-              { label: "Referrals", href: "/login" },
+              { label: "Preview in web", href: "/editor?preview=1" },
+              { label: "Download for desktop", href: "/download" },
+              { label: `${TOTAL_TOOLS} tools`, href: "#features" },
             ]}
           />
         </div>

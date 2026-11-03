@@ -217,11 +217,15 @@ export function EditorMenuBar({
 
   async function exitProject() {
     setOpen(null);
+    const isPreviewProject =
+      typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).get("preview") === "1";
+
     try {
       await useEditorStore.getState().checkpoint();
     } finally {
       clearActiveLocalProject();
-      router.replace("/dashboard");
+      router.replace(isPreviewProject ? "/" : "/dashboard");
     }
   }
 

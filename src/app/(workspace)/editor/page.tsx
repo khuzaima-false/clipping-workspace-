@@ -36,7 +36,9 @@ import { useAutosave } from "@/hooks/use-autosave";
 import {
   buildLocalProject,
   clearActiveLocalProject,
+  createLocalProject,
   isLocalProjectId,
+  listLocalProjectRecords,
   rememberLocalProject,
   renameLocalProject,
 } from "@/lib/local-projects";
@@ -57,6 +59,7 @@ function EditorView() {
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const router = useRouter();
+  const preview = searchParams.get("preview") === "1";
 
   // Static export can't serve arbitrary /editor/<id> paths, so the active
   // project id travels in the query string (`/editor?id=<uuid>`). A pathname
@@ -163,12 +166,27 @@ function EditorView() {
     };
   }, [projectId, router]);
 
-  // No project id: the Project Manager dashboard is the launch surface.
-  // A project is opened explicitly with ?id=<project-id>.
+  // No project id: open a local, sign-in-free "Preview" project for the web
+  // preview, or send the visitor back to the homepage.
   useEffect(() => {
     if (projectId) return;
-    router.replace("/dashboard");
-  }, [projectId, router]);
+    if (preview) {
+      const existing = listLocalProjectRecords().find(
+        (record) => record.title === "Preview"
+      )?.id;
+      const id =
+        existing ??
+        createLocalProject({
+          title: "Preview",
+          storageMode: "browser",
+          status: "in-progress",
+        });
+      rememberLocalProject(id);
+      router.replace(`/editor?id=${encodeURIComponent(id)}&preview=1`);
+      return;
+    }
+    router.replace(isTauriEnvironment() ? "/dashboard" : "/");
+  }, [projectId, preview, router]);
 
   // Load the project's media library + clip sequence from IndexedDB.
   useEffect(() => {
@@ -210,13 +228,16 @@ function EditorView() {
     useEditorStore.getState().setSaveStatus("saved");
   };
 
+  const isPreviewProject =
+    preview || project?.title === "Preview";
+
   const exitProject = async () => {
     try {
       await commitTitle();
       await useEditorStore.getState().checkpoint();
     } finally {
       clearActiveLocalProject();
-      router.replace("/dashboard");
+      router.replace(isPreviewProject ? "/" : "/dashboard");
     }
   };
 
