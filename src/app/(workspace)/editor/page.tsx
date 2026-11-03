@@ -7,7 +7,7 @@ import {
   useState,
 } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, Download } from "lucide-react";
+import { ArrowLeft, Download, LogOut } from "lucide-react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import type { Project } from "@/types/database";
@@ -35,6 +35,7 @@ import { ExportDialog, type ExportRun } from "@/components/editor/export-dialog"
 import { useAutosave } from "@/hooks/use-autosave";
 import {
   buildLocalProject,
+  clearActiveLocalProject,
   isLocalProjectId,
   rememberLocalProject,
   renameLocalProject,
@@ -207,6 +208,16 @@ function EditorView() {
       // Local state already reflects the change; retry on the next edit.
     }
     useEditorStore.getState().setSaveStatus("saved");
+  };
+
+  const exitProject = async () => {
+    try {
+      await commitTitle();
+      await useEditorStore.getState().checkpoint();
+    } finally {
+      clearActiveLocalProject();
+      router.replace("/dashboard");
+    }
   };
 
   // Persist export stats onto the project (best-effort, never blocks the UI).
@@ -406,84 +417,6 @@ function EditorView() {
     }
   };
 
-  // Batch export: encode + download each selected clip sequentially.
-  const handleBatchExport = async (clipIds: string[]) => {
-    const store = useEditorStore.getState();
-    const res = EXPORT_RESOLUTIONS[store.exportResolution];
-    for (const clipId of clipIds) {
-      const clip = store.sequence.find((c) => c.id === clipId);
-      const asset = clip
-        ? store.assets.find((a) => a.id === clip.assetId)
-        : undefined;
-      if (!clip || !asset) continue;
-
-      const url = URL.createObjectURL(asset.blob);
-      const el = document.createElement("video");
-      el.preload = "auto";
-      el.playsInline = true;
-      el.src = url;
-
-      try {
-        await new Promise<void>((resolve) => {
-          if (el.readyState >= 1) resolve();
-          else el.addEventListener("loadedmetadata", () => resolve(), { once: true });
-        });
-        const trimStart = clip.trimStart;
-        const trimEnd =
-          clip.trimEnd > clip.trimStart
-            ? clip.trimEnd
-            : Number.isFinite(el.duration)
-              ? el.duration
-              : 0;
-        if (trimEnd <= trimStart) continue;
-
-        const file =
-          asset.blob instanceof File
-            ? asset.blob
-            : new File([asset.blob], asset.name, {
-                type: asset.blob.type || "video/mp4",
-              });
-
-        const result = await exportVideo({
-          video: el,
-          renderFrame: (ctx, time, frameVideo) =>
-            drawScene(ctx, frameVideo, {
-              width: res.width,
-              height: res.height,
-              fit: store.fit,
-              offsetX: store.offsetX,
-              offsetY: store.offsetY,
-              overlays: [],
-              captionStyle: store.captionStyle,
-              colorAdjustments: store.colorAdjustments,
-              activeEffects: [],
-              crisp: store.hdRendering,
-              sceneTime: time,
-              colorWheels: store.colorWheels,
-            }),
-          width: res.width,
-          height: res.height,
-          bitrate: res.bitrate,
-          trimStart,
-          trimEnd,
-          fps: EXPORT_FPS,
-          file,
-          speedPoints: [],
-          muteBase: store.trackStates.V1.muted,
-          onProgress: () => {},
-        });
-        downloadFile(
-          result.blob,
-          fileNameFor(asset.name.replace(/\.[^.]+$/, ""), result.extension, res.label)
-        );
-      } catch {
-        // Skip failed items and continue the queue.
-      } finally {
-        URL.revokeObjectURL(url);
-      }
-    }
-  };
-
   const exporting = exportRun?.status === "running";
   const exportPercent = exporting ? exportRun?.percent ?? 0 : 0;
 
@@ -581,6 +514,16 @@ function EditorView() {
 
         <button
           type="button"
+          aria-label="Exit project and return to Project Manager"
+          title="Exit project"
+          onClick={() => void exitProject()}
+          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-zinc-500 transition-colors hover:bg-white/5 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-violet-500/60"
+        >
+          <LogOut className="h-4 w-4" aria-hidden />
+        </button>
+
+        <button
+          type="button"
           data-tour="export-button"
           onClick={() => void handleExport()}
           disabled={!hasVideo || exporting}
@@ -639,7 +582,6 @@ function EditorView() {
           <div className="hidden md:flex md:min-h-0 md:flex-1 md:flex-col">
             <DesktopEditor
               onExport={() => void handleExport()}
-              onBatchExport={(ids) => void handleBatchExport(ids)}
             />
           </div>
 

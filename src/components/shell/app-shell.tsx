@@ -57,10 +57,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       )}
 
       <div className="relative z-10 flex min-w-0 flex-1 flex-col">
-        <Header
-          variant={isEditor ? "editor" : "default"}
-          onMenuClick={() => setSidebarOpen(true)}
-        />
+        {/* The studio provides its own single grey menu bar; rendering the
+            generic shell header here too created a second white brand header. */}
+        {!isEditor && (
+          <Header
+            variant={isEditor ? "editor" : "default"}
+            onMenuClick={() => setSidebarOpen(true)}
+          />
+        )}
         <main
           className={cn(
             "relative flex-1 overflow-y-auto",

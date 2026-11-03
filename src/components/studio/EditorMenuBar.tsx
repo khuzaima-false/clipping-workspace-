@@ -9,6 +9,7 @@ import {
   Download,
   Film,
   Loader2,
+  LogOut,
   Pipette,
   Redo2,
   RefreshCw,
@@ -19,6 +20,7 @@ import {
 import { Modal } from "@/components/ui/modal";
 import { TutorialLauncher } from "@/components/tutorial/guided-tour";
 import { cn } from "@/lib/utils";
+import { clearActiveLocalProject } from "@/lib/local-projects";
 import { windowControl } from "@/lib/tauri";
 import {
   EXPORT_RESOLUTIONS,
@@ -44,10 +46,10 @@ export const WORKSPACE_PAGES: {
   hint: string;
   icon: typeof Scissors;
 }[] = [
-  { id: "cut", label: "Cut", hint: "Timeline cut page", icon: Scissors },
-  { id: "edit", label: "Edit", hint: "Dual monitor edit page", icon: Film },
-  { id: "fusion", label: "Fusion", hint: "AI / effects page", icon: Sparkles },
-  { id: "color", label: "Color", hint: "Color grading page", icon: Pipette },
+  { id: "cut", label: "Cut", hint: "Clip transform, cutout and split tools", icon: Scissors },
+  { id: "edit", label: "Edit", hint: "Program monitor and clip properties", icon: Film },
+  { id: "fusion", label: "Fusion", hint: "Effects and AI studio tools", icon: Sparkles },
+  { id: "color", label: "Color", hint: "Color wheels and grading tools", icon: Pipette },
   {
     id: "fairlight",
     label: "Fairlight",
@@ -213,6 +215,16 @@ export function EditorMenuBar({
     setUpdateChecking(false);
   }
 
+  async function exitProject() {
+    setOpen(null);
+    try {
+      await useEditorStore.getState().checkpoint();
+    } finally {
+      clearActiveLocalProject();
+      router.replace("/dashboard");
+    }
+  }
+
   const menuBody: Record<MenuId, React.ReactNode> = {
     file: (
       <>
@@ -258,6 +270,11 @@ export function EditorMenuBar({
           shortcut="Ctrl+E"
           disabled={!onExport}
           onSelect={() => onExport?.()}
+        />
+        <MenuDivider />
+        <MenuItem
+          label="Exit project"
+          onSelect={() => run(() => void exitProject())}
         />
       </>
     ),
@@ -601,6 +618,17 @@ export function EditorMenuBar({
             className="flex h-6 w-6 items-center justify-center rounded p-1 text-zinc-500 transition-colors hover:bg-white/5 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-violet-500/60"
           >
             <Redo2 className="h-3.5 w-3.5" aria-hidden />
+          </button>
+          <button
+            type="button"
+            data-tour="exit-project"
+            aria-label="Exit project and return to Project Manager"
+            title="Exit project"
+            onClick={() => void exitProject()}
+            className="inline-flex h-6 items-center gap-1 rounded px-1.5 text-[10px] font-medium text-zinc-500 transition-colors hover:bg-white/5 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-violet-500/60"
+          >
+            <LogOut className="h-3 w-3" aria-hidden />
+            Exit
           </button>
           <button
             type="button"

@@ -90,6 +90,8 @@ export type TimelineClip = {
   trimStart: number;
   /** Seconds trimmed to the end of the source (out-point). */
   trimEnd: number;
+  /** Video lane key (V1, V2, V3, …). Defaults to V1 for legacy projects. */
+  track?: string;
   /**
    * Absolute position (seconds) on the master timeline. When omitted the clip
    * simply flows after the previous clip, so existing projects keep their
@@ -169,6 +171,10 @@ export type ProjectMedia = {
   audio: StoredAudio[];
   /** Per-lane mute/solo/lock/hide state (loosely typed, see `lib/tracks`). */
   trackStates?: Record<string, unknown>;
+  /** Number of video lanes in the project (defaults to 3). */
+  videoTrackCount?: number;
+  /** Number of audio lanes in the project (defaults to 3). */
+  audioTrackCount?: number;
   /** Playhead position (seconds) at the moment of the checkpoint. */
   currentTime?: number;
   /** Epoch ms of the last successful checkpoint. */
@@ -201,6 +207,16 @@ export async function loadProjectMedia(
     trackStates:
       value.trackStates && typeof value.trackStates === "object"
         ? value.trackStates
+        : undefined,
+    videoTrackCount:
+      typeof value.videoTrackCount === "number" &&
+      Number.isFinite(value.videoTrackCount)
+        ? Math.max(1, Math.round(value.videoTrackCount))
+        : undefined,
+    audioTrackCount:
+      typeof value.audioTrackCount === "number" &&
+      Number.isFinite(value.audioTrackCount)
+        ? Math.max(1, Math.round(value.audioTrackCount))
         : undefined,
     currentTime:
       typeof value.currentTime === "number" && Number.isFinite(value.currentTime)

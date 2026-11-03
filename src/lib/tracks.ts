@@ -5,8 +5,8 @@
  * it without creating a cycle.
  */
 
-/** Every lane in the timeline, top-to-bottom as they are rendered. */
-export type TrackKey = "V3" | "V2" | "V1" | "A1" | "A2" | "A3";
+/** Every possible lane key. Tracks are unlimited: V1, V2, … and A1, A2, … */
+export type TrackKey = `V${number}` | `A${number}`;
 
 /** The per-track header toggles (mute, solo, lock, visibility). */
 export type TrackField = "muted" | "solo" | "locked" | "isVisible";
@@ -22,21 +22,19 @@ export type TrackState = {
   isVisible: boolean;
 };
 
-/** Video lanes, bottom-up internally (V1 is the base layer). */
+export type TrackStateMap = Record<string, TrackState>;
+
+export const DEFAULT_VIDEO_TRACK_COUNT = 3;
+export const DEFAULT_AUDIO_TRACK_COUNT = 3;
+
+/** Video lanes, top-down for the original three-track projects. */
 export const VIDEO_TRACK_KEYS = ["V3", "V2", "V1"] as const;
 
-/** Audio lanes in display order. */
+/** Audio lanes in display order for the original three-track projects. */
 export const AUDIO_TRACK_KEYS: TrackKey[] = ["A1", "A2", "A3"];
 
-/** All lanes, in the order they are rendered (top to bottom). */
-export const TRACK_KEYS: TrackKey[] = [
-  "V3",
-  "V2",
-  "V1",
-  "A1",
-  "A2",
-  "A3",
-];
+/** All original lanes, in the order they are rendered (top to bottom). */
+export const TRACK_KEYS: TrackKey[] = ["V3", "V2", "V1", "A1", "A2", "A3"];
 
 export const DEFAULT_TRACK_STATE: TrackState = {
   muted: false,
@@ -45,40 +43,90 @@ export const DEFAULT_TRACK_STATE: TrackState = {
   isVisible: true,
 };
 
-/** A fresh, fully-unlocked set of track states. */
-export function defaultTrackStates(): Record<TrackKey, TrackState> {
-  return {
-    V3: { ...DEFAULT_TRACK_STATE },
-    V2: { ...DEFAULT_TRACK_STATE },
-    V1: { ...DEFAULT_TRACK_STATE },
-    A1: { ...DEFAULT_TRACK_STATE },
-    A2: { ...DEFAULT_TRACK_STATE },
-    A3: { ...DEFAULT_TRACK_STATE },
-  };
+/** Generates the display order for a dynamic video-track count (top-down). */
+export function videoTrackKeys(count = DEFAULT_VIDEO_TRACK_COUNT): TrackKey[] {
+  const size = Math.max(1, Math.floor(count));
+  return Array.from({ length: size }, (_, index) => `V${size - index}` as TrackKey);
+}
+
+/** Generates the display order for a dynamic audio-track count (top-down). */
+export function audioTrackKeys(count = DEFAULT_AUDIO_TRACK_COUNT): TrackKey[] {
+  const size = Math.max(1, Math.floor(count));
+  return Array.from({ length: size }, (_, index) => `A${index + 1}` as TrackKey);
+}
+
+/** Every lane for the current project, in timeline render order. */
+export function allTrackKeys(
+  videoCount = DEFAULT_VIDEO_TRACK_COUNT,
+  audioCount = DEFAULT_AUDIO_TRACK_COUNT
+): TrackKey[] {
+  return [...videoTrackKeys(videoCount), ...audioTrackKeys(audioCount)];
+}
+
+/** A fresh, fully-unlocked set of track states for the requested lane counts. */
+export function defaultTrackStates(
+  videoCount = DEFAULT_VIDEO_TRACK_COUNT,
+  audioCount = DEFAULT_AUDIO_TRACK_COUNT
+): TrackStateMap {
+  const states: TrackStateMap = {};
+  for (const key of allTrackKeys(videoCount, audioCount)) {
+    states[key] = { ...DEFAULT_TRACK_STATE };
+  }
+  return states;
+}
+
+export function isVideoTrackKey(value: unknown): value is TrackKey {
+  return typeof value === "string" && /^V[1-9]\d*$/.test(value);
+}
+
+export function isAudioTrackKey(value: unknown): value is TrackKey {
+  return typeof value === "string" && /^A[1-9]\d*$/.test(value);
 }
 
 export function isTrackKey(value: unknown): value is TrackKey {
-  return typeof value === "string" && (TRACK_KEYS as string[]).includes(value);
+  return isVideoTrackKey(value) || isAudioTrackKey(value);
 }
 
-/** Maps a zero-based audio lane index to its track key (A1, A2, A3). */
+/** Maps a zero-based audio lane index to its track key (A1, A2, A3, …). */
 export function laneKeyFor(lane: number): TrackKey {
-  return AUDIO_TRACK_KEYS[lane] ?? AUDIO_TRACK_KEYS[0];
+  return `A${Math.max(1, Math.floor(lane) + 1)}` as TrackKey;
 }
 
 /** Zero-based lane index for an audio track key. */
 export function laneIndexOf(key: TrackKey): number {
-  const index = AUDIO_TRACK_KEYS.indexOf(key);
-  return index < 0 ? 0 : index;
+  const match = /^A([1-9]\d*)$/.exec(key);
+  return match ? Math.max(0, Number(match[1]) - 1) : 0;
 }
 
-/** Merges a persisted/partial track-state map with the defaults. */
+/** Zero-based lane index for a video track key (V1 = 0, V2 = 1, …). */
+export function videoLaneIndexOf(key: TrackKey): number {
+  const match = /^V([1-9]\d*)$/.exec(key);
+  return match ? Math.max(0, Number(match[1]) - 1) : 0;
+}
+
+/** Numeric video lane (V1 = 1, V2 = 2, …); 0 for audio/unknown keys. */
+export function videoTrackNumber(value: unknown): number {
+  if (typeof value !== "string") return 0;
+  const match = /^V([1-9]\d*)$/.exec(value);
+  return match ? Number(match[1]) : 0;
+}
+
+/** Merges a persisted/partial track-state map with the dynamic defaults. */
 export function normalizeTrackStates(
-  raw: unknown
-): Record<TrackKey, TrackState> {
-  const base = defaultTrackStates();
+  raw: unknown,
+  videoCount = DEFAULT_VIDEO_TRACK_COUNT,
+  audioCount = DEFAULT_AUDIO_TRACK_COUNT
+): TrackStateMap {
+  const base = defaultTrackStates(videoCount, audioCount);
   if (!raw || typeof raw !== "object") return base;
-  for (const key of TRACK_KEYS) {
+
+  // Keep valid legacy/custom lanes even when counts were not persisted.
+  const keys = new Set<TrackKey>(allTrackKeys(videoCount, audioCount));
+  for (const key of Object.keys(raw)) {
+    if (isTrackKey(key)) keys.add(key);
+  }
+
+  for (const key of keys) {
     const value = (raw as Record<string, unknown>)[key];
     if (!value || typeof value !== "object") continue;
     const partial = value as Partial<TrackState> & { hidden?: unknown };
@@ -107,16 +155,15 @@ export type VisibleLayers = {
 };
 
 /**
- * Resolves the eye + solo state of the three video lanes into a single
+ * Resolves the eye + solo state of the video lanes into a single
  * "what should the canvas draw" result.
  *
  * A lane renders when it is visible **and** either no video lane is soloed or
  * this lane is one of the soloed ones (so soloing V2 isolates the overlays).
  */
-export function computeVisibleLayers(
-  states: Record<TrackKey, TrackState>
-): VisibleLayers {
-  const soloActive = VIDEO_TRACK_KEYS.some((key) => states[key]?.solo);
+export function computeVisibleLayers(states: TrackStateMap): VisibleLayers {
+  const videoKeys = Object.keys(states).filter(isVideoTrackKey);
+  const soloActive = videoKeys.some((key) => states[key]?.solo);
   const on = (key: TrackKey) => {
     const state = states[key];
     const visible = state?.isVisible ?? true;
@@ -130,20 +177,17 @@ export function computeVisibleLayers(
 }
 
 /** True when the lane is hidden by the eye toggle or excluded by a video solo. */
-export function isLaneDimmed(
-  key: TrackKey,
-  states: Record<TrackKey, TrackState>
-): boolean {
+export function isLaneDimmed(key: TrackKey, states: TrackStateMap): boolean {
   const state = states[key] ?? DEFAULT_TRACK_STATE;
   if (!state.isVisible) return true;
-  const isVideo = (VIDEO_TRACK_KEYS as readonly string[]).includes(key);
-  if (!isVideo) return false;
-  const soloActive = VIDEO_TRACK_KEYS.some((item) => states[item]?.solo);
+  if (!isVideoTrackKey(key)) return false;
+  const videoKeys = Object.keys(states).filter(isVideoTrackKey);
+  const soloActive = videoKeys.some((item) => states[item]?.solo);
   return soloActive && !state.solo;
 }
 
 /** `drawScene` visibility flags for the current track states. */
-export function visibleLayerFlags(states: Record<TrackKey, TrackState>): {
+export function visibleLayerFlags(states: TrackStateMap): {
   showVideo: boolean;
   showOverlays: boolean;
   showEffects: boolean;
@@ -155,4 +199,3 @@ export function visibleLayerFlags(states: Record<TrackKey, TrackState>): {
     showEffects: layers.effects,
   };
 }
-

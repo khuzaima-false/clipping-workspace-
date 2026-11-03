@@ -26,14 +26,18 @@ import { applyElementAudio } from "@/lib/element-audio";
 import { mountPreviewMedia, unmountPreviewMedia } from "@/lib/preview-media";
 import { type MotionPresetId } from "@/lib/motion-presets";
 import {
-  AUDIO_TRACK_KEYS,
+  audioTrackKeys,
+  DEFAULT_AUDIO_TRACK_COUNT,
   DEFAULT_TRACK_STATE,
+  DEFAULT_VIDEO_TRACK_COUNT,
   defaultTrackStates,
+  isVideoTrackKey,
   laneKeyFor,
   normalizeTrackStates,
+  videoTrackNumber,
   type TrackField,
   type TrackKey,
-  type TrackState,
+  type TrackStateMap,
 } from "@/lib/tracks";
 import {
   isTauriEnvironment,
@@ -344,6 +348,8 @@ export type AudioTrack = {
 export type TextOverlay = {
   id: string;
   text: string;
+  /** Video lane key (V2 by default; may be moved to any V lane). */
+  track?: string;
   /** Horizontal anchor, 0..100 (% of canvas width). */
   x: number;
   /** Vertical anchor (box center), 0..100 (% of canvas height). */
@@ -549,6 +555,8 @@ export type VideoEffectType =
 export type VideoEffect = {
   id: string;
   type: VideoEffectType;
+  /** Video lane key (V3 by default; may be moved to any V lane). */
+  track?: string;
   /** Source-video time (seconds) where the effect begins. */
   startTime: number;
   /** Effect length in seconds. */
@@ -1142,7 +1150,7 @@ export type EditSnapshot = {
   canvasFill: CanvasFill;
   chromaKey: ChromaKeySettings;
   /** Lane mute/solo/lock/visibility state (track-lock changes are undoable). */
-  trackStates: Record<TrackKey, TrackState>;
+  trackStates: TrackStateMap;
 };
 
 /** Autosave lifecycle shown in the editor header. */
@@ -1232,10 +1240,22 @@ type EditorState = {
   /** Last audio-import failure, if any. */
   audioTrackError: string | null;
 
+  /** Number of video lanes (V1..Vn) in the timeline. */
+  videoTrackCount: number;
+  /** Number of audio lanes (A1..An) in the timeline. */
+  audioTrackCount: number;
   /** Per-lane mute / solo / lock / hide state for the timeline workspace. */
-  trackStates: Record<TrackKey, TrackState>;
+  trackStates: TrackStateMap;
   /** Toggles (or explicitly sets) a lane flag. */
   setTrackFlag: (key: TrackKey, field: TrackField, value?: boolean) => void;
+  /** Adds the next video lane above the existing video stack. */
+  addVideoTrack: () => void;
+  /** Adds the next audio lane below the existing audio stack. */
+  addAudioTrack: () => void;
+  /** Moves a sequence clip to another video lane. */
+  moveClipToTrack: (clipId: string, track: string) => void;
+  /** Moves an audio clip/sound effect to another audio lane. */
+  moveAudioTrackToLane: (trackId: string, lane: number) => void;
   /** Splits a sequence clip at a source time into two independent clips. */
   splitClip: (clipId: string, sourceTime: number) => void;
   /**
@@ -1371,12 +1391,17 @@ type EditorState = {
   /** Sets the letterbox background fill strategy. */
   setCanvasFill: (fill: CanvasFill) => void;
   addOverlay: () => void;
-  /** Adds a text/emoji sticker overlay at a larger default size. */
-  addTextSticker: (text: string, fontSize?: number) => void;
-  /** Adds a graphic (SVG data URL) sticker overlay, centered. */
-  addStickerImage: (src: string) => void;
+  /** Adds a text/emoji sticker overlay (optionally at a dropped time/lane). */
+  addTextSticker: (
+    text: string,
+    fontSize?: number,
+    atTime?: number,
+    track?: string
+  ) => void;
+  /** Adds a graphic (SVG data URL) sticker overlay (optionally time/lane). */
+  addStickerImage: (src: string, atTime?: number, track?: string) => void;
   /** Adds a bitmap (PNG data URL) overlay layer (renders on V2). */
-  addImageOverlay: (src: string, duration?: number) => void;
+  addImageOverlay: (src: string, duration?: number, atTime?: number, track?: string) => void;
   updateOverlay: (id: string, patch: Partial<Omit<TextOverlay, "id">>) => void;
   setOverlayStartTime: (id: string, time: number) => void;
   setOverlayEndTime: (id: string, time: number) => void;
@@ -1413,8 +1438,8 @@ type EditorState = {
   /** Updates a keyframe in place (index-stable, used while dragging). */
   updateSpeedPoint: (index: number, patch: Partial<SpeedPoint>) => void;
   removeSpeedPoint: (index: number) => void;
-  /** Adds an effect of `type` starting at `atTime` seconds. */
-  addEffect: (type: VideoEffectType, atTime: number) => void;
+  /** Adds an effect of `type` starting at `atTime` seconds (optionally on a lane). */
+  addEffect: (type: VideoEffectType, atTime: number, track?: string) => void;
   updateEffect: (
     id: string,
     patch: Partial<Omit<VideoEffect, "id" | "type">>
@@ -1446,7 +1471,10 @@ type EditorState = {
 
   /* Sound effects */
   /** Synthesizes and appends a royalty-free sound effect. */
-  addSoundEffect: (id: SoundEffectId) => Promise<void>;
+  addSoundEffect: (
+    id: SoundEffectId,
+    options?: { atTime?: number; lane?: number }
+  ) => Promise<void>;
 };
 
 function releaseVideo(el: HTMLVideoElement | null, url: string | null): void {
@@ -1517,6 +1545,8 @@ function projectMediaFromState(state: EditorState): ProjectMedia {
     overlays: state.overlays,
     audio: audioMeta,
     trackStates: state.trackStates,
+    videoTrackCount: state.videoTrackCount,
+    audioTrackCount: state.audioTrackCount,
     currentTime: state.currentTime,
     savedAt: Date.now(),
   };
@@ -1578,22 +1608,39 @@ export function isTrackLocked(state: EditorState, key: TrackKey): boolean {
   return state.trackStates[key]?.locked ?? false;
 }
 
+/** The video lane a clip belongs to. Legacy projects default to V1. */
+export function clipTrackKey(clip: TimelineClip): TrackKey {
+  return isVideoTrackKey(clip.track) ? clip.track : "V1";
+}
+
+/** The video lane an overlay belongs to. Legacy projects default to V2. */
+export function overlayTrackKey(overlay: TextOverlay): TrackKey {
+  return isVideoTrackKey(overlay.track) ? overlay.track : "V2";
+}
+
+/** The video lane an effect belongs to. Legacy projects default to V3. */
+export function effectTrackKey(effect: VideoEffect): TrackKey {
+  return isVideoTrackKey(effect.track) ? effect.track : "V3";
+}
+
 /**
  * Resolves the lane an audio track lives on. Legacy projects (saved before
  * lanes existed) alternate A1/A2 by index, which is how they were displayed.
  */
 export function trackLane(track: AudioTrack, index: number): number {
   if (typeof track.lane === "number" && Number.isFinite(track.lane)) {
-    return Math.max(0, Math.min(AUDIO_TRACK_KEYS.length - 1, Math.round(track.lane)));
+    return Math.max(0, Math.round(track.lane));
   }
   return index % 2;
 }
 
-/** The next lane a newly-added track should land on (round-robin). */
+/** The next lane a newly-added track should land on (balanced/round-robin). */
 function nextLaneIndex(state: EditorState): number {
-  const counts = AUDIO_TRACK_KEYS.map(() => 0);
+  const count = Math.max(1, state.audioTrackCount);
+  const counts = Array.from({ length: count }, () => 0);
   state.audioTracks.forEach((track, index) => {
-    counts[trackLane(track, index)] += 1;
+    const lane = Math.min(count - 1, trackLane(track, index));
+    counts[lane] += 1;
   });
   let best = 0;
   for (let i = 1; i < counts.length; i += 1) {
@@ -1609,7 +1656,7 @@ export function effectiveAudioTracks(state: EditorState): AudioTrack[] {
   const audioSoloActive = hasActiveAudioSolo(state);
   // A V1 solo isolates the base video audio unless an audio lane/clip is
   // explicitly soloed too. This keeps V1 and A1–A3 in one routing model.
-  const muteForV1Solo = state.trackStates.V1.solo && !audioSoloActive;
+  const muteForV1Solo = Boolean(state.trackStates.V1?.solo) && !audioSoloActive;
   return state.audioTracks.map((track, index) => {
     const lane = state.trackStates[laneKeyFor(trackLane(track, index))];
     const laneMuted = Boolean(lane?.muted) || lane?.isVisible === false;
@@ -1625,7 +1672,7 @@ export function effectiveAudioTracks(state: EditorState): AudioTrack[] {
 
 /** Whether any audible A1–A3 lane or clip is currently soloed. */
 function hasActiveAudioSolo(state: EditorState): boolean {
-  const laneIsSoloed = AUDIO_TRACK_KEYS.some((key) => {
+  const laneIsSoloed = audioTrackKeys(state.audioTrackCount).some((key) => {
     const lane = state.trackStates[key];
     return Boolean(lane?.solo) && !lane?.muted && lane?.isVisible !== false;
   });
@@ -1644,7 +1691,7 @@ function hasActiveAudioSolo(state: EditorState): boolean {
 
 /** The single mute decision for V1's native HTMLVideoElement audio output. */
 export function isBaseVideoAudioMuted(state: EditorState): boolean {
-  const v1 = state.trackStates.V1;
+  const v1 = state.trackStates.V1 ?? DEFAULT_TRACK_STATE;
   if (v1.muted || v1.isVisible === false) return true;
   // An audio solo excludes V1 unless V1 is also soloed.
   return !v1.solo && hasActiveAudioSolo(state);
@@ -1836,6 +1883,8 @@ export const useEditorStore = create<EditorState>()(
   colorWheels: DEFAULT_COLOR_WHEELS,
   audioTracks: [],
   audioTrackError: null,
+  videoTrackCount: DEFAULT_VIDEO_TRACK_COUNT,
+  audioTrackCount: DEFAULT_AUDIO_TRACK_COUNT,
   trackStates: defaultTrackStates(),
 
   setTrackFlag: (key, field, value) =>
@@ -1845,12 +1894,77 @@ export const useEditorStore = create<EditorState>()(
       return { trackStates: { ...state.trackStates, [key]: next } };
     }),
 
+  addVideoTrack: () =>
+    set((state) => {
+      const next = Math.max(1, state.videoTrackCount + 1);
+      const key = `V${next}` as TrackKey;
+      return {
+        videoTrackCount: next,
+        trackStates: {
+          ...state.trackStates,
+          [key]: state.trackStates[key] ?? { ...DEFAULT_TRACK_STATE },
+        },
+      };
+    }),
+
+  addAudioTrack: () =>
+    set((state) => {
+      const next = Math.max(1, state.audioTrackCount + 1);
+      const key = `A${next}` as TrackKey;
+      return {
+        audioTrackCount: next,
+        trackStates: {
+          ...state.trackStates,
+          [key]: state.trackStates[key] ?? { ...DEFAULT_TRACK_STATE },
+        },
+      };
+    }),
+
+  moveClipToTrack: (clipId, track) => {
+    if (!isVideoTrackKey(track)) return;
+    const state = get();
+    const clip = state.sequence.find((item) => item.id === clipId);
+    if (!clip) return;
+    const from = clipTrackKey(clip);
+    if ((state.trackStates[from]?.locked ?? false) || (state.trackStates[track]?.locked ?? false)) {
+      return;
+    }
+    if (from === track) return;
+    set({
+      sequence: state.sequence.map((item) =>
+        item.id === clipId ? { ...item, track } : item
+      ),
+    });
+    persistProject(get());
+  },
+
+  moveAudioTrackToLane: (trackId, lane) => {
+    const state = get();
+    const index = state.audioTracks.findIndex((track) => track.id === trackId);
+    if (index < 0) return;
+    const fromLane = trackLane(state.audioTracks[index], index);
+    const targetLane = Math.max(0, Math.min(state.audioTrackCount - 1, Math.round(lane)));
+    if (
+      (state.trackStates[laneKeyFor(fromLane)]?.locked ?? false) ||
+      (state.trackStates[laneKeyFor(targetLane)]?.locked ?? false)
+    ) {
+      return;
+    }
+    if (fromLane === targetLane) return;
+    set({
+      audioTracks: state.audioTracks.map((track) =>
+        track.id === trackId ? { ...track, lane: targetLane } : track
+      ),
+    });
+    persistProject(get());
+  },
+
   splitClip: (clipId, sourceTime) => {
     const { sequence, trackStates } = get();
-    if (trackStates.V1.locked) return;
     const index = sequence.findIndex((clip) => clip.id === clipId);
     if (index < 0) return;
     const clip = sequence[index];
+    if (trackStates[clipTrackKey(clip)]?.locked) return;
     const at = Math.min(
       Math.max(sourceTime, clip.trimStart + 0.05),
       clip.trimEnd - 0.05
@@ -1863,6 +1977,7 @@ export const useEditorStore = create<EditorState>()(
       assetId: clip.assetId,
       trimStart: at,
       trimEnd: clip.trimEnd,
+      ...(clip.track ? { track: clip.track } : {}),
       // Keep the cut halves touching even when the source clip was free-placed.
       timelineStart: start + (at - clip.trimStart),
       ...(clip.chromaKey ? { chromaKey: clip.chromaKey } : {}),
@@ -1890,10 +2005,10 @@ export const useEditorStore = create<EditorState>()(
 
   rippleDeleteClip: (clipId) => {
     const { sequence, trackStates } = get();
-    if (trackStates.V1.locked) return;
     const blocks = computeClipStarts(sequence);
     const index = blocks.findIndex((block) => block.clip.id === clipId);
     if (index < 0) return;
+    if (trackStates[clipTrackKey(blocks[index].clip)]?.locked) return;
     const removed = blocks[index];
     const next = blocks
       .filter((_, i) => i !== index)
@@ -1916,12 +2031,12 @@ export const useEditorStore = create<EditorState>()(
 
   deleteTranscriptRange: (from, to) => {
     const state = get();
-    if (state.trackStates.V1.locked) return;
     const { sequence, activeClipId } = state;
     if (!activeClipId) return;
     const index = sequence.findIndex((clip) => clip.id === activeClipId);
     if (index < 0) return;
     const clip = sequence[index];
+    if (state.trackStates[clipTrackKey(clip)]?.locked) return;
 
     const cutFrom = Math.min(Math.max(from, clip.trimStart), clip.trimEnd);
     const cutTo = Math.min(Math.max(to, cutFrom), clip.trimEnd);
@@ -2427,12 +2542,30 @@ export const useEditorStore = create<EditorState>()(
       }
 
       if (get().projectEpoch !== epoch) return;
+      const inferredVideoCount = Math.max(
+        DEFAULT_VIDEO_TRACK_COUNT,
+        media.videoTrackCount ?? DEFAULT_VIDEO_TRACK_COUNT,
+        ...sequence.map((clip) => videoTrackNumber(clip.track)),
+        ...overlays.map((overlay) => videoTrackNumber(overlay.track)),
+        ...(media.trackStates ? Object.keys(media.trackStates).map(videoTrackNumber) : [])
+      );
+      const inferredAudioCount = Math.max(
+        DEFAULT_AUDIO_TRACK_COUNT,
+        media.audioTrackCount ?? DEFAULT_AUDIO_TRACK_COUNT,
+        ...audioTracks.map((track) => Math.max(0, Math.round(track.lane ?? 0)) + 1)
+      );
       set({
         assets,
         sequence,
         overlays,
         audioTracks,
-        trackStates: normalizeTrackStates(media.trackStates),
+        videoTrackCount: inferredVideoCount,
+        audioTrackCount: inferredAudioCount,
+        trackStates: normalizeTrackStates(
+          media.trackStates,
+          inferredVideoCount,
+          inferredAudioCount
+        ),
         assetsLoading: false,
       });
 
@@ -2672,8 +2805,10 @@ export const useEditorStore = create<EditorState>()(
   },
 
   removeClip: (clipId, keepAsset = false) => {
-    if (get().trackStates.V1.locked) return;
-    const sequence = get().sequence.filter((clip) => clip.id !== clipId);
+    const clip = get().sequence.find((item) => item.id === clipId);
+    if (!clip) return;
+    if (get().trackStates[clipTrackKey(clip)]?.locked) return;
+    const sequence = get().sequence.filter((item) => item.id !== clipId);
     set({
       sequence,
       selectedClipIds: get().selectedClipIds.filter((id) => id !== clipId),
@@ -2723,7 +2858,8 @@ export const useEditorStore = create<EditorState>()(
   },
 
   moveClipTo: (clipId, timelineStart) => {
-    if (get().trackStates.V1.locked) return;
+    const clip = get().sequence.find((item) => item.id === clipId);
+    if (!clip || get().trackStates[clipTrackKey(clip)]?.locked) return;
     set({
       sequence: get().sequence.map((clip) =>
         clip.id === clipId
@@ -2754,8 +2890,10 @@ export const useEditorStore = create<EditorState>()(
   },
 
   setClipTrim: (clipId, patch) => {
-    if (get().trackStates.V1.locked) return;
-    const sequence = get().sequence.map((clip) => {
+    const state = get();
+    const sourceClip = state.sequence.find((clip) => clip.id === clipId);
+    if (!sourceClip || state.trackStates[clipTrackKey(sourceClip)]?.locked) return;
+    const sequence = state.sequence.map((clip) => {
       if (clip.id !== clipId) return clip;
       const next = { ...clip, ...patch };
       next.trimStart = Math.max(0, next.trimStart);
@@ -2785,10 +2923,9 @@ export const useEditorStore = create<EditorState>()(
   },
 
   setClipTransformAtPlayhead: (clipId, patch) => {
-    if (get().trackStates.V1.locked) return;
     const state = get();
     const clip = state.sequence.find((item) => item.id === clipId);
-    if (!clip) return;
+    if (!clip || state.trackStates[clipTrackKey(clip)]?.locked) return;
     const time = clipId === state.activeClipId ? state.currentTime : clip.trimStart;
     const animated = (clip.transformKeyframes?.length ?? 0) > 0;
 
@@ -2824,10 +2961,9 @@ export const useEditorStore = create<EditorState>()(
   },
 
   addClipTransformKeyframe: (clipId) => {
-    if (get().trackStates.V1.locked) return;
     const state = get();
     const clip = state.sequence.find((item) => item.id === clipId);
-    if (!clip) return;
+    if (!clip || state.trackStates[clipTrackKey(clip)]?.locked) return;
     const time = clipId === state.activeClipId ? state.currentTime : clip.trimStart;
     // Capture the *current* pose so un-keyed properties are preserved.
     const pose = resolveClipTransform(clip, time);
@@ -2947,12 +3083,12 @@ export const useEditorStore = create<EditorState>()(
   },
 
   duplicateActiveClip: () => {
-    if (get().trackStates.V1.locked) return;
-    const { activeClipId, sequence } = get();
+    const { activeClipId, sequence, trackStates } = get();
     if (!activeClipId) return;
     const index = sequence.findIndex((clip) => clip.id === activeClipId);
     if (index < 0) return;
     const clip = sequence[index];
+    if (trackStates[clipTrackKey(clip)]?.locked) return;
     const copy: TimelineClip = {
       id: createId("clip"),
       assetId: clip.assetId,
@@ -3021,6 +3157,8 @@ export const useEditorStore = create<EditorState>()(
       colorWheels: DEFAULT_COLOR_WHEELS,
       audioTracks: [],
       audioTrackError: null,
+      videoTrackCount: DEFAULT_VIDEO_TRACK_COUNT,
+      audioTrackCount: DEFAULT_AUDIO_TRACK_COUNT,
       trackStates: defaultTrackStates(),
       speedPreset: "none",
       speedPoints: [{ time: 0, speed: 1 }],
@@ -3149,51 +3287,88 @@ export const useEditorStore = create<EditorState>()(
     set({ overlays: [...get().overlays, overlay], selectedId: overlay.id });
   },
 
-  addTextSticker: (text, fontSize = 120) => {
+  addTextSticker: (text, fontSize = 120, atTime, track) => {
+    const duration = get().duration;
+    const base = createOverlay(duration);
+    const startTime =
+      atTime === undefined
+        ? base.startTime
+        : Math.max(0, Math.min(atTime, Math.max(0, (duration || atTime + 5) - 0.05)));
     const overlay: TextOverlay = {
-      ...createOverlay(get().duration),
+      ...base,
       text,
       fontSize,
       x: 50,
       y: 50,
       padding: 0,
       bgColor: "",
+      startTime,
+      endTime: startTime + Math.max(0.2, base.endTime - base.startTime),
+      ...(isVideoTrackKey(track) ? { track } : {}),
     };
     set({ overlays: [...get().overlays, overlay], selectedId: overlay.id });
   },
 
-  addStickerImage: (src) => {
+  addStickerImage: (src, atTime, track) => {
+    const duration = get().duration;
+    const base = createOverlay(duration);
+    const startTime =
+      atTime === undefined
+        ? base.startTime
+        : Math.max(0, Math.min(atTime, Math.max(0, (duration || atTime + 5) - 0.05)));
     const overlay: TextOverlay = {
-      ...createOverlay(get().duration),
+      ...base,
       text: "",
       imageSrc: src,
       x: 50,
       y: 50,
+      startTime,
+      endTime: startTime + Math.max(0.2, base.endTime - base.startTime),
+      ...(isVideoTrackKey(track) ? { track } : {}),
     };
     set({ overlays: [...get().overlays, overlay], selectedId: overlay.id });
   },
 
-  addImageOverlay: (src, duration = 0) => {
+  addImageOverlay: (src, duration = 0, atTime, track) => {
+    const base = createOverlay(duration);
+    const startTime =
+      atTime === undefined
+        ? base.startTime
+        : Math.max(0, atTime);
     const overlay: TextOverlay = {
-      ...createOverlay(duration),
+      ...base,
       text: "",
       imageSrc: src,
+      startTime,
+      endTime: startTime + Math.max(0.2, base.endTime - base.startTime),
+      ...(isVideoTrackKey(track) ? { track } : {}),
     };
     set({ overlays: [...get().overlays, overlay], selectedId: overlay.id });
   },
 
-  updateOverlay: (id, patch) =>
+  updateOverlay: (id, patch) => {
+    const state = get();
+    const overlay = state.overlays.find((item) => item.id === id);
+    if (!overlay) return;
+    const from = overlayTrackKey(overlay);
+    const target = isVideoTrackKey(patch.track) ? patch.track : from;
+    if (
+      (state.trackStates[from]?.locked ?? false) ||
+      (target !== from && (state.trackStates[target]?.locked ?? false))
+    ) {
+      return;
+    }
     set({
-      overlays: get().overlays.map((overlay) =>
-        overlay.id === id ? { ...overlay, ...patch } : overlay
+      overlays: state.overlays.map((item) =>
+        item.id === id ? { ...item, ...patch } : item
       ),
-    }),
+    });
+  },
 
   setOverlayStartTime: (id, time) => {
-    if (get().trackStates.V2.locked) return;
-    const { overlays, duration } = get();
+    const { overlays, duration, trackStates } = get();
     const overlay = overlays.find((item) => item.id === id);
-    if (!overlay) return;
+    if (!overlay || trackStates[overlayTrackKey(overlay)]?.locked) return;
     // The start can never pass the end (or the video's duration).
     const upper = duration > 0 ? Math.min(duration, overlay.endTime) : overlay.endTime;
     const startTime = snapTime(time, 0, upper);
@@ -3206,10 +3381,9 @@ export const useEditorStore = create<EditorState>()(
   },
 
   setOverlayEndTime: (id, time) => {
-    if (get().trackStates.V2.locked) return;
-    const { overlays, duration } = get();
+    const { overlays, duration, trackStates } = get();
     const overlay = overlays.find((item) => item.id === id);
-    if (!overlay) return;
+    if (!overlay || trackStates[overlayTrackKey(overlay)]?.locked) return;
     const upper = duration > 0 ? duration : Number.MAX_SAFE_INTEGER;
     const endTime = snapTime(time, overlay.startTime, upper);
     if (endTime === overlay.endTime) return;
@@ -3221,10 +3395,9 @@ export const useEditorStore = create<EditorState>()(
   },
 
   moveOverlayTo: (id, startTime) => {
-    if (get().trackStates.V2.locked) return;
-    const { overlays, duration } = get();
+    const { overlays, duration, trackStates } = get();
     const overlay = overlays.find((item) => item.id === id);
-    if (!overlay) return;
+    if (!overlay || trackStates[overlayTrackKey(overlay)]?.locked) return;
     const span = Math.max(0.1, overlay.endTime - overlay.startTime);
     const upper = duration > 0 ? Math.max(0, duration - span) : Number.MAX_SAFE_INTEGER;
     const start = Math.min(Math.max(startTime, 0), upper);
@@ -3236,10 +3409,12 @@ export const useEditorStore = create<EditorState>()(
   },
 
   removeOverlay: (id) => {
-    if (get().trackStates.V2.locked) return;
+    const state = get();
+    const overlay = state.overlays.find((item) => item.id === id);
+    if (!overlay || state.trackStates[overlayTrackKey(overlay)]?.locked) return;
     set({
-      overlays: get().overlays.filter((overlay) => overlay.id !== id),
-      selectedId: get().selectedId === id ? null : get().selectedId,
+      overlays: state.overlays.filter((item) => item.id !== id),
+      selectedId: state.selectedId === id ? null : state.selectedId,
     });
   },
 
@@ -3466,17 +3641,29 @@ export const useEditorStore = create<EditorState>()(
   },
 
   updateAudioTrack: (id, patch) => {
-    // A locked lane keeps its position/size; volume, fades and mute/solo are fine.
+    const state = get();
+    const index = state.audioTracks.findIndex((track) => track.id === id);
+    if (index < 0) return;
+    const source = state.audioTracks[index];
+    const fromLane = trackLane(source, index);
+    const nextLane =
+      patch.lane === undefined
+        ? fromLane
+        : Math.max(0, Math.min(state.audioTrackCount - 1, Math.round(patch.lane)));
+    const timingEdit = "trimStart" in patch || "duration" in patch || "lane" in patch;
+    // A locked lane keeps its position/size/lane; volume, fades and mute/solo are fine.
     if (
-      isAudioTrackLocked(get(), id) &&
-      ("trimStart" in patch || "duration" in patch)
+      timingEdit &&
+      ((state.trackStates[laneKeyFor(fromLane)]?.locked ?? false) ||
+        (nextLane !== fromLane &&
+          (state.trackStates[laneKeyFor(nextLane)]?.locked ?? false)))
     ) {
       return;
     }
     set({
-      audioTracks: get().audioTracks.map((track) => {
+      audioTracks: state.audioTracks.map((track) => {
         if (track.id !== id) return track;
-        const next = { ...track, ...patch };
+        const next = { ...track, ...patch, lane: nextLane };
         const maxDuration = track.buffer ? track.buffer.duration : track.duration;
         next.trimStart = Math.min(Math.max(next.trimStart, 0), Math.max(0, maxDuration - 0.05));
         next.volume = Math.min(Math.max(next.volume, 0), 1);
@@ -3563,7 +3750,7 @@ export const useEditorStore = create<EditorState>()(
     set({ sequence: sequenceWithSpeed(get()) });
   },
 
-  addEffect: (type, atTime) => {
+  addEffect: (type, atTime, track) => {
     const preset = EFFECT_DEFAULTS[type];
     const duration = get().duration;
     const startTime =
@@ -3574,44 +3761,57 @@ export const useEditorStore = create<EditorState>()(
       startTime,
       duration: preset.duration,
       intensity: preset.intensity,
+      ...(isVideoTrackKey(track) ? { track } : {}),
     };
     set({ activeEffects: [...get().activeEffects, effect] });
   },
 
   updateEffect: (id, patch) => {
-    // Locked V3 still allows value tweaks; timing edits are blocked.
+    const state = get();
+    const effect = state.activeEffects.find((item) => item.id === id);
+    if (!effect) return;
+    const from = effectTrackKey(effect);
+    const target = isVideoTrackKey(patch.track) ? patch.track : from;
+    const timingEdit =
+      "startTime" in patch || "duration" in patch || target !== from;
+    // A locked lane still allows value tweaks; timing/lane edits are blocked.
     if (
-      get().trackStates.V3.locked &&
-      ("startTime" in patch || "duration" in patch)
+      timingEdit &&
+      ((state.trackStates[from]?.locked ?? false) ||
+        (target !== from && (state.trackStates[target]?.locked ?? false)))
     ) {
       return;
     }
     set({
-      activeEffects: get().activeEffects.map((effect) =>
-        effect.id === id ? { ...effect, ...patch } : effect
+      activeEffects: state.activeEffects.map((item) =>
+        item.id === id ? { ...item, ...patch } : item
       ),
     });
   },
 
   moveEffectTo: (id, startTime) => {
-    if (get().trackStates.V3.locked) return;
-    const { activeEffects, duration } = get();
+    const state = get();
+    const effect = state.activeEffects.find((item) => item.id === id);
+    if (!effect || state.trackStates[effectTrackKey(effect)]?.locked) return;
+    const { activeEffects, duration } = state;
     set({
-      activeEffects: activeEffects.map((effect) => {
-        if (effect.id !== id) return effect;
+      activeEffects: activeEffects.map((item) => {
+        if (item.id !== id) return item;
         const upper =
           duration > 0
-            ? Math.max(0, duration - effect.duration)
+            ? Math.max(0, duration - item.duration)
             : Number.MAX_SAFE_INTEGER;
-        return { ...effect, startTime: Math.min(Math.max(startTime, 0), upper) };
+        return { ...item, startTime: Math.min(Math.max(startTime, 0), upper) };
       }),
     });
   },
 
   removeEffect: (id) => {
-    if (get().trackStates.V3.locked) return;
+    const state = get();
+    const effect = state.activeEffects.find((item) => item.id === id);
+    if (!effect || state.trackStates[effectTrackKey(effect)]?.locked) return;
     set({
-      activeEffects: get().activeEffects.filter((effect) => effect.id !== id),
+      activeEffects: state.activeEffects.filter((item) => item.id !== id),
     });
   },
 
@@ -3737,7 +3937,7 @@ export const useEditorStore = create<EditorState>()(
     });
   },
 
-  addSoundEffect: async (id) => {
+  addSoundEffect: async (id, options) => {
     const spec = SOUND_EFFECTS.find((effect) => effect.id === id);
     const rendered = await renderSoundEffect(id);
     if (!rendered) {
@@ -3752,6 +3952,11 @@ export const useEditorStore = create<EditorState>()(
     }
     const url = URL.createObjectURL(rendered.blob);
     const file = new File([rendered.blob], `${id}.wav`, { type: "audio/wav" });
+    const state = get();
+    const lane =
+      options?.lane === undefined
+        ? nextLaneIndex(state)
+        : Math.max(0, Math.min(state.audioTrackCount - 1, Math.round(options.lane)));
     const track: AudioTrack = {
       id: createId("sfx"),
       mediaId,
@@ -3759,7 +3964,7 @@ export const useEditorStore = create<EditorState>()(
       url,
       file,
       buffer: rendered.buffer,
-      startTime: get().currentTime,
+      startTime: Math.max(0, options?.atTime ?? state.currentTime),
       volume: 1,
       trimStart: 0,
       duration: rendered.buffer.duration,
@@ -3768,7 +3973,7 @@ export const useEditorStore = create<EditorState>()(
       fadeIn: 0.01,
       fadeOut: 0.12,
       synth: true,
-      lane: nextLaneIndex(get()),
+      lane,
       peaks: computeWaveformPeaks(rendered.buffer),
     };
     set({ audioTracks: [...get().audioTracks, track], audioTrackError: null });
@@ -3824,6 +4029,8 @@ useEditorStore.subscribe(
     overlays: state.overlays,
     audioTracks: state.audioTracks,
     trackStates: state.trackStates,
+    videoTrackCount: state.videoTrackCount,
+    audioTrackCount: state.audioTrackCount,
   }),
   () => {
     // Mark dirty only — the debounced autosave hook (plus the 60s heartbeat)

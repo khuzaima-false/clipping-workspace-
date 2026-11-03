@@ -1,8 +1,10 @@
 "use client";
 
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import { Film, Upload } from "lucide-react";
 import { cn } from "@/lib/utils";
+import type { VideoAsset } from "@/lib/video-storage";
 import { useEditorStore } from "@/store/editor";
 
 function formatSize(bytes: number): string {
@@ -11,8 +13,145 @@ function formatSize(bytes: number): string {
 }
 
 /**
- * Dedicated full-width media bin. The former Media Pool / DeepSeek AI tab
- * split has been removed so the upper-left panel belongs entirely to media.
+ * Capture the opening frame of a clip off-DOM so the media bin does not mount
+ * a live video element for every asset.
+ */
+function MediaThumbnail({ asset }: { asset: VideoAsset }) {
+  const [thumbnail, setThumbnail] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    if (!asset.type.startsWith("video/") || asset.blob.size === 0) {
+      return;
+    }
+
+    let cancelled = false;
+    let finished = false;
+    const objectUrl = URL.createObjectURL(asset.blob);
+    const video = document.createElement("video");
+    video.preload = "auto";
+    video.muted = true;
+    video.playsInline = true;
+
+    let timeoutId = 0;
+    const cleanup = () => {
+      if (timeoutId) window.clearTimeout(timeoutId);
+      video.removeAttribute("src");
+      video.load();
+      URL.revokeObjectURL(objectUrl);
+    };
+
+    const capture = () => {
+      if (cancelled || finished) return;
+      finished = true;
+
+      if (!video.videoWidth || !video.videoHeight) {
+        setFailed(true);
+        cleanup();
+        return;
+      }
+
+      const canvas = document.createElement("canvas");
+      canvas.width = 128;
+      canvas.height = 80;
+      const context = canvas.getContext("2d");
+      if (!context) {
+        setFailed(true);
+        cleanup();
+        return;
+      }
+
+      const targetAspect = canvas.width / canvas.height;
+      const sourceAspect = video.videoWidth / video.videoHeight;
+      let sx = 0;
+      let sy = 0;
+      let sw = video.videoWidth;
+      let sh = video.videoHeight;
+      if (sourceAspect > targetAspect) {
+        sw = sh * targetAspect;
+        sx = (video.videoWidth - sw) / 2;
+      } else {
+        sh = sw / targetAspect;
+        sy = (video.videoHeight - sh) / 2;
+      }
+
+      try {
+        context.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+        setThumbnail(canvas.toDataURL("image/jpeg", 0.74));
+      } catch {
+        setFailed(true);
+      } finally {
+        cleanup();
+      }
+    };
+
+    const onLoadedData = () => {
+      if (cancelled) return;
+      const duration = Number.isFinite(video.duration) ? video.duration : 0;
+      const seekTime = duration > 0 ? Math.min(0.1, duration / 2) : 0.01;
+      try {
+        video.currentTime = seekTime;
+      } catch {
+        capture();
+      }
+    };
+    const onError = () => {
+      if (cancelled) return;
+      finished = true;
+      setFailed(true);
+      cleanup();
+    };
+
+    video.addEventListener("loadeddata", onLoadedData, { once: true });
+    video.addEventListener("seeked", capture, { once: true });
+    video.addEventListener("error", onError, { once: true });
+    video.src = objectUrl;
+    video.load();
+
+    timeoutId = window.setTimeout(() => {
+      if (cancelled || finished) return;
+      finished = true;
+      setFailed(true);
+      cleanup();
+    }, 5000);
+
+    return () => {
+      cancelled = true;
+      cleanup();
+    };
+  }, [asset]);
+
+  if (thumbnail) {
+    return (
+      <Image
+        src={thumbnail}
+        alt=""
+        aria-hidden
+        width={128}
+        height={80}
+        unoptimized
+        className="h-9 w-14 shrink-0 rounded border border-white/10 object-cover"
+      />
+    );
+  }
+
+  const unavailable =
+    failed || !asset.type.startsWith("video/") || asset.blob.size === 0;
+  return (
+    <span
+      title={unavailable ? "Thumbnail unavailable" : "Loading thumbnail"}
+      className="flex h-9 w-14 shrink-0 items-center justify-center rounded border border-white/10 bg-black/40"
+      aria-hidden
+    >
+      <Film className="h-4 w-4 text-zinc-600" />
+    </span>
+  );
+}
+
+/**
+ * Dedicated full-width media bin with first-frame thumbnails. The former
+ * Media Pool / DeepSeek AI tab split has been removed so the upper-left panel
+ * belongs entirely to media.
  */
 export function LeftPanel({ className }: { className?: string }) {
   const assets = useEditorStore((state) => state.assets);
@@ -75,6 +214,7 @@ export function LeftPanel({ className }: { className?: string }) {
                     type="button"
                     disabled={!clip}
                     onClick={() => clip && selectClip(clip.id)}
+                    title={asset.name}
                     className={cn(
                       "flex w-full items-center gap-2 rounded border px-2 py-1.5 text-left transition-colors",
                       selected
@@ -83,10 +223,7 @@ export function LeftPanel({ className }: { className?: string }) {
                       !clip && "cursor-default opacity-60"
                     )}
                   >
-                    <Film
-                      className="h-3.5 w-3.5 shrink-0 text-violet-400"
-                      aria-hidden
-                    />
+                    <MediaThumbnail asset={asset} />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[11px]">
                         {asset.name}

@@ -10,7 +10,6 @@ import {
   EditorMenuBar,
   type WorkspacePage,
 } from "@/components/studio/EditorMenuBar";
-import { DualViewport } from "@/components/studio/DualViewport";
 import { LeftPanel } from "@/components/studio/LeftPanel";
 import { TimelineCanvas } from "@/components/studio/TimelineCanvas";
 import { WorkspaceSwitcher } from "@/components/studio/WorkspaceSwitcher";
@@ -23,18 +22,17 @@ import { useEditorStore } from "@/store/editor";
  *
  * The existing ProgramPreview / InspectorPanel / PremiereTimeline remain the
  * source of playback, inspector and timeline behavior; this shell adds the
- * menu bar, source/program dual viewport, media/effects/AI left panel and the
- * bottom workspace switcher.
+ * menu bar, full-width media pool, large program monitor and bottom workspace
+ * switcher. The redundant Source monitor was removed in favour of the program
+ * monitor and media bin.
  */
 export function DesktopEditor({
   onExport,
-  onBatchExport,
 }: {
   onExport?: () => void;
-  onBatchExport?: (clipIds: string[]) => void;
 }) {
   const [workspacePage, setWorkspacePage] = useState<WorkspacePage>("edit");
-  const [leftWidth, setLeftWidth] = useState(236);
+  const [leftWidth, setLeftWidth] = useState(300);
   const [rightWidth, setRightWidth] = useState(300);
   const [timelineHeight, setTimelineHeight] = useState(270);
 
@@ -56,7 +54,7 @@ export function DesktopEditor({
       const onMove = (move: PointerEvent) => {
         if (kind === "left") {
           setLeftWidth(
-            Math.min(360, Math.max(170, startLeft + move.clientX - startX))
+            Math.min(420, Math.max(200, startLeft + move.clientX - startX))
           );
         } else if (kind === "right") {
           setRightWidth(
@@ -194,9 +192,13 @@ export function DesktopEditor({
     (page: WorkspacePage) => {
       setWorkspacePage(page);
 
-      if (page === "color") {
-        requestEditorTab("color");
-      }
+      // Each workspace page now opens the inspector tools that belong to it,
+      // so the bottom switcher does real work instead of only scrolling.
+      if (page === "cut") requestEditorTab("clip");
+      else if (page === "edit") requestEditorTab("properties");
+      else if (page === "fusion") requestEditorTab("effects");
+      else if (page === "color") requestEditorTab("color");
+      else if (page === "fairlight") requestEditorTab("audio");
 
       if (typeof document === "undefined") return;
       const target =
@@ -236,7 +238,9 @@ export function DesktopEditor({
           onPointerDown={startResize("left")}
           className="my-2 cursor-col-resize rounded bg-studio-border/50 transition-colors hover:bg-violet-500/60"
         />
-        <DualViewport program={<ProgramPreview />} />
+        <div className="flex min-h-0 flex-col overflow-hidden">
+          <ProgramPreview />
+        </div>
         <div
           role="separator"
           aria-orientation="vertical"
@@ -245,7 +249,7 @@ export function DesktopEditor({
           onPointerDown={startResize("right")}
           className="my-2 cursor-col-resize rounded bg-studio-border/50 transition-colors hover:bg-violet-500/60"
         />
-        <InspectorPanel onBatchExport={onBatchExport} />
+        <InspectorPanel />
       </div>
 
       <div

@@ -11,7 +11,6 @@ import {
   Camera,
   Captions,
   Diamond,
-  Film,
   LoaderCircle,
   Mic,
   MonitorPlay,
@@ -44,10 +43,13 @@ import {
   EFFECT_GROUPS,
   FONT_FAMILIES,
   TRANSITION_PRESETS,
+  clipTrackKey,
   computeClipStarts,
   effectiveAudioTracks,
   effectLabel,
+  effectTrackKey,
   isBaseVideoAudioMuted,
+  overlayTrackKey,
   resolveClipTransform,
   trackLane,
   useEditorStore,
@@ -56,6 +58,7 @@ import {
   type OverlayAlign,
   type SpeedPreset,
   type TextOverlay,
+  type VideoEffectType,
   type WheelPoint,
 } from "@/store/editor";
 import { useOverlayCanvasDrag } from "@/components/editor/use-overlay-drag";
@@ -64,7 +67,11 @@ import { clampTimelineStart, usePointerDrag } from "@/lib/timeline-drag";
 import { audioPreview } from "@/lib/audio-preview";
 import { installMediaRecovery, onMediaRestore } from "@/lib/media-recovery";
 import { applyElementAudio } from "@/lib/element-audio";
-import { SOUND_EFFECT_CATEGORIES, SOUND_EFFECTS } from "@/lib/sfx";
+import {
+  SOUND_EFFECT_CATEGORIES,
+  SOUND_EFFECTS,
+  type SoundEffectId,
+} from "@/lib/sfx";
 import { createDictation, isDictationSupported } from "@/lib/dictation";
 import { STICKER_CATEGORIES, STICKERS, stickerImageSrc, type StickerCategory } from "@/lib/stickers";
 import { TimelineWaveform, Waveform } from "@/components/editor/waveform";
@@ -75,10 +82,15 @@ import {
   type EditorTabRequest,
 } from "@/lib/editor-events";
 import {
-  AUDIO_TRACK_KEYS,
-  TRACK_KEYS,
+  allTrackKeys,
+  audioTrackKeys,
+  DEFAULT_TRACK_STATE,
+  isAudioTrackKey,
   isLaneDimmed,
+  isVideoTrackKey,
+  videoTrackKeys,
   visibleLayerFlags,
+  type TrackKey,
 } from "@/lib/tracks";
 import {
   createLevelMeter,
@@ -89,15 +101,20 @@ import {
   type CaptureKind,
 } from "@/lib/recorder";
 import { CAPTION_LANGUAGES, type CaptionLanguageId } from "@/lib/transcribe";
-import {
-  AiStudioSection,
-  BatchTools,
-  StudioPanel,
-} from "@/components/editor/studio-modules";
+import { AiStudioSection, StudioPanel } from "@/components/editor/studio-modules";
 import { cn } from "@/lib/utils";
 import { TrackHeader as StudioTrackHeader } from "@/components/studio/TrackHeader";
 import { Modal } from "@/components/ui/modal";
 import type { TransitionType } from "@/lib/video-storage";
+
+/** Inspector → timeline drag payloads (shared within this editor module). */
+const SFX_DRAG_TYPE = "application/x-forgevyn-sfx";
+const OVERLAY_DRAG_TYPE = "application/x-forgevyn-overlay";
+const EFFECT_DRAG_TYPE = "application/x-forgevyn-effect";
+
+type OverlayDragPayload =
+  | { kind: "text"; text: string; fontSize: number }
+  | { kind: "image"; src: string };
 
 type CinematicPreset = {
   id: string;
@@ -521,12 +538,6 @@ function ScreenCamRecorder() {
 }
 
 /* ------------------------------------------------------------------ */
-/* Top-left: Project bin + Inspector                                    */
-/* ------------------------------------------------------------------ */
-/* ------------------------------------------------------------------ */
-/* Left column: AI Assistant placeholder (DeepSeek integration pending) */
-/* ------------------------------------------------------------------ */
-/* ------------------------------------------------------------------ */
 /* Right column: unified Inspector (categories + nested sub-tabs)       */
 /* ------------------------------------------------------------------ */
 
@@ -555,7 +566,6 @@ const INSPECTOR_NAV: {
     id: "media",
     label: "Media",
     subs: [
-      { id: "library", label: "Library" },
       { id: "audio", label: "Sound Effects" },
       { id: "record", label: "Record" },
       { id: "studio", label: "Studio" },
@@ -586,7 +596,7 @@ const LEGACY_TAB_MAP: Record<
   EditorTabRequest,
   { category: InspectorCategory; sub: string }
 > = {
-  media: { category: "media", sub: "library" },
+  media: { category: "media", sub: "audio" },
   audio: { category: "media", sub: "audio" },
   record: { category: "media", sub: "record" },
   studio: { category: "media", sub: "studio" },
@@ -599,15 +609,10 @@ const LEGACY_TAB_MAP: Record<
   color: { category: "color", sub: "wheels" },
 };
 
-export function InspectorPanel({
-  onBatchExport,
-}: {
-  onBatchExport?: (clipIds: string[]) => void;
-}) {
+export function InspectorPanel() {
   const [category, setCategory] = useState<InspectorCategory>("media");
-  const [sub, setSub] = useState("library");
+  const [sub, setSub] = useState("audio");
   const [effectQuery, setEffectQuery] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
 
   const is = (cat: InspectorCategory, subId: string) =>
     category === cat && sub === subId;
@@ -639,11 +644,7 @@ export function InspectorPanel({
   const activeCategory =
     INSPECTOR_NAV.find((item) => item.id === category) ?? INSPECTOR_NAV[0];
 
-  const assets = useEditorStore((s) => s.assets);
   const sequence = useEditorStore((s) => s.sequence);
-  const addVideoAssets = useEditorStore((s) => s.addVideoAssets);
-  const selectClip = useEditorStore((s) => s.selectClip);
-  const removeClip = useEditorStore((s) => s.removeClip);
   const activeClipId = useEditorStore((s) => s.activeClipId);
   const currentTime = useEditorStore((s) => s.currentTime);
   const setClipTransformAtPlayhead = useEditorStore(
@@ -733,7 +734,6 @@ export function InspectorPanel({
   const [dictating, setDictating] = useState(false);
   const dictationRef = useRef<ReturnType<typeof createDictation> | null>(null);
   const dictationSupported = useMemo(() => isDictationSupported(), []);
-  const [selectedClips, setSelectedClips] = useState<string[]>([]);
   // Text-based editing: keys are `${overlayId}:${wordIndex}`.
   const [selectedWords, setSelectedWords] = useState<Set<string>>(new Set());
 
@@ -762,9 +762,6 @@ export function InspectorPanel({
     if (transcribing) return;
     void generateAutoCaptions();
   };
-
-  const nameFor = (assetId: string) =>
-    assets.find((a) => a.id === assetId)?.name ?? "Clip";
 
   const patchSelected = (patch: Partial<Omit<TextOverlay, "id">>) => {
     if (selected) updateOverlay(selected.id, patch);
@@ -837,95 +834,6 @@ export function InspectorPanel({
         <LumetriPanel embedded tab={sub as LumetriTab} />
       ) : (
       <div className="min-h-0 flex-1 overflow-y-auto p-3" data-tour="inspector-body">
-        {is("media", "library") && (
-          <div className="flex min-h-0 flex-col gap-2">
-            {/* Fixed action area — stays pinned while the bin below scrolls. */}
-            <div className="shrink-0 space-y-2">
-              <button
-                type="button"
-                onClick={() => inputRef.current?.click()}
-                className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg brand-gradient brand-gradient-hover px-3 py-2 text-xs font-semibold text-white"
-              >
-                <Plus className="h-3.5 w-3.5" aria-hidden /> Import media
-              </button>
-              <input
-                ref={inputRef}
-                type="file"
-                accept="video/mp4,video/webm,video/*"
-                multiple
-                className="hidden"
-                onChange={(e) => {
-                  if (e.target.files?.length) void addVideoAssets(e.target.files);
-                  e.target.value = "";
-                }}
-              />
-              <BatchTools
-                selectedIds={selectedClips}
-                onClear={() => setSelectedClips([])}
-                onBatchExport={onBatchExport}
-              />
-            </div>
-
-            {/* Independently scrollable media bin — never grows past its box. */}
-            <div
-              data-tour="media-bin"
-              className="custom-scrollbar max-h-[calc(100vh-320px)] min-h-0 overflow-y-auto pr-1"
-            >
-            {sequence.length === 0 ? (
-              <p className="text-[11px] leading-4 text-zinc-500">
-                No media yet — import clips to build your sequence.
-              </p>
-            ) : (
-              <ul className="space-y-1.5">
-                {sequence.map((clip, index) => (
-                  <li key={clip.id} className="flex items-center gap-1">
-                    <input
-                      type="checkbox"
-                      checked={selectedClips.includes(clip.id)}
-                      onChange={(e) =>
-                        setSelectedClips((prev) =>
-                          e.target.checked
-                            ? [...prev, clip.id]
-                            : prev.filter((id) => id !== clip.id)
-                        )
-                      }
-                      aria-label={`Select ${nameFor(clip.assetId)}`}
-                      className="h-3.5 w-3.5 shrink-0 accent-violet-500"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => selectClip(clip.id)}
-                      className={cn(
-                        "flex min-w-0 flex-1 items-center gap-2 rounded-lg border px-2 py-2 text-left text-xs transition-colors",
-                        clip.id === activeClipId
-                          ? "border-violet-500/50 bg-violet-500/10 text-violet-100"
-                          : "border-studio-border bg-zinc-950/50 text-zinc-300 hover:border-zinc-600"
-                      )}
-                    >
-                      <Film className="h-3.5 w-3.5 shrink-0 text-violet-400" aria-hidden />
-                      <span className="min-w-0 flex-1 truncate">
-                        {index + 1}. {nameFor(clip.assetId)}
-                      </span>
-                      <span className="shrink-0 text-[10px] text-zinc-500">
-                        {(Math.max(0, clip.trimEnd - clip.trimStart)).toFixed(1)}s
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => removeClip(clip.id)}
-                      aria-label={`Remove ${nameFor(clip.assetId)}`}
-                      className="shrink-0 rounded-lg border border-studio-border p-2 text-zinc-500 transition-colors hover:border-red-500/40 hover:text-red-400"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" aria-hidden />
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-            </div>
-          </div>
-        )}
-
         {is("effects", "effects") && (
           <div className="space-y-3">
             {/* Sticky search — filters all effect groups by name. */}
@@ -957,8 +865,15 @@ export function InspectorPanel({
                     <button
                       key={type}
                       type="button"
+                      draggable
+                      title="Drag onto a video lane"
+                      onDragStart={(event) => {
+                        event.dataTransfer.effectAllowed = "copy";
+                        event.dataTransfer.setData(EFFECT_DRAG_TYPE, type);
+                        event.dataTransfer.setData("text/plain", effectLabel(type));
+                      }}
                       onClick={() => addEffect(type, currentTime)}
-                      className="rounded-lg border border-studio-border bg-zinc-950/60 px-2 py-2 text-left text-[11px] text-zinc-200 transition-colors hover:border-violet-500/50 hover:text-violet-200"
+                      className="cursor-grab rounded-lg border border-studio-border bg-zinc-950/60 px-2 py-2 text-left text-[11px] text-zinc-200 transition-colors hover:border-violet-500/50 hover:text-violet-200 active:cursor-grabbing"
                     >
                       {effectLabel(type)}
                     </button>
@@ -2251,7 +2166,8 @@ export function InspectorPanel({
           <div className="space-y-3">
             <p className="text-[10px] leading-4 text-zinc-500">
               {SOUND_EFFECTS.length} royalty-free sound effects, synthesized
-              on-device — tap to drop one at the playhead.
+              on-device — drag one onto any A lane, or tap to drop at the
+              playhead.
             </p>
             {SOUND_EFFECT_CATEGORIES.map((category) => (
               <div key={category.id}>
@@ -2264,8 +2180,15 @@ export function InspectorPanel({
                       <button
                         key={effect.id}
                         type="button"
+                        draggable
+                        title="Drag onto an audio lane"
+                        onDragStart={(event) => {
+                          event.dataTransfer.effectAllowed = "copy";
+                          event.dataTransfer.setData(SFX_DRAG_TYPE, effect.id);
+                          event.dataTransfer.setData("text/plain", effect.label);
+                        }}
                         onClick={() => void addSoundEffect(effect.id)}
-                        className="rounded-lg border border-studio-border bg-zinc-950/60 px-2 py-2 text-left text-[11px] text-zinc-200 transition-colors hover:border-violet-500/50"
+                        className="cursor-grab rounded-lg border border-studio-border bg-zinc-950/60 px-2 py-2 text-left text-[11px] text-zinc-200 transition-colors hover:border-violet-500/50 active:cursor-grabbing"
                       >
                         {effect.label}
                       </button>
@@ -2446,7 +2369,8 @@ export function InspectorPanel({
         {is("text", "stickers") && (
           <div className="space-y-3">
             <p className="text-[10px] leading-4 text-zinc-500">
-              Tap a sticker to drop it on the V2 overlay track at the playhead.
+              Drag a sticker/emoji onto any video lane, or tap to drop it on V2
+              at the playhead.
             </p>
             <div className="flex flex-wrap gap-1">
               {STICKER_CATEGORIES.map((category) => (
@@ -2472,7 +2396,37 @@ export function InspectorPanel({
                   <button
                     key={sticker.id}
                     type="button"
-                    title={sticker.label}
+                    draggable
+                    title={`${sticker.label} — drag onto a video lane`}
+                    onDragStart={(event) => {
+                      if (sticker.emoji) {
+                        const payload: OverlayDragPayload = {
+                          kind: "text",
+                          text: sticker.emoji,
+                          fontSize: sticker.fontSize ?? 160,
+                        };
+                        event.dataTransfer.setData(
+                          OVERLAY_DRAG_TYPE,
+                          JSON.stringify(payload)
+                        );
+                      } else {
+                        const src = stickerImageSrc(sticker);
+                        if (!src) {
+                          event.preventDefault();
+                          return;
+                        }
+                        const payload: OverlayDragPayload = {
+                          kind: "image",
+                          src,
+                        };
+                        event.dataTransfer.setData(
+                          OVERLAY_DRAG_TYPE,
+                          JSON.stringify(payload)
+                        );
+                      }
+                      event.dataTransfer.effectAllowed = "copy";
+                      event.dataTransfer.setData("text/plain", sticker.label);
+                    }}
                     onClick={() => {
                       if (sticker.emoji) {
                         addTextSticker(sticker.emoji, sticker.fontSize ?? 160);
@@ -2481,7 +2435,7 @@ export function InspectorPanel({
                       const src = stickerImageSrc(sticker);
                       if (src) addStickerImage(src);
                     }}
-                    className="flex aspect-square items-center justify-center overflow-hidden rounded-lg border border-studio-border bg-zinc-950/60 p-1 hover:border-zinc-600"
+                    className="flex aspect-square cursor-grab items-center justify-center overflow-hidden rounded-lg border border-studio-border bg-zinc-950/60 p-1 hover:border-zinc-600 active:cursor-grabbing"
                   >
                     {sticker.emoji ? (
                       <span className="text-2xl">{sticker.emoji}</span>
@@ -3501,6 +3455,12 @@ export function PremiereTimeline() {
   const duration = useEditorStore((s) => s.duration);
   const fps = useEditorStore((s) => s.fps);
   const trackStates = useEditorStore((s) => s.trackStates);
+  const videoTrackCount = useEditorStore((s) => s.videoTrackCount);
+  const audioTrackCount = useEditorStore((s) => s.audioTrackCount);
+  const addVideoTrack = useEditorStore((s) => s.addVideoTrack);
+  const addAudioTrack = useEditorStore((s) => s.addAudioTrack);
+  const moveClipToTrack = useEditorStore((s) => s.moveClipToTrack);
+  const moveAudioTrackToLane = useEditorStore((s) => s.moveAudioTrackToLane);
   const setTrackFlag = useEditorStore((s) => s.setTrackFlag);
   const selectClip = useEditorStore((s) => s.selectClip);
   const selectOverlay = useEditorStore((s) => s.selectOverlay);
@@ -3514,8 +3474,13 @@ export function PremiereTimeline() {
   const removeAudioTrack = useEditorStore((s) => s.removeAudioTrack);
   const removeOverlay = useEditorStore((s) => s.removeOverlay);
   const removeEffect = useEditorStore((s) => s.removeEffect);
+  const addTextSticker = useEditorStore((s) => s.addTextSticker);
+  const addStickerImage = useEditorStore((s) => s.addStickerImage);
+  const addEffect = useEditorStore((s) => s.addEffect);
+  const addSoundEffect = useEditorStore((s) => s.addSoundEffect);
   const setOverlayStartTime = useEditorStore((s) => s.setOverlayStartTime);
   const setOverlayEndTime = useEditorStore((s) => s.setOverlayEndTime);
+  const updateOverlay = useEditorStore((s) => s.updateOverlay);
   const updateEffect = useEditorStore((s) => s.updateEffect);
   const addAudioTrackFromBlob = useEditorStore((s) => s.addAudioTrackFromBlob);
   const moveClipTo = useEditorStore((s) => s.moveClipTo);
@@ -3537,7 +3502,11 @@ export function PremiereTimeline() {
   const nameFor = (assetId: string) =>
     assets.find((a) => a.id === assetId)?.name ?? "Clip";
 
-  // Absolute timeline positions for V1 clips (respects dragged positions).
+  const videoKeys = videoTrackKeys(videoTrackCount);
+  const audioKeys = audioTrackKeys(audioTrackCount);
+  const trackKeys = allTrackKeys(videoTrackCount, audioTrackCount);
+
+  // Absolute timeline positions for all video clips (respects dragged positions).
   const videoBlocks = computeClipStarts(sequence);
 
   // The preview plays ONE source element at a time, and overlays / effects /
@@ -3546,6 +3515,9 @@ export function PremiereTimeline() {
   // other block line up with the V1 clip that is actually playing.
   const activeBlock =
     videoBlocks.find((block) => block.clip.id === activeClipId) ?? null;
+  const activeTrackLocked = activeBlock
+    ? (trackStates[clipTrackKey(activeBlock.clip)]?.locked ?? false)
+    : false;
   const sourceToTimeline = (time: number) =>
     activeBlock ? activeBlock.start + (time - activeBlock.clip.trimStart) : time;
   const timelineLeft = (time: number) => Math.max(0, sourceToTimeline(time));
@@ -3561,6 +3533,8 @@ export function PremiereTimeline() {
 
   const laneRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const headerScrollRef = useRef<HTMLDivElement>(null);
+  const [dragLane, setDragLane] = useState<string | null>(null);
 
   const trimDragRef = useRef<{
     clipId: string;
@@ -3689,6 +3663,8 @@ export function PremiereTimeline() {
   /* Free horizontal position dragging (overlays, audio, effects)         */
   /* ------------------------------------------------------------------ */
   type BodyDragKind = "overlay" | "audio" | "effect";
+  type BodyPreview = { kind: BodyDragKind; id: string; start: number };
+  const [bodyPreview, setBodyPreview] = useState<BodyPreview | null>(null);
   const bodyDragState = useRef<{
     kind: BodyDragKind;
     id: string;
@@ -3713,10 +3689,25 @@ export function PremiereTimeline() {
     return best;
   };
 
-  /** Applies a body-drag pixel delta to the store. */
-  const applyBodyDrag = (dx: number) => {
+  /** Resolves the lane under the pointer, if it is a lane of the right kind. */
+  const trackKeyAtPoint = (x: number, y: number): TrackKey | null => {
+    if (typeof document === "undefined") return null;
+    const element = document
+      .elementFromPoint(x, y)
+      ?.closest<HTMLElement>("[data-track-key]");
+    const key = element?.dataset.trackKey;
+    return isVideoTrackKey(key) || isAudioTrackKey(key) ? key : null;
+  };
+
+  const bodyStart = (kind: BodyDragKind, id: string, fallback: number) =>
+    bodyPreview?.kind === kind && bodyPreview.id === id
+      ? bodyPreview.start
+      : fallback;
+
+  /** Computes the snapped position for an active body drag. */
+  const previewBodyStart = (dx: number): number | null => {
     const active = bodyDragState.current;
-    if (!active) return;
+    if (!active) return null;
     const delta = dx / pps;
     if (active.kind === "overlay") {
       const targets = [0, currentTime];
@@ -3724,27 +3715,43 @@ export function PremiereTimeline() {
         if (overlay.id === active.id) continue;
         targets.push(overlay.startTime, overlay.endTime);
       }
-      moveOverlayTo(active.id, snapValue(Math.max(0, active.start + delta), targets));
+      return snapValue(Math.max(0, active.start + delta), targets);
+    }
+    return snapValue(Math.max(0, active.start + delta), [0, currentTime]);
+  };
+
+  /** Applies the final position + target lane once the pointer is released. */
+  const commitBodyDrag = (dx: number, clientX: number, clientY: number) => {
+    const active = bodyDragState.current;
+    const start = previewBodyStart(dx);
+    if (!active || start === null) return;
+    const target = trackKeyAtPoint(clientX, clientY);
+    if (active.kind === "overlay") {
+      moveOverlayTo(active.id, start);
+      if (isVideoTrackKey(target)) updateOverlay(active.id, { track: target });
     } else if (active.kind === "audio") {
-      moveAudioTrackTo(
-        active.id,
-        snapValue(Math.max(0, active.start + delta), [0, currentTime])
-      );
+      moveAudioTrackTo(active.id, start);
+      const lane = target ? audioKeys.indexOf(target) : -1;
+      if (lane >= 0) moveAudioTrackToLane(active.id, lane);
     } else {
-      moveEffectTo(
-        active.id,
-        snapValue(Math.max(0, active.start + delta), [0, currentTime])
-      );
+      moveEffectTo(active.id, start);
+      if (isVideoTrackKey(target)) updateEffect(active.id, { track: target });
     }
   };
 
-  // Pointer-locked, rAF-coalesced drag for overlays / audio / effects. Clips may
-  // overlap freely — this never blocks a position.
+  // Pointer-locked, rAF-coalesced drag for overlays / audio / effects. The
+  // store is only touched on release; the preview state drives the frame.
   const bodyDragHandlers = usePointerDrag({
     threshold: 4,
-    onDrag: (info) => applyBodyDrag(info.dx),
+    onDrag: (info) => {
+      const active = bodyDragState.current;
+      const start = previewBodyStart(info.dx);
+      if (!active || start === null) return;
+      setBodyPreview({ kind: active.kind, id: active.id, start });
+    },
     onEnd: (info) => {
-      if (info.moved) applyBodyDrag(info.dx);
+      if (info.moved) commitBodyDrag(info.dx, info.clientX, info.clientY);
+      setBodyPreview(null);
       bodyDragState.current = null;
     },
   });
@@ -3756,6 +3763,7 @@ export function PremiereTimeline() {
     start: number
   ) => {
     event.stopPropagation();
+    setBodyPreview(null);
     bodyDragState.current = { kind, id, start };
     bodyDragHandlers.onPointerDown(event);
   };
@@ -3763,12 +3771,17 @@ export function PremiereTimeline() {
   /* ------------------------------------------------------------------ */
   /* Free V1 clip positioning — pointer-locked, rAF preview, overlaps OK  */
   /* ------------------------------------------------------------------ */
-  const [clipPreview, setClipPreview] = useState<{ id: string; start: number } | null>(
-    null
-  );
-  const clipDragState = useRef<{ id: string; baseStart: number; dur: number } | null>(
-    null
-  );
+  const [clipPreview, setClipPreview] = useState<{
+    id: string;
+    start: number;
+    track: TrackKey;
+  } | null>(null);
+  const clipDragState = useRef<{
+    id: string;
+    baseStart: number;
+    dur: number;
+    track: TrackKey;
+  } | null>(null);
   const clipDragMovedRef = useRef(false);
 
   /**
@@ -3807,9 +3820,16 @@ export function PremiereTimeline() {
     onDrag: (info) => {
       const state = clipDragState.current;
       if (!state) return;
+      const target = trackKeyAtPoint(info.clientX, info.clientY);
+      const track =
+        isVideoTrackKey(target) &&
+        !(trackStates[target]?.locked ?? false)
+          ? target
+          : state.track;
       setClipPreview({
         id: state.id,
         start: snapClipStart(state.baseStart + info.dx / pps, state.dur),
+        track,
       });
     },
     onEnd: (info) => {
@@ -3821,8 +3841,15 @@ export function PremiereTimeline() {
         return;
       }
       clipDragMovedRef.current = true;
+      const target = trackKeyAtPoint(info.clientX, info.clientY);
+      const track =
+        isVideoTrackKey(target) &&
+        !(trackStates[target]?.locked ?? false)
+          ? target
+          : state.track;
       // Commit the exact previewed position (scroll/zoom aware → no snap-back).
       moveClipTo(state.id, snapClipStart(state.baseStart + info.dx / pps, state.dur));
+      if (track !== state.track) moveClipToTrack(state.id, track);
     },
   });
 
@@ -3830,12 +3857,13 @@ export function PremiereTimeline() {
     event: React.PointerEvent<HTMLButtonElement>,
     clipId: string,
     baseStart: number,
-    dur: number
+    dur: number,
+    track: TrackKey
   ) => {
     event.stopPropagation();
-    if (trackStates.V1.locked) return;
+    if (trackStates[track]?.locked) return;
     clipDragMovedRef.current = false;
-    clipDragState.current = { id: clipId, baseStart, dur };
+    clipDragState.current = { id: clipId, baseStart, dur, track };
     clipDragHandlers.onPointerDown(event);
   };
 
@@ -3951,6 +3979,101 @@ export function PremiereTimeline() {
     audioTracks.filter((track, index) => trackLane(track, index) === lane);
 
   /* ------------------------------------------------------------------ */
+  /* Inspector → timeline drag & drop                                    */
+  /* ------------------------------------------------------------------ */
+  const dropTime = (clientX: number) => {
+    const lane = laneRef.current;
+    if (!lane) return currentTime;
+    const rect = lane.getBoundingClientRect();
+    return Math.min(
+      Math.max((clientX - rect.left) / pps, 0),
+      Math.max(0, timelineDuration)
+    );
+  };
+
+  const parseOverlayPayload = (raw: string): OverlayDragPayload | null => {
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw) as Partial<OverlayDragPayload>;
+      if (parsed.kind === "text" && typeof parsed.text === "string") {
+        return {
+          kind: "text",
+          text: parsed.text,
+          fontSize:
+            typeof parsed.fontSize === "number" ? parsed.fontSize : 120,
+        };
+      }
+      if (parsed.kind === "image" && typeof parsed.src === "string") {
+        return { kind: "image", src: parsed.src };
+      }
+    } catch {
+      // Ignore malformed third-party drag payloads.
+    }
+    return null;
+  };
+
+  const addDroppedOverlay = (
+    payload: OverlayDragPayload,
+    time: number,
+    track: TrackKey
+  ) => {
+    if (payload.kind === "text") {
+      addTextSticker(payload.text, payload.fontSize, time, track);
+    } else {
+      addStickerImage(payload.src, time, track);
+    }
+  };
+
+  const onLaneDragOver = (event: React.DragEvent, key: TrackKey) => {
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = "copy";
+    if (dragLane !== key) setDragLane(key);
+  };
+
+  const onLaneDragLeave = (event: React.DragEvent<HTMLDivElement>) => {
+    const next = event.relatedTarget as Node | null;
+    if (next && event.currentTarget.contains(next)) return;
+    setDragLane(null);
+  };
+
+  const onLaneDrop = (event: React.DragEvent, key: TrackKey) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setDragLane(null);
+
+    const time = dropTime(event.clientX);
+    const sfx = event.dataTransfer.getData(SFX_DRAG_TYPE);
+    const overlay = parseOverlayPayload(
+      event.dataTransfer.getData(OVERLAY_DRAG_TYPE)
+    );
+    const effect = event.dataTransfer.getData(EFFECT_DRAG_TYPE);
+
+    if (isAudioTrackKey(key)) {
+      if (sfx) {
+        const lane = Math.max(0, audioKeys.indexOf(key));
+        void addSoundEffect(sfx as SoundEffectId, { atTime: time, lane });
+        return;
+      }
+      // Dropping a visual item on an audio lane still lands on its default
+      // video lane instead of being discarded.
+      if (overlay) addDroppedOverlay(overlay, time, "V2");
+      else if (effect) addEffect(effect as VideoEffectType, time, "V3");
+      return;
+    }
+
+    if (!isVideoTrackKey(key)) return;
+    if (overlay) {
+      addDroppedOverlay(overlay, time, key);
+    } else if (effect) {
+      addEffect(effect as VideoEffectType, time, key);
+    } else if (sfx) {
+      // Sound effects dropped over the video area fall back to A1.
+      void addSoundEffect(sfx as SoundEffectId, { atTime: time, lane: 0 });
+    }
+  };
+
+  /* ------------------------------------------------------------------ */
   /* Live voiceover recording (A2)                                       */
   /* ------------------------------------------------------------------ */
   const [voiceRecording, setVoiceRecording] = useState(false);
@@ -4051,7 +4174,7 @@ export function PremiereTimeline() {
             title="Split at playhead (S)"
             aria-label="Split clip at playhead"
             data-tour="timeline-split"
-            disabled={trackStates.V1.locked}
+            disabled={activeTrackLocked}
             onClick={() => {
               if (activeClipId) splitClip(activeClipId, currentTime);
             }}
@@ -4064,13 +4187,32 @@ export function PremiereTimeline() {
             title="Ripple delete the selected clip (Shift+Delete)"
             aria-label="Ripple delete clip"
             data-tour="timeline-ripple"
-            disabled={trackStates.V1.locked || !activeClipId}
+            disabled={activeTrackLocked || !activeClipId}
             onClick={() => {
               if (activeClipId) rippleDeleteClip(activeClipId);
             }}
             className="inline-flex items-center gap-1 rounded-lg border border-studio-border bg-zinc-950/60 px-2 py-1 text-[10px] text-zinc-300 transition-colors hover:border-zinc-600 disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Trash2 className="h-3.5 w-3.5" aria-hidden /> Ripple Del
+          </button>
+        </div>
+
+        <div className="ml-2 flex items-center gap-1.5">
+          <button
+            type="button"
+            title={`Add video track V${videoTrackCount + 1}`}
+            onClick={addVideoTrack}
+            className="inline-flex items-center gap-1 rounded-lg border border-studio-border bg-zinc-950/60 px-2 py-1 text-[10px] text-zinc-300 transition-colors hover:border-violet-500/60 hover:text-violet-200"
+          >
+            <Plus className="h-3 w-3" aria-hidden /> V{videoTrackCount + 1}
+          </button>
+          <button
+            type="button"
+            title={`Add audio track A${audioTrackCount + 1}`}
+            onClick={addAudioTrack}
+            className="inline-flex items-center gap-1 rounded-lg border border-studio-border bg-zinc-950/60 px-2 py-1 text-[10px] text-zinc-300 transition-colors hover:border-teal-500/60 hover:text-teal-200"
+          >
+            <Plus className="h-3 w-3" aria-hidden /> A{audioTrackCount + 1}
           </button>
         </div>
 
@@ -4087,13 +4229,17 @@ export function PremiereTimeline() {
 
       <div className="flex min-h-0 flex-1">
         {/* Track headers column */}
-        <div className="flex shrink-0 flex-col" data-tour="track-headers">
-          <div className="h-6 w-24 border-b border-r border-studio-border bg-zinc-900/60" />
-          {TRACK_KEYS.map((keyName) => (
+        <div
+          ref={headerScrollRef}
+          className="flex min-h-0 shrink-0 flex-col overflow-y-auto overflow-x-hidden overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          data-tour="track-headers"
+        >
+          <div className="h-6 w-24 shrink-0 border-b border-r border-studio-border bg-zinc-900/60" />
+          {trackKeys.map((keyName) => (
             <StudioTrackHeader
               key={keyName}
               keyName={keyName}
-              track={trackStates[keyName]}
+              track={trackStates[keyName] ?? DEFAULT_TRACK_STATE}
               dimmed={isLaneDimmed(keyName, trackStates)}
               voiceRecording={voiceRecording}
               voiceLevel={voiceLevel}
@@ -4104,7 +4250,17 @@ export function PremiereTimeline() {
         </div>
 
         {/* Ruler + lanes */}
-        <div className="relative min-h-0 flex-1 overflow-x-auto overflow-y-auto" ref={scrollRef}>
+        <div
+          className="relative min-h-0 flex-1 overflow-x-auto overflow-y-auto overscroll-contain [scrollbar-gutter:stable] [touch-action:pan-x_pan-y] [will-change:scroll-position]"
+          ref={scrollRef}
+          onScroll={(event) => {
+            // Keep the fixed headers vertically glued to their lanes while the
+            // timeline pans horizontally and vertically.
+            if (headerScrollRef.current) {
+              headerScrollRef.current.scrollTop = event.currentTarget.scrollTop;
+            }
+          }}
+        >
           <div className="relative" style={{ width: `${Math.max(timelineDuration * pps, 400)}px` }} ref={laneRef}>
             {/* Ruler */}
             <div
@@ -4155,262 +4311,333 @@ export function PremiereTimeline() {
               )}
             </div>
 
-            {/* V3 — adjustment / effect layers (pink) */}
-            <div className={cn("relative h-12 border-b border-studio-border bg-zinc-950/40", isLaneDimmed("V3", trackStates) && "opacity-40")} data-tour="v3-lane">
-              {activeEffects.map((fx) => (
-                <div
-                  key={fx.id}
-                  className={cn("group absolute inset-y-1.5 cursor-grab overflow-hidden px-1.5 active:cursor-grabbing", adjustChip, trackStates.V3.locked && "cursor-not-allowed")}
-                  style={{ left: `${timelineLeft(fx.startTime) * pps}px`, width: `${Math.max(20, fx.duration * pps)}px` }}
-                  title={`Effect: ${fx.type}`}
-                  onContextMenu={(e) => openMenu(e, "effect", fx.id)}
-                  onPointerDown={(e) => {
-                    if (trackStates.V3.locked) {
-                      e.stopPropagation();
-                      return;
-                    }
-                    beginBodyDrag(e, "effect", fx.id, fx.startTime);
-                  }}
-                  onPointerMove={bodyDragHandlers.onPointerMove}
-                  onPointerUp={bodyDragHandlers.onPointerUp}
-                  onPointerCancel={bodyDragHandlers.onPointerCancel}
-                >
-                  <span className="block truncate capitalize">{fx.type}</span>
-                  {!trackStates.V3.locked && (
-                    <>
-                      <button
-                        type="button"
-                        aria-label="Trim effect start"
-                        onPointerDown={(e) => onEffectTrimDown(e, fx, "in")}
-                        onPointerMove={onEffectTrimMove}
-                        onPointerUp={onEffectTrimUp}
-                        className="absolute inset-y-0 left-0 z-10 w-1.5 cursor-ew-resize rounded-l-md bg-white/25 transition-colors hover:bg-white/60"
-                      />
-                      <button
-                        type="button"
-                        aria-label="Trim effect end"
-                        onPointerDown={(e) => onEffectTrimDown(e, fx, "out")}
-                        onPointerMove={onEffectTrimMove}
-                        onPointerUp={onEffectTrimUp}
-                        className="absolute inset-y-0 right-0 z-10 w-1.5 cursor-ew-resize rounded-r-md bg-white/25 transition-colors hover:bg-white/60"
-                      />
-                      <button
-                        type="button"
-                        aria-label="Delete effect"
-                        onPointerDown={(e) => e.stopPropagation()}
-                        onClick={() => removeEffect(fx.id)}
-                        className="absolute right-0.5 top-0.5 z-10 flex h-4 w-4 items-center justify-center rounded bg-black/75 text-zinc-100 opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100"
-                      >
-                        <Trash2 className="h-3 w-3" aria-hidden />
-                      </button>
-                    </>
-                  )}
-                </div>
-              ))}
-            </div>
-
-            {/* V2 — text / overlay layers (pink) */}
-            <div className={cn("relative h-12 border-b border-studio-border bg-zinc-950/40", isLaneDimmed("V2", trackStates) && "opacity-40")} data-tour="v2-lane">
-              {overlays.map((o) => (
-                <div
-                  key={o.id}
-                  className="group absolute inset-y-1.5"
-                  style={{ left: `${timelineLeft(o.startTime) * pps}px`, width: `${Math.max(24, (o.endTime - o.startTime) * pps)}px` }}
-                >
-                  <button
-                    type="button"
-                    onPointerDown={(e) => {
-                      if (trackStates.V2.locked) {
-                        e.stopPropagation();
-                        return;
-                      }
-                      beginBodyDrag(e, "overlay", o.id, o.startTime);
-                    }}
-                    onPointerMove={bodyDragHandlers.onPointerMove}
-                    onPointerUp={bodyDragHandlers.onPointerUp}
-                    onPointerCancel={bodyDragHandlers.onPointerCancel}
-                    onContextMenu={(e) => openMenu(e, "overlay", o.id)}
-                    onClick={() => {
-                      selectOverlay(o.id);
-                      // Jump the inspector to Props for immediate local edits.
-                      requestEditorTab("properties");
-                    }}
-                    className={cn("h-full w-full cursor-grab overflow-hidden px-1.5 text-left active:cursor-grabbing", adjustChip, o.id === selectedId && "ring-2 ring-white/70", trackStates.V2.locked && "cursor-not-allowed")}
-                  >
-                    <span className="block truncate">
-                      {o.text || (o.imageSrc ? "Image" : "Text")}
-                    </span>
-                  </button>
-                  {!trackStates.V2.locked && (
-                    <>
-                      <button
-                        type="button"
-                        aria-label="Trim overlay start"
-                        onPointerDown={(e) => onOverlayTrimDown(e, o, "in")}
-                        onPointerMove={onOverlayTrimMove}
-                        onPointerUp={onOverlayTrimUp}
-                        className="absolute inset-y-0 left-0 z-10 w-1.5 cursor-ew-resize rounded-l-md bg-white/25 transition-colors hover:bg-white/60"
-                      />
-                      <button
-                        type="button"
-                        aria-label="Trim overlay end"
-                        onPointerDown={(e) => onOverlayTrimDown(e, o, "out")}
-                        onPointerMove={onOverlayTrimMove}
-                        onPointerUp={onOverlayTrimUp}
-                        className="absolute inset-y-0 right-0 z-10 w-1.5 cursor-ew-resize rounded-r-md bg-white/25 transition-colors hover:bg-white/60"
-                      />
-                      <button
-                        type="button"
-                        aria-label="Delete overlay"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          removeOverlay(o.id);
-                        }}
-                        className="absolute right-0.5 top-0.5 z-10 flex h-4 w-4 items-center justify-center rounded bg-black/75 text-zinc-100 opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100"
-                      >
-                        <Trash2 className="h-3 w-3" aria-hidden />
-                      </button>
-                    </>
-                  )}
-                  {(o.keyframes ?? []).map((frame) => (
-                    <span
-                      key={frame.id}
-                      title={`Keyframe @ ${frame.time.toFixed(2)}s`}
-                      className="pointer-events-none absolute top-1/2 z-10 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 bg-amber-300 ring-1 ring-black/50"
-                      style={{ left: `${Math.max(0, (frame.time - o.startTime) * pps)}px` }}
-                    />
-                  ))}
-                </div>
-              ))}
-            </div>
-
-            {/* V1 — video clips (purple/blue) with trim handles */}
-            <div className={cn("relative h-12 border-b border-studio-border bg-zinc-950/40", isLaneDimmed("V1", trackStates) && "opacity-40")} data-tour="v1-lane">
-              {videoBlocks.map(({ clip, start, dur }) => {
-                const dragging = clipPreview?.id === clip.id;
-                const displayStart = dragging && clipPreview ? clipPreview.start : start;
-                return (
-                <div
-                  key={clip.id}
-                  className={cn("group absolute inset-y-1.5", dragging && "z-30")}
-                  style={{
-                    left: `${displayStart * pps}px`,
-                    width: `${Math.max(28, dur * pps)}px`,
-                  }}
-                >
-                  <button
-                    type="button"
-                    onPointerDown={(e) => beginClipDrag(e, clip.id, start, dur)}
-                    onPointerMove={clipDragHandlers.onPointerMove}
-                    onPointerUp={clipDragHandlers.onPointerUp}
-                    onPointerCancel={clipDragHandlers.onPointerCancel}
-                    onContextMenu={(e) => openMenu(e, "clip", clip.id)}
-                    onClick={() => {
-                      // A real drag shouldn't also "select" (which reloads the clip).
-                      if (clipDragMovedRef.current) {
-                        clipDragMovedRef.current = false;
-                        return;
-                      }
-                      selectClip(clip.id);
-                    }}
-                    className={cn(
-                      "h-full w-full cursor-grab overflow-hidden px-2 text-left active:cursor-grabbing",
-                      videoChip,
-                      selectedClipIds.includes(clip.id) &&
-                        "ring-1 ring-violet-400/60",
-                      clip.id === activeClipId && "ring-2 ring-white/70",
-                      dragging && "shadow-xl ring-2 ring-white",
-                      trackStates.V1.locked && "cursor-not-allowed"
-                    )}
-                  >
-                    <span className="block truncate">{nameFor(clip.assetId)}</span>
-                  </button>
-                  {!trackStates.V1.locked && (
-                    <>
-                      <button
-                        type="button"
-                        aria-label="Trim start"
-                        onPointerDown={(e) => onTrimDown(e, clip, "in")}
-                        onPointerMove={onTrimMove}
-                        onPointerUp={onTrimUp}
-                        className="absolute inset-y-0 left-0 w-2 cursor-ew-resize rounded-l-md bg-white/25 transition-colors hover:bg-white/60"
-                      />
-                      <button
-                        type="button"
-                        aria-label="Trim end"
-                        onPointerDown={(e) => onTrimDown(e, clip, "out")}
-                        onPointerMove={onTrimMove}
-                        onPointerUp={onTrimUp}
-                        className="absolute inset-y-0 right-0 w-2 cursor-ew-resize rounded-r-md bg-white/25 transition-colors hover:bg-white/60"
-                      />
-                      <button
-                        type="button"
-                        aria-label="Delete clip"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          removeClip(clip.id);
-                        }}
-                        className="absolute right-1 top-0.5 z-10 flex h-4 w-4 items-center justify-center rounded bg-black/75 text-zinc-100 opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100"
-                      >
-                        <Trash2 className="h-3 w-3" aria-hidden />
-                      </button>
-                    </>
-                  )}
-                  {clip.transitionIn && (
-                    <span
-                      title={`Transition: ${clip.transitionIn.type}`}
-                      className="pointer-events-none absolute -left-2 top-1/2 z-10 flex h-4 w-4 -translate-y-1/2 items-center justify-center rounded-sm bg-amber-400 text-black shadow"
-                    >
-                      <ArrowLeftRight className="h-2.5 w-2.5" aria-hidden />
-                    </span>
-                  )}
-                </div>
-                );
-              })}
-
-              {/* Transition junctions between touching / overlapping clips */}
-              {videoBlocks.slice(0, -1).map((block, index) => {
-                const next = videoBlocks[index + 1];
-                const boundary = block.start + block.dur;
-                if (next.start > boundary + 0.08) return null;
-                const applied = next.clip.transitionIn;
-                return (
-                  <button
-                    key={`junction-${next.clip.id}`}
-                    type="button"
-                    title={applied ? `Transition: ${applied.type}` : "Add transition"}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setTransitionClipId(next.clip.id);
-                    }}
-                    style={{ left: `${boundary * pps}px` }}
-                    className={cn(
-                      "absolute top-1/2 z-20 flex h-6 w-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border shadow-lg transition-transform hover:scale-110",
-                      applied
-                        ? "border-amber-300 bg-amber-400 text-black"
-                        : "border-white/50 bg-white/85 text-zinc-900"
-                    )}
-                  >
-                    <ArrowLeftRight className="h-3 w-3" aria-hidden />
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* A1 / A2 / A3 — audio tracks (teal/green) with real waveforms */}
-            {AUDIO_TRACK_KEYS.map((keyName, lane) => {
-              const laneState = trackStates[keyName];
-              const soloActive = audioTracks.some(
-                (track, index) => trackLane(track, index) === lane && track.solo
+            {/* Video lanes — unlimited V1…Vn, each can hold clips,
+                overlays and timed effects (drag vertically to re-lane). */}
+            {videoKeys.map((keyName) => {
+              const laneState = trackStates[keyName] ?? DEFAULT_TRACK_STATE;
+              const laneBlocks = videoBlocks.filter(
+                ({ clip }) =>
+                  (clipPreview?.id === clip.id
+                    ? clipPreview.track
+                    : clipTrackKey(clip)) === keyName
               );
+              const laneOverlays = overlays.filter(
+                (overlay) => overlayTrackKey(overlay) === keyName
+              );
+              const laneEffects = activeEffects.filter(
+                (effect) => effectTrackKey(effect) === keyName
+              );
+              const isDropTarget = dragLane === keyName;
               return (
                 <div
                   key={keyName}
-                  data-tour={keyName === "A1" ? "a1-lane" : undefined}
+                  data-track-key={keyName}
+                  data-tour={
+                    keyName === "V1"
+                      ? "v1-lane"
+                      : keyName === "V2"
+                        ? "v2-lane"
+                        : keyName === "V3"
+                          ? "v3-lane"
+                          : undefined
+                  }
+                  onDragOver={(event) => onLaneDragOver(event, keyName)}
+                  onDragLeave={onLaneDragLeave}
+                  onDrop={(event) => onLaneDrop(event, keyName)}
                   className={cn(
                     "relative h-12 border-b border-studio-border bg-zinc-950/40",
                     isLaneDimmed(keyName, trackStates) && "opacity-40",
-                    laneState.locked && "ring-1 ring-inset ring-amber-500/20"
+                    laneState.locked && "ring-1 ring-inset ring-amber-500/20",
+                    isDropTarget &&
+                      "bg-violet-500/10 ring-1 ring-inset ring-violet-400/70"
+                  )}
+                >
+                  {laneEffects.map((fx) => (
+                    <div
+                      key={fx.id}
+                      className={cn(
+                        "group absolute inset-y-1.5 cursor-grab overflow-hidden px-1.5 active:cursor-grabbing",
+                        adjustChip,
+                        laneState.locked && "cursor-not-allowed"
+                      )}
+                      style={{
+                        left: `${timelineLeft(bodyStart("effect", fx.id, fx.startTime)) * pps}px`,
+                        width: `${Math.max(20, fx.duration * pps)}px`,
+                      }}
+                      title={`Effect: ${fx.type}`}
+                      onContextMenu={(e) => openMenu(e, "effect", fx.id)}
+                      onPointerDown={(e) => {
+                        if (laneState.locked) {
+                          e.stopPropagation();
+                          return;
+                        }
+                        beginBodyDrag(e, "effect", fx.id, fx.startTime);
+                      }}
+                      onPointerMove={bodyDragHandlers.onPointerMove}
+                      onPointerUp={bodyDragHandlers.onPointerUp}
+                      onPointerCancel={bodyDragHandlers.onPointerCancel}
+                    >
+                      <span className="block truncate capitalize">{fx.type}</span>
+                      {!laneState.locked && (
+                        <>
+                          <button
+                            type="button"
+                            aria-label="Trim effect start"
+                            onPointerDown={(e) => onEffectTrimDown(e, fx, "in")}
+                            onPointerMove={onEffectTrimMove}
+                            onPointerUp={onEffectTrimUp}
+                            className="absolute inset-y-0 left-0 z-10 w-1.5 cursor-ew-resize rounded-l-md bg-white/25 transition-colors hover:bg-white/60"
+                          />
+                          <button
+                            type="button"
+                            aria-label="Trim effect end"
+                            onPointerDown={(e) => onEffectTrimDown(e, fx, "out")}
+                            onPointerMove={onEffectTrimMove}
+                            onPointerUp={onEffectTrimUp}
+                            className="absolute inset-y-0 right-0 z-10 w-1.5 cursor-ew-resize rounded-r-md bg-white/25 transition-colors hover:bg-white/60"
+                          />
+                          <button
+                            type="button"
+                            aria-label="Delete effect"
+                            onPointerDown={(e) => e.stopPropagation()}
+                            onClick={() => removeEffect(fx.id)}
+                            className="absolute right-0.5 top-0.5 z-10 flex h-4 w-4 items-center justify-center rounded bg-black/75 text-zinc-100 opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100"
+                          >
+                            <Trash2 className="h-3 w-3" aria-hidden />
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  ))}
+
+                  {laneOverlays.map((overlay) => (
+                    <div
+                      key={overlay.id}
+                      className="group absolute inset-y-1.5"
+                      style={{
+                        left: `${timelineLeft(bodyStart("overlay", overlay.id, overlay.startTime)) * pps}px`,
+                        width: `${Math.max(24, (overlay.endTime - overlay.startTime) * pps)}px`,
+                      }}
+                    >
+                      <button
+                        type="button"
+                        onPointerDown={(e) => {
+                          if (laneState.locked) {
+                            e.stopPropagation();
+                            return;
+                          }
+                          beginBodyDrag(e, "overlay", overlay.id, overlay.startTime);
+                        }}
+                        onPointerMove={bodyDragHandlers.onPointerMove}
+                        onPointerUp={bodyDragHandlers.onPointerUp}
+                        onPointerCancel={bodyDragHandlers.onPointerCancel}
+                        onContextMenu={(e) => openMenu(e, "overlay", overlay.id)}
+                        onClick={() => {
+                          selectOverlay(overlay.id);
+                          // Jump the inspector to Props for immediate local edits.
+                          requestEditorTab("properties");
+                        }}
+                        className={cn(
+                          "h-full w-full cursor-grab overflow-hidden px-1.5 text-left active:cursor-grabbing",
+                          adjustChip,
+                          overlay.id === selectedId && "ring-2 ring-white/70",
+                          laneState.locked && "cursor-not-allowed"
+                        )}
+                      >
+                        <span className="block truncate">
+                          {overlay.text || (overlay.imageSrc ? "Image" : "Text")}
+                        </span>
+                      </button>
+                      {!laneState.locked && (
+                        <>
+                          <button
+                            type="button"
+                            aria-label="Trim overlay start"
+                            onPointerDown={(e) => onOverlayTrimDown(e, overlay, "in")}
+                            onPointerMove={onOverlayTrimMove}
+                            onPointerUp={onOverlayTrimUp}
+                            className="absolute inset-y-0 left-0 z-10 w-1.5 cursor-ew-resize rounded-l-md bg-white/25 transition-colors hover:bg-white/60"
+                          />
+                          <button
+                            type="button"
+                            aria-label="Trim overlay end"
+                            onPointerDown={(e) => onOverlayTrimDown(e, overlay, "out")}
+                            onPointerMove={onOverlayTrimMove}
+                            onPointerUp={onOverlayTrimUp}
+                            className="absolute inset-y-0 right-0 z-10 w-1.5 cursor-ew-resize rounded-r-md bg-white/25 transition-colors hover:bg-white/60"
+                          />
+                          <button
+                            type="button"
+                            aria-label="Delete overlay"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              removeOverlay(overlay.id);
+                            }}
+                            className="absolute right-0.5 top-0.5 z-10 flex h-4 w-4 items-center justify-center rounded bg-black/75 text-zinc-100 opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100"
+                          >
+                            <Trash2 className="h-3 w-3" aria-hidden />
+                          </button>
+                        </>
+                      )}
+                      {(overlay.keyframes ?? []).map((frame) => (
+                        <span
+                          key={frame.id}
+                          title={`Keyframe @ ${frame.time.toFixed(2)}s`}
+                          className="pointer-events-none absolute top-1/2 z-10 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 bg-amber-300 ring-1 ring-black/50"
+                          style={{
+                            left: `${Math.max(0, (frame.time - overlay.startTime) * pps)}px`,
+                          }}
+                        />
+                      ))}
+                    </div>
+                  ))}
+
+                  {laneBlocks.map(({ clip, start, dur }) => {
+                    const dragging = clipPreview?.id === clip.id;
+                    const displayStart =
+                      dragging && clipPreview ? clipPreview.start : start;
+                    return (
+                      <div
+                        key={clip.id}
+                        className={cn(
+                          "group absolute inset-y-1.5",
+                          dragging && "z-30"
+                        )}
+                        style={{
+                          left: `${displayStart * pps}px`,
+                          width: `${Math.max(28, dur * pps)}px`,
+                        }}
+                      >
+                        <button
+                          type="button"
+                          onPointerDown={(e) =>
+                            beginClipDrag(e, clip.id, start, dur, keyName)
+                          }
+                          onPointerMove={clipDragHandlers.onPointerMove}
+                          onPointerUp={clipDragHandlers.onPointerUp}
+                          onPointerCancel={clipDragHandlers.onPointerCancel}
+                          onContextMenu={(e) => openMenu(e, "clip", clip.id)}
+                          onClick={() => {
+                            // A real drag shouldn't also "select" (which reloads the clip).
+                            if (clipDragMovedRef.current) {
+                              clipDragMovedRef.current = false;
+                              return;
+                            }
+                            selectClip(clip.id);
+                          }}
+                          className={cn(
+                            "h-full w-full cursor-grab overflow-hidden px-2 text-left active:cursor-grabbing",
+                            videoChip,
+                            selectedClipIds.includes(clip.id) &&
+                              "ring-1 ring-violet-400/60",
+                            clip.id === activeClipId && "ring-2 ring-white/70",
+                            dragging && "shadow-xl ring-2 ring-white",
+                            laneState.locked && "cursor-not-allowed"
+                          )}
+                        >
+                          <span className="block truncate">
+                            {nameFor(clip.assetId)}
+                          </span>
+                        </button>
+                        {!laneState.locked && (
+                          <>
+                            <button
+                              type="button"
+                              aria-label="Trim start"
+                              onPointerDown={(e) => onTrimDown(e, clip, "in")}
+                              onPointerMove={onTrimMove}
+                              onPointerUp={onTrimUp}
+                              className="absolute inset-y-0 left-0 w-2 cursor-ew-resize rounded-l-md bg-white/25 transition-colors hover:bg-white/60"
+                            />
+                            <button
+                              type="button"
+                              aria-label="Trim end"
+                              onPointerDown={(e) => onTrimDown(e, clip, "out")}
+                              onPointerMove={onTrimMove}
+                              onPointerUp={onTrimUp}
+                              className="absolute inset-y-0 right-0 w-2 cursor-ew-resize rounded-r-md bg-white/25 transition-colors hover:bg-white/60"
+                            />
+                            <button
+                              type="button"
+                              aria-label="Delete clip"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                removeClip(clip.id);
+                              }}
+                              className="absolute right-1 top-0.5 z-10 flex h-4 w-4 items-center justify-center rounded bg-black/75 text-zinc-100 opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100"
+                            >
+                              <Trash2 className="h-3 w-3" aria-hidden />
+                            </button>
+                          </>
+                        )}
+                        {clip.transitionIn && (
+                          <span
+                            title={`Transition: ${clip.transitionIn.type}`}
+                            className="pointer-events-none absolute -left-2 top-1/2 z-10 flex h-4 w-4 -translate-y-1/2 items-center justify-center rounded-sm bg-amber-400 text-black shadow"
+                          >
+                            <ArrowLeftRight className="h-2.5 w-2.5" aria-hidden />
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {/* Transition junctions between touching / overlapping clips */}
+                  {laneBlocks.slice(0, -1).map((block, index) => {
+                    const next = laneBlocks[index + 1];
+                    const boundary = block.start + block.dur;
+                    if (next.start > boundary + 0.08) return null;
+                    const applied = next.clip.transitionIn;
+                    return (
+                      <button
+                        key={`junction-${next.clip.id}`}
+                        type="button"
+                        title={
+                          applied
+                            ? `Transition: ${applied.type}`
+                            : "Add transition"
+                        }
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setTransitionClipId(next.clip.id);
+                        }}
+                        style={{ left: `${boundary * pps}px` }}
+                        className={cn(
+                          "absolute top-1/2 z-20 flex h-6 w-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border shadow-lg transition-transform hover:scale-110",
+                          applied
+                            ? "border-amber-300 bg-amber-400 text-black"
+                            : "border-white/50 bg-white/85 text-zinc-900"
+                        )}
+                      >
+                        <ArrowLeftRight className="h-3 w-3" aria-hidden />
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            })}
+
+            {/* Audio lanes — unlimited A1…An, with real waveforms */}
+            {audioKeys.map((keyName, lane) => {
+              const laneState = trackStates[keyName] ?? DEFAULT_TRACK_STATE;
+              const soloActive = audioTracks.some(
+                (track, index) => trackLane(track, index) === lane && track.solo
+              );
+              const isDropTarget = dragLane === keyName;
+              return (
+                <div
+                  key={keyName}
+                  data-track-key={keyName}
+                  data-tour={keyName === "A1" ? "a1-lane" : undefined}
+                  onDragOver={(event) => onLaneDragOver(event, keyName)}
+                  onDragLeave={onLaneDragLeave}
+                  onDrop={(event) => onLaneDrop(event, keyName)}
+                  className={cn(
+                    "relative h-12 border-b border-studio-border bg-zinc-950/40",
+                    isLaneDimmed(keyName, trackStates) && "opacity-40",
+                    laneState.locked && "ring-1 ring-inset ring-amber-500/20",
+                    isDropTarget &&
+                      "bg-teal-500/10 ring-1 ring-inset ring-teal-400/70"
                   )}
                 >
                   {audioByLane(lane).map((track) => {
@@ -4433,7 +4660,10 @@ export function PremiereTimeline() {
                           silenced && "opacity-50 saturate-50",
                           locked && "cursor-not-allowed"
                         )}
-                        style={{ left: `${timelineLeft(track.startTime) * pps}px`, width: `${Math.max(28, track.duration * pps)}px` }}
+                        style={{
+                          left: `${timelineLeft(bodyStart("audio", track.id, track.startTime)) * pps}px`,
+                          width: `${Math.max(28, track.duration * pps)}px`,
+                        }}
                         title={`${track.name}${silenced ? " (muted)" : ""}`}
                         onContextMenu={(e) => openMenu(e, "audio", track.id)}
                         onPointerDown={(e) => {
@@ -4518,6 +4748,9 @@ export function PremiereTimeline() {
           {menu.kind === "clip" &&
             (() => {
               const block = videoBlocks.find((item) => item.clip.id === menu.id);
+              const clipLocked = block
+                ? (trackStates[clipTrackKey(block.clip)]?.locked ?? false)
+                : true;
               const playhead = timelineLeft(currentTime);
               const canSplit =
                 Boolean(block) &&
@@ -4528,7 +4761,7 @@ export function PremiereTimeline() {
                 <>
                   <button
                     type="button"
-                    disabled={!canSplit || trackStates.V1.locked}
+                    disabled={!canSplit || clipLocked}
                     onClick={() => {
                       if (!block) return;
                       splitClip(
@@ -4543,7 +4776,7 @@ export function PremiereTimeline() {
                   </button>
                   <button
                     type="button"
-                    disabled={trackStates.V1.locked}
+                    disabled={clipLocked}
                     onClick={() => {
                       rippleDeleteClip(menu.id);
                       setMenu(null);
@@ -4554,7 +4787,7 @@ export function PremiereTimeline() {
                   </button>
                   <button
                     type="button"
-                    disabled={trackStates.V1.locked}
+                    disabled={clipLocked}
                     onClick={() => {
                       removeClip(menu.id);
                       setMenu(null);
@@ -4569,7 +4802,10 @@ export function PremiereTimeline() {
           {menu.kind === "overlay" && (
             <button
               type="button"
-              disabled={trackStates.V2.locked}
+              disabled={(() => {
+                const overlay = overlays.find((item) => item.id === menu.id);
+                return !overlay || (trackStates[overlayTrackKey(overlay)]?.locked ?? false);
+              })()}
               onClick={() => {
                 removeOverlay(menu.id);
                 setMenu(null);
@@ -4582,7 +4818,10 @@ export function PremiereTimeline() {
           {menu.kind === "effect" && (
             <button
               type="button"
-              disabled={trackStates.V3.locked}
+              disabled={(() => {
+                const effect = activeEffects.find((item) => item.id === menu.id);
+                return !effect || (trackStates[effectTrackKey(effect)]?.locked ?? false);
+              })()}
               onClick={() => {
                 removeEffect(menu.id);
                 setMenu(null);
