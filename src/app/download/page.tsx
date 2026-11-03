@@ -8,7 +8,7 @@ import {
   DESKTOP_RELEASE_TAG,
   RELEASES_URL,
   releaseAssetUrl,
-} from "@/components/marketing/auth-actions";
+} from "@/lib/desktop-release";
 
 export const metadata: Metadata = {
   title: "Download Forgevyn for Desktop",
@@ -87,26 +87,23 @@ export default function DownloadPage() {
               <p className="mt-1 text-sm text-zinc-500">{platform.detail}</p>
               <p className="mt-1 text-xs text-zinc-600">{platform.extension}</p>
 
-              {DESKTOP_RELEASE_PUBLISHED ? (
-                <a
-                  href={releaseAssetUrl(platform.asset)}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="brand-gradient brand-gradient-hover mt-6 inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-violet-900/30 transition-transform hover:scale-[1.02]"
-                >
-                  <Download className="h-4 w-4" aria-hidden />
-                  Download
-                </a>
-              ) : (
-                <a
-                  href={RELEASES_URL}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900/60 px-4 py-3 text-sm font-semibold text-zinc-200 transition-colors hover:border-zinc-600 hover:text-white"
-                >
-                  View GitHub Releases
-                </a>
-              )}
+              <a
+                href={
+                  DESKTOP_RELEASE_PUBLISHED
+                    ? releaseAssetUrl(platform.asset)
+                    : RELEASES_URL
+                }
+                target="_blank"
+                rel="noreferrer"
+                className={
+                  DESKTOP_RELEASE_PUBLISHED
+                    ? "brand-gradient brand-gradient-hover mt-6 inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-violet-900/30 transition-transform hover:scale-[1.02]"
+                    : "mt-6 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900/60 px-4 py-3 text-sm font-semibold text-zinc-200 transition-colors hover:border-zinc-600 hover:text-white"
+                }
+              >
+                <Download className="h-4 w-4" aria-hidden />
+                Download
+              </a>
             </section>
           ))}
         </div>

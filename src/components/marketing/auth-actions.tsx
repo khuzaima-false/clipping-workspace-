@@ -17,6 +17,12 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { Modal } from "@/components/ui/modal";
 import { getOrCreateLocalProject } from "@/lib/local-projects";
+import {
+  DESKTOP_PLATFORMS,
+  DESKTOP_RELEASE_TAG,
+  RELEASES_URL,
+  releaseAssetUrl,
+} from "@/lib/desktop-release";
 
 /**
  * Tracks the signed-in user on the client. Static export has no server auth,
@@ -111,56 +117,21 @@ export function NavAuthActions() {
  *   NEXT_PUBLIC_GITHUB_REPO=owner/repo
  *   NEXT_PUBLIC_DESKTOP_RELEASE_TAG=v0.1.0
  */
-const GITHUB_REPO = (
-  process.env.NEXT_PUBLIC_GITHUB_REPO ?? "khuzaima-false/clipping-workspace-"
-).replace(/^\/+|\/+$/g, "");
-export const DESKTOP_RELEASE_TAG =
-  process.env.NEXT_PUBLIC_DESKTOP_RELEASE_TAG?.trim() ?? "";
-export const DESKTOP_RELEASE_PUBLISHED = DESKTOP_RELEASE_TAG.length > 0;
-/** Keep in sync with `src-tauri/tauri.conf.json` + `Cargo.toml`. */
-const APP_VERSION = "0.1.5";
-export const RELEASES_URL = `https://github.com/${GITHUB_REPO}/releases`;
-/** A configured tag (e.g. `v0.1.0`) is authoritative for asset names. */
-const RELEASE_VERSION = (DESKTOP_RELEASE_TAG || `v${APP_VERSION}`).replace(
-  /^v/,
-  ""
-);
-export const releaseAssetUrl = (asset: string) =>
-  `${RELEASES_URL}/download/${DESKTOP_RELEASE_TAG}/${asset}`;
+// Constants now live in `@/lib/desktop-release` so server components (such as
+// the /download page) can import them without pulling in client-only code.
 
-export const DESKTOP_PLATFORMS = [
-  {
-    id: "windows",
-    label: "Windows",
-    detail: "64-bit installer",
-    extension: ".exe",
-    asset: `Forgevyn_${RELEASE_VERSION}_x64-setup.exe`,
-    icon: Monitor,
-  },
-  {
-    id: "macos",
-    label: "macOS",
-    detail: "Apple Silicon & Intel",
-    extension: ".dmg",
-    asset: `Forgevyn_${RELEASE_VERSION}_universal.dmg`,
-    icon: Apple,
-  },
-  {
-    id: "linux",
-    label: "Linux",
-    detail: "AppImage / .deb",
-    extension: ".AppImage",
-    asset: `Forgevyn_${RELEASE_VERSION}_amd64.AppImage`,
-    icon: Terminal,
-  },
-] as const;
+const PLATFORM_ICONS = {
+  windows: Monitor,
+  macos: Apple,
+  linux: Terminal,
+} as const;
 
 function PlatformRowContent({
   platform,
 }: {
   platform: (typeof DESKTOP_PLATFORMS)[number];
 }) {
-  const Icon = platform.icon;
+  const Icon = PLATFORM_ICONS[platform.id as keyof typeof PLATFORM_ICONS];
   return (
     <>
       <Icon className="h-4 w-4 shrink-0 text-violet-300" aria-hidden />
@@ -285,7 +256,7 @@ export function DesktopDownloadMenu() {
                   rel="noreferrer"
                   className="mt-1 inline-flex items-center gap-1 text-[10px] font-medium text-violet-300 transition-colors hover:text-violet-200"
                 >
-                  Watch GitHub Releases
+                  Download
                   <ArrowRight className="h-3 w-3" aria-hidden />
                 </a>
               </>
@@ -305,7 +276,7 @@ export function DesktopDownloadMenu() {
             rel="noreferrer"
             className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-800 px-3.5 py-2 text-xs font-medium text-zinc-100 transition-colors hover:border-zinc-500 hover:bg-zinc-700"
           >
-            View GitHub Releases
+            Download
             <ArrowRight className="h-3.5 w-3.5" aria-hidden />
           </a>
         }
