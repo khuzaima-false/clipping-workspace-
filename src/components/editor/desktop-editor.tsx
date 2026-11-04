@@ -946,23 +946,6 @@ export function InspectorPanel() {
                   Select a text overlay (Captions tab or timeline) to edit its text,
                   font, colors, animation and transform.
                 </p>
-                <div className="space-y-1.5 rounded-lg border border-studio-border bg-zinc-950/50 p-2">
-                  <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-                    <Diamond className="h-3 w-3" aria-hidden /> Clip keyframes &amp;
-                    transform
-                  </p>
-                  <p className="text-[10px] leading-4 text-zinc-600">
-                    Animate the selected clip&apos;s position, scale and rotation
-                    from the Clip tab.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => requestEditorTab("clip")}
-                    className="inline-flex items-center gap-1 rounded-md border border-studio-border bg-zinc-950/60 px-2 py-1 text-[10px] text-zinc-200 hover:border-violet-500/60 hover:text-violet-200"
-                  >
-                    Open Clip transform →
-                  </button>
-                </div>
               </div>
             ) : (
               <>
