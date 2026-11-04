@@ -28,9 +28,11 @@ import { type MotionPresetId } from "@/lib/motion-presets";
 import {
   audioTrackKeys,
   DEFAULT_AUDIO_TRACK_COUNT,
+  DEFAULT_TEXT_TRACK_COUNT,
   DEFAULT_TRACK_STATE,
   DEFAULT_VIDEO_TRACK_COUNT,
   defaultTrackStates,
+  isTextTrackKey,
   isVideoTrackKey,
   laneKeyFor,
   normalizeTrackStates,
@@ -1242,6 +1244,8 @@ type EditorState = {
 
   /** Number of video lanes (V1..Vn) in the timeline. */
   videoTrackCount: number;
+  /** Number of text/sticker lanes (T1..Tn) in the timeline. */
+  textTrackCount: number;
   /** Number of audio lanes (A1..An) in the timeline. */
   audioTrackCount: number;
   /** Per-lane mute / solo / lock / hide state for the timeline workspace. */
@@ -1250,6 +1254,8 @@ type EditorState = {
   setTrackFlag: (key: TrackKey, field: TrackField, value?: boolean) => void;
   /** Adds the next video lane above the existing video stack. */
   addVideoTrack: () => void;
+  /** Adds the next text/sticker lane. */
+  addTextTrack: () => void;
   /** Adds the next audio lane below the existing audio stack. */
   addAudioTrack: () => void;
   /** Moves a sequence clip to another video lane. */
@@ -1546,6 +1552,7 @@ function projectMediaFromState(state: EditorState): ProjectMedia {
     audio: audioMeta,
     trackStates: state.trackStates,
     videoTrackCount: state.videoTrackCount,
+    textTrackCount: state.textTrackCount,
     audioTrackCount: state.audioTrackCount,
     currentTime: state.currentTime,
     savedAt: Date.now(),
@@ -1615,7 +1622,7 @@ export function clipTrackKey(clip: TimelineClip): TrackKey {
 
 /** The video lane an overlay belongs to. Legacy projects default to V2. */
 export function overlayTrackKey(overlay: TextOverlay): TrackKey {
-  return isVideoTrackKey(overlay.track) ? overlay.track : "V2";
+  return isTextTrackKey(overlay.track) ? overlay.track : "T1";
 }
 
 /** The video lane an effect belongs to. Legacy projects default to V3. */
@@ -1884,6 +1891,7 @@ export const useEditorStore = create<EditorState>()(
   audioTracks: [],
   audioTrackError: null,
   videoTrackCount: DEFAULT_VIDEO_TRACK_COUNT,
+  textTrackCount: DEFAULT_TEXT_TRACK_COUNT,
   audioTrackCount: DEFAULT_AUDIO_TRACK_COUNT,
   trackStates: defaultTrackStates(),
 
@@ -1900,6 +1908,19 @@ export const useEditorStore = create<EditorState>()(
       const key = `V${next}` as TrackKey;
       return {
         videoTrackCount: next,
+        trackStates: {
+          ...state.trackStates,
+          [key]: state.trackStates[key] ?? { ...DEFAULT_TRACK_STATE },
+        },
+      };
+    }),
+
+  addTextTrack: () =>
+    set((state) => {
+      const next = Math.max(1, state.textTrackCount + 1);
+      const key = `T${next}` as TrackKey;
+      return {
+        textTrackCount: next,
         trackStates: {
           ...state.trackStates,
           [key]: state.trackStates[key] ?? { ...DEFAULT_TRACK_STATE },
@@ -2546,8 +2567,20 @@ export const useEditorStore = create<EditorState>()(
         DEFAULT_VIDEO_TRACK_COUNT,
         media.videoTrackCount ?? DEFAULT_VIDEO_TRACK_COUNT,
         ...sequence.map((clip) => videoTrackNumber(clip.track)),
-        ...overlays.map((overlay) => videoTrackNumber(overlay.track)),
         ...(media.trackStates ? Object.keys(media.trackStates).map(videoTrackNumber) : [])
+      );
+      const inferredTextCount = Math.max(
+        DEFAULT_TEXT_TRACK_COUNT,
+        media.textTrackCount ?? DEFAULT_TEXT_TRACK_COUNT,
+        ...overlays.map((overlay) => {
+          const match = /^T([1-9]\d*)$/.exec(overlay.track ?? "");
+          return match ? Number(match[1]) : 1;
+        }),
+        ...(media.trackStates
+          ? Object.keys(media.trackStates)
+              .map((key) => (/^T([1-9]\d*)$/.exec(key)?.[1] ?? 0))
+              .map(Number)
+          : [])
       );
       const inferredAudioCount = Math.max(
         DEFAULT_AUDIO_TRACK_COUNT,
@@ -2560,10 +2593,12 @@ export const useEditorStore = create<EditorState>()(
         overlays,
         audioTracks,
         videoTrackCount: inferredVideoCount,
+        textTrackCount: inferredTextCount,
         audioTrackCount: inferredAudioCount,
         trackStates: normalizeTrackStates(
           media.trackStates,
           inferredVideoCount,
+          inferredTextCount,
           inferredAudioCount
         ),
         assetsLoading: false,
@@ -3158,6 +3193,7 @@ export const useEditorStore = create<EditorState>()(
       audioTracks: [],
       audioTrackError: null,
       videoTrackCount: DEFAULT_VIDEO_TRACK_COUNT,
+      textTrackCount: DEFAULT_TEXT_TRACK_COUNT,
       audioTrackCount: DEFAULT_AUDIO_TRACK_COUNT,
       trackStates: defaultTrackStates(),
       speedPreset: "none",
@@ -4030,6 +4066,7 @@ useEditorStore.subscribe(
     audioTracks: state.audioTracks,
     trackStates: state.trackStates,
     videoTrackCount: state.videoTrackCount,
+    textTrackCount: state.textTrackCount,
     audioTrackCount: state.audioTrackCount,
   }),
   () => {

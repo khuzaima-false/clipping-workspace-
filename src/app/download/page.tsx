@@ -1,7 +1,12 @@
-import type { Metadata } from "next";
+"use client";
+
 import Link from "next/link";
 import { ArrowLeft, Download } from "lucide-react";
 import { Logo } from "@/components/ui/logo";
+import {
+  DeviceNotAvailable,
+  useIsMobileDevice,
+} from "@/components/system/device-gate";
 import {
   DESKTOP_PLATFORMS,
   DESKTOP_RELEASE_PUBLISHED,
@@ -9,11 +14,6 @@ import {
   RELEASES_URL,
   releaseAssetUrl,
 } from "@/lib/desktop-release";
-
-export const metadata: Metadata = {
-  title: "Download Forgevyn for Desktop",
-  description: "Download Forgevyn for macOS, Windows, or Linux.",
-};
 
 function OsLogo({ id }: { id: string }) {
   if (id === "macos") {
@@ -49,6 +49,11 @@ function OsLogo({ id }: { id: string }) {
 }
 
 export default function DownloadPage() {
+  const isMobile = useIsMobileDevice();
+  if (isMobile) {
+    return <DeviceNotAvailable title="Download is not available for your device" />;
+  }
+
   return (
     <main className="min-h-screen bg-zinc-950 px-4 py-16 text-zinc-100 sm:px-6">
       <div className="mx-auto max-w-5xl">

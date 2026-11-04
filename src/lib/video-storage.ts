@@ -173,6 +173,8 @@ export type ProjectMedia = {
   trackStates?: Record<string, unknown>;
   /** Number of video lanes in the project (defaults to 3). */
   videoTrackCount?: number;
+  /** Number of text/sticker lanes in the project (defaults to 1). */
+  textTrackCount?: number;
   /** Number of audio lanes in the project (defaults to 3). */
   audioTrackCount?: number;
   /** Playhead position (seconds) at the moment of the checkpoint. */
@@ -212,6 +214,11 @@ export async function loadProjectMedia(
       typeof value.videoTrackCount === "number" &&
       Number.isFinite(value.videoTrackCount)
         ? Math.max(1, Math.round(value.videoTrackCount))
+        : undefined,
+    textTrackCount:
+      typeof value.textTrackCount === "number" &&
+      Number.isFinite(value.textTrackCount)
+        ? Math.max(1, Math.round(value.textTrackCount))
         : undefined,
     audioTrackCount:
       typeof value.audioTrackCount === "number" &&

@@ -6,7 +6,7 @@
  */
 
 /** Every possible lane key. Tracks are unlimited: V1, V2, … and A1, A2, … */
-export type TrackKey = `V${number}` | `A${number}`;
+export type TrackKey = `V${number}` | `T${number}` | `A${number}`;
 
 /** The per-track header toggles (mute, solo, lock, visibility). */
 export type TrackField = "muted" | "solo" | "locked" | "isVisible";
@@ -25,6 +25,7 @@ export type TrackState = {
 export type TrackStateMap = Record<string, TrackState>;
 
 export const DEFAULT_VIDEO_TRACK_COUNT = 3;
+export const DEFAULT_TEXT_TRACK_COUNT = 1;
 export const DEFAULT_AUDIO_TRACK_COUNT = 3;
 
 /** Video lanes, top-down for the original three-track projects. */
@@ -49,6 +50,12 @@ export function videoTrackKeys(count = DEFAULT_VIDEO_TRACK_COUNT): TrackKey[] {
   return Array.from({ length: size }, (_, index) => `V${size - index}` as TrackKey);
 }
 
+/** Generates the display order for a dynamic text/sticker-track count. */
+export function textTrackKeys(count = DEFAULT_TEXT_TRACK_COUNT): TrackKey[] {
+  const size = Math.max(1, Math.floor(count));
+  return Array.from({ length: size }, (_, index) => `T${index + 1}` as TrackKey);
+}
+
 /** Generates the display order for a dynamic audio-track count (top-down). */
 export function audioTrackKeys(count = DEFAULT_AUDIO_TRACK_COUNT): TrackKey[] {
   const size = Math.max(1, Math.floor(count));
@@ -58,18 +65,24 @@ export function audioTrackKeys(count = DEFAULT_AUDIO_TRACK_COUNT): TrackKey[] {
 /** Every lane for the current project, in timeline render order. */
 export function allTrackKeys(
   videoCount = DEFAULT_VIDEO_TRACK_COUNT,
+  textCount = DEFAULT_TEXT_TRACK_COUNT,
   audioCount = DEFAULT_AUDIO_TRACK_COUNT
 ): TrackKey[] {
-  return [...videoTrackKeys(videoCount), ...audioTrackKeys(audioCount)];
+  return [
+    ...videoTrackKeys(videoCount),
+    ...textTrackKeys(textCount),
+    ...audioTrackKeys(audioCount),
+  ];
 }
 
 /** A fresh, fully-unlocked set of track states for the requested lane counts. */
 export function defaultTrackStates(
   videoCount = DEFAULT_VIDEO_TRACK_COUNT,
+  textCount = DEFAULT_TEXT_TRACK_COUNT,
   audioCount = DEFAULT_AUDIO_TRACK_COUNT
 ): TrackStateMap {
   const states: TrackStateMap = {};
-  for (const key of allTrackKeys(videoCount, audioCount)) {
+  for (const key of allTrackKeys(videoCount, textCount, audioCount)) {
     states[key] = { ...DEFAULT_TRACK_STATE };
   }
   return states;
@@ -79,12 +92,16 @@ export function isVideoTrackKey(value: unknown): value is TrackKey {
   return typeof value === "string" && /^V[1-9]\d*$/.test(value);
 }
 
+export function isTextTrackKey(value: unknown): value is TrackKey {
+  return typeof value === "string" && /^T[1-9]\d*$/.test(value);
+}
+
 export function isAudioTrackKey(value: unknown): value is TrackKey {
   return typeof value === "string" && /^A[1-9]\d*$/.test(value);
 }
 
 export function isTrackKey(value: unknown): value is TrackKey {
-  return isVideoTrackKey(value) || isAudioTrackKey(value);
+  return isVideoTrackKey(value) || isTextTrackKey(value) || isAudioTrackKey(value);
 }
 
 /** Maps a zero-based audio lane index to its track key (A1, A2, A3, …). */
@@ -115,13 +132,14 @@ export function videoTrackNumber(value: unknown): number {
 export function normalizeTrackStates(
   raw: unknown,
   videoCount = DEFAULT_VIDEO_TRACK_COUNT,
+  textCount = DEFAULT_TEXT_TRACK_COUNT,
   audioCount = DEFAULT_AUDIO_TRACK_COUNT
 ): TrackStateMap {
-  const base = defaultTrackStates(videoCount, audioCount);
+  const base = defaultTrackStates(videoCount, textCount, audioCount);
   if (!raw || typeof raw !== "object") return base;
 
   // Keep valid legacy/custom lanes even when counts were not persisted.
-  const keys = new Set<TrackKey>(allTrackKeys(videoCount, audioCount));
+  const keys = new Set<TrackKey>(allTrackKeys(videoCount, textCount, audioCount));
   for (const key of Object.keys(raw)) {
     if (isTrackKey(key)) keys.add(key);
   }
@@ -176,6 +194,23 @@ export function computeVisibleLayers(states: TrackStateMap): VisibleLayers {
   };
 }
 
+/** True when a track's content should render in preview/export. */
+export function isTrackVisible(key: TrackKey, states: TrackStateMap): boolean {
+  const state = states[key] ?? DEFAULT_TRACK_STATE;
+  if (!state.isVisible) return false;
+  if (isTextTrackKey(key)) {
+    const textKeys = Object.keys(states).filter(isTextTrackKey);
+    const soloActive = textKeys.some((item) => states[item]?.solo);
+    return !soloActive || Boolean(state.solo);
+  }
+  if (isVideoTrackKey(key)) {
+    const videoKeys = Object.keys(states).filter(isVideoTrackKey);
+    const soloActive = videoKeys.some((item) => states[item]?.solo);
+    return !soloActive || Boolean(state.solo);
+  }
+  return true;
+}
+
 /** True when the lane is hidden by the eye toggle or excluded by a video solo. */
 export function isLaneDimmed(key: TrackKey, states: TrackStateMap): boolean {
   const state = states[key] ?? DEFAULT_TRACK_STATE;
@@ -193,9 +228,18 @@ export function visibleLayerFlags(states: TrackStateMap): {
   showEffects: boolean;
 } {
   const layers = computeVisibleLayers(states);
+  const textKeys = Object.keys(states).filter(isTextTrackKey);
+  const textSoloActive = textKeys.some((key) => states[key]?.solo);
+  const showOverlays =
+    textKeys.length === 0
+      ? layers.overlays
+      : textKeys.some((key) => {
+          const state = states[key] ?? DEFAULT_TRACK_STATE;
+          return state.isVisible && (!textSoloActive || Boolean(state.solo));
+        });
   return {
     showVideo: layers.video,
-    showOverlays: layers.overlays,
+    showOverlays,
     showEffects: layers.effects,
   };
 }

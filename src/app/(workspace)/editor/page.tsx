@@ -21,7 +21,8 @@ import {
   type ExportResolutionId,
 } from "@/store/editor";
 import { drawScene } from "@/lib/render";
-import { visibleLayerFlags } from "@/lib/tracks";
+import { isTrackVisible, visibleLayerFlags } from "@/lib/tracks";
+import { overlayTrackKey } from "@/store/editor";
 import { TutorialLauncher } from "@/components/tutorial/guided-tour";
 import {
   EXPORT_FPS,
@@ -30,7 +31,7 @@ import {
   type ExportSegment,
 } from "@/lib/exporter";
 import { DesktopEditor } from "@/components/studio/desktop-editor";
-import { MobileEditor } from "@/components/editor/mobile-editor";
+
 import { ExportDialog, type ExportRun } from "@/components/editor/export-dialog";
 import { useAutosave } from "@/hooks/use-autosave";
 import {
@@ -44,6 +45,10 @@ import {
 } from "@/lib/local-projects";
 import { isTauriEnvironment } from "@/lib/tauri";
 import { useIsTauri } from "@/hooks/use-is-tauri";
+import {
+  DeviceNotAvailable,
+  useIsMobileDevice,
+} from "@/components/system/device-gate";
 import { cn } from "@/lib/utils";
 
 function fileNameFor(title: string, extension: string, label: string): string {
@@ -78,6 +83,7 @@ function EditorView() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const desktop = useIsTauri();
+  const isMobile = useIsMobileDevice();
 
   const [titleDraft, setTitleDraft] = useState("");
 
@@ -309,7 +315,9 @@ function EditorView() {
       fit: state.fit,
       offsetX: state.offsetX,
       offsetY: state.offsetY,
-      overlays: state.overlays,
+      overlays: state.overlays.filter((overlay) =>
+        isTrackVisible(overlayTrackKey(overlay), state.trackStates)
+      ),
       captionStyle: state.captionStyle,
       colorAdjustments: state.colorAdjustments,
       activeEffects: state.activeEffects,
@@ -440,6 +448,12 @@ function EditorView() {
 
   const exporting = exportRun?.status === "running";
   const exportPercent = exporting ? exportRun?.percent ?? 0 : 0;
+
+  if (preview && isMobile) {
+    return (
+      <DeviceNotAvailable title="Web preview is not available for your device" />
+    );
+  }
 
   return (
     <div className="flex h-full min-h-0 w-full max-w-full min-w-0 flex-col gap-4 max-md:overflow-x-hidden md:h-full md:min-h-0">
@@ -607,7 +621,7 @@ function EditorView() {
           </div>
 
           {/* Mobile CapCut-style timeline editor */}
-          <MobileEditor />
+
         </>
       )}
 

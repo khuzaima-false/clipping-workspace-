@@ -87,7 +87,9 @@ import {
   DEFAULT_TRACK_STATE,
   isAudioTrackKey,
   isLaneDimmed,
+  isTextTrackKey,
   isVideoTrackKey,
+  textTrackKeys,
   videoTrackKeys,
   visibleLayerFlags,
   type TrackKey,
@@ -3439,8 +3441,10 @@ export function PremiereTimeline() {
   const fps = useEditorStore((s) => s.fps);
   const trackStates = useEditorStore((s) => s.trackStates);
   const videoTrackCount = useEditorStore((s) => s.videoTrackCount);
+  const textTrackCount = useEditorStore((s) => s.textTrackCount);
   const audioTrackCount = useEditorStore((s) => s.audioTrackCount);
   const addVideoTrack = useEditorStore((s) => s.addVideoTrack);
+  const addTextTrack = useEditorStore((s) => s.addTextTrack);
   const addAudioTrack = useEditorStore((s) => s.addAudioTrack);
   const moveClipToTrack = useEditorStore((s) => s.moveClipToTrack);
   const moveAudioTrackToLane = useEditorStore((s) => s.moveAudioTrackToLane);
@@ -3486,8 +3490,9 @@ export function PremiereTimeline() {
     assets.find((a) => a.id === assetId)?.name ?? "Clip";
 
   const videoKeys = videoTrackKeys(videoTrackCount);
+  const textKeys = textTrackKeys(textTrackCount);
   const audioKeys = audioTrackKeys(audioTrackCount);
-  const trackKeys = allTrackKeys(videoTrackCount, audioTrackCount);
+  const trackKeys = allTrackKeys(videoTrackCount, textTrackCount, audioTrackCount);
 
   // Absolute timeline positions for all video clips (respects dragged positions).
   const videoBlocks = computeClipStarts(sequence);
@@ -3711,7 +3716,7 @@ export function PremiereTimeline() {
     const target = trackKeyAtPoint(clientX, clientY);
     if (active.kind === "overlay") {
       moveOverlayTo(active.id, start);
-      if (isVideoTrackKey(target)) updateOverlay(active.id, { track: target });
+      if (isTextTrackKey(target)) updateOverlay(active.id, { track: target });
     } else if (active.kind === "audio") {
       moveAudioTrackTo(active.id, start);
       const lane = target ? audioKeys.indexOf(target) : -1;
@@ -4039,20 +4044,28 @@ export function PremiereTimeline() {
         return;
       }
       // Dropping a visual item on an audio lane still lands on its default
-      // video lane instead of being discarded.
-      if (overlay) addDroppedOverlay(overlay, time, "V2");
+      // text lane instead of being discarded.
+      if (overlay) addDroppedOverlay(overlay, time, "T1");
       else if (effect) addEffect(effect as VideoEffectType, time, "V3");
       return;
     }
 
+    if (isTextTrackKey(key)) {
+      if (overlay) addDroppedOverlay(overlay, time, key);
+      else if (effect) addEffect(effect as VideoEffectType, time, "V3");
+      else if (sfx) void addSoundEffect(sfx as SoundEffectId, { atTime: time, lane: 0 });
+      return;
+    }
+
     if (!isVideoTrackKey(key)) return;
-    if (overlay) {
-      addDroppedOverlay(overlay, time, key);
-    } else if (effect) {
+    if (effect) {
       addEffect(effect as VideoEffectType, time, key);
     } else if (sfx) {
       // Sound effects dropped over the video area fall back to A1.
       void addSoundEffect(sfx as SoundEffectId, { atTime: time, lane: 0 });
+    } else if (overlay) {
+      // Overlays dropped on a video lane fall back to T1.
+      addDroppedOverlay(overlay, time, "T1");
     }
   };
 
@@ -4191,6 +4204,14 @@ export function PremiereTimeline() {
           </button>
           <button
             type="button"
+            title={`Add text track T${textTrackCount + 1}`}
+            onClick={addTextTrack}
+            className="inline-flex items-center gap-1 rounded-lg border border-studio-border bg-zinc-950/60 px-2 py-1 text-[10px] text-zinc-300 transition-colors hover:border-fuchsia-500/60 hover:text-fuchsia-200"
+          >
+            <Plus className="h-3 w-3" aria-hidden /> T{textTrackCount + 1}
+          </button>
+          <button
+            type="button"
             title={`Add audio track A${audioTrackCount + 1}`}
             onClick={addAudioTrack}
             className="inline-flex items-center gap-1 rounded-lg border border-studio-border bg-zinc-950/60 px-2 py-1 text-[10px] text-zinc-300 transition-colors hover:border-teal-500/60 hover:text-teal-200"
@@ -4304,9 +4325,6 @@ export function PremiereTimeline() {
                     ? clipPreview.track
                     : clipTrackKey(clip)) === keyName
               );
-              const laneOverlays = overlays.filter(
-                (overlay) => overlayTrackKey(overlay) === keyName
-              );
               const laneEffects = activeEffects.filter(
                 (effect) => effectTrackKey(effect) === keyName
               );
@@ -4390,88 +4408,6 @@ export function PremiereTimeline() {
                           </button>
                         </>
                       )}
-                    </div>
-                  ))}
-
-                  {laneOverlays.map((overlay) => (
-                    <div
-                      key={overlay.id}
-                      className="group absolute inset-y-1.5"
-                      style={{
-                        left: `${timelineLeft(bodyStart("overlay", overlay.id, overlay.startTime)) * pps}px`,
-                        width: `${Math.max(24, (overlay.endTime - overlay.startTime) * pps)}px`,
-                      }}
-                    >
-                      <button
-                        type="button"
-                        onPointerDown={(e) => {
-                          if (laneState.locked) {
-                            e.stopPropagation();
-                            return;
-                          }
-                          beginBodyDrag(e, "overlay", overlay.id, overlay.startTime);
-                        }}
-                        onPointerMove={bodyDragHandlers.onPointerMove}
-                        onPointerUp={bodyDragHandlers.onPointerUp}
-                        onPointerCancel={bodyDragHandlers.onPointerCancel}
-                        onContextMenu={(e) => openMenu(e, "overlay", overlay.id)}
-                        onClick={() => {
-                          selectOverlay(overlay.id);
-                          // Jump the inspector to Props for immediate local edits.
-                          requestEditorTab("properties");
-                        }}
-                        className={cn(
-                          "h-full w-full cursor-grab overflow-hidden px-1.5 text-left active:cursor-grabbing",
-                          adjustChip,
-                          overlay.id === selectedId && "ring-2 ring-white/70",
-                          laneState.locked && "cursor-not-allowed"
-                        )}
-                      >
-                        <span className="block truncate">
-                          {overlay.text || (overlay.imageSrc ? "Image" : "Text")}
-                        </span>
-                      </button>
-                      {!laneState.locked && (
-                        <>
-                          <button
-                            type="button"
-                            aria-label="Trim overlay start"
-                            onPointerDown={(e) => onOverlayTrimDown(e, overlay, "in")}
-                            onPointerMove={onOverlayTrimMove}
-                            onPointerUp={onOverlayTrimUp}
-                            className="absolute inset-y-0 left-0 z-10 w-1.5 cursor-ew-resize rounded-l-md bg-white/25 transition-colors hover:bg-white/60"
-                          />
-                          <button
-                            type="button"
-                            aria-label="Trim overlay end"
-                            onPointerDown={(e) => onOverlayTrimDown(e, overlay, "out")}
-                            onPointerMove={onOverlayTrimMove}
-                            onPointerUp={onOverlayTrimUp}
-                            className="absolute inset-y-0 right-0 z-10 w-1.5 cursor-ew-resize rounded-r-md bg-white/25 transition-colors hover:bg-white/60"
-                          />
-                          <button
-                            type="button"
-                            aria-label="Delete overlay"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              removeOverlay(overlay.id);
-                            }}
-                            className="absolute right-0.5 top-0.5 z-10 flex h-4 w-4 items-center justify-center rounded bg-black/75 text-zinc-100 opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100"
-                          >
-                            <Trash2 className="h-3 w-3" aria-hidden />
-                          </button>
-                        </>
-                      )}
-                      {(overlay.keyframes ?? []).map((frame) => (
-                        <span
-                          key={frame.id}
-                          title={`Keyframe @ ${frame.time.toFixed(2)}s`}
-                          className="pointer-events-none absolute top-1/2 z-10 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 bg-amber-300 ring-1 ring-black/50"
-                          style={{
-                            left: `${Math.max(0, (frame.time - overlay.startTime) * pps)}px`,
-                          }}
-                        />
-                      ))}
                     </div>
                   ))}
 
@@ -4596,6 +4532,110 @@ export function PremiereTimeline() {
                       </button>
                     );
                   })}
+                </div>
+              );
+            })}
+
+            {/* Text/sticker lanes — T1…Tn (overlays only) */}
+            {textKeys.map((keyName) => {
+              const laneState = trackStates[keyName] ?? DEFAULT_TRACK_STATE;
+              const laneOverlays = overlays.filter(
+                (overlay) => overlayTrackKey(overlay) === keyName
+              );
+              const isDropTarget = dragLane === keyName;
+              return (
+                <div
+                  key={keyName}
+                  data-track-key={keyName}
+                  onDragOver={(event) => onLaneDragOver(event, keyName)}
+                  onDragLeave={onLaneDragLeave}
+                  onDrop={(event) => onLaneDrop(event, keyName)}
+                  className={cn(
+                    "relative h-12 border-b border-studio-border bg-zinc-950/40",
+                    isLaneDimmed(keyName, trackStates) && "opacity-40",
+                    laneState.locked && "ring-1 ring-inset ring-amber-500/20",
+                    isDropTarget &&
+                      "bg-fuchsia-500/10 ring-1 ring-inset ring-fuchsia-400/70"
+                  )}
+                >
+                  {laneOverlays.map((overlay) => (
+                    <div
+                      key={overlay.id}
+                      className="group absolute inset-y-1.5"
+                      style={{
+                        left: `${timelineLeft(bodyStart("overlay", overlay.id, overlay.startTime)) * pps}px`,
+                        width: `${Math.max(24, (overlay.endTime - overlay.startTime) * pps)}px`,
+                      }}
+                    >
+                      <button
+                        type="button"
+                        onPointerDown={(e) => {
+                          if (laneState.locked) {
+                            e.stopPropagation();
+                            return;
+                          }
+                          beginBodyDrag(e, "overlay", overlay.id, overlay.startTime);
+                        }}
+                        onPointerMove={bodyDragHandlers.onPointerMove}
+                        onPointerUp={bodyDragHandlers.onPointerUp}
+                        onPointerCancel={bodyDragHandlers.onPointerCancel}
+                        onContextMenu={(e) => openMenu(e, "overlay", overlay.id)}
+                        onClick={() => {
+                          selectOverlay(overlay.id);
+                          requestEditorTab("properties");
+                        }}
+                        className={cn(
+                          "h-full w-full cursor-grab overflow-hidden px-1.5 text-left active:cursor-grabbing",
+                          adjustChip,
+                          overlay.id === selectedId && "ring-2 ring-white/70",
+                          laneState.locked && "cursor-not-allowed"
+                        )}
+                      >
+                        <span className="block truncate">
+                          {overlay.text || (overlay.imageSrc ? "Image" : "Text")}
+                        </span>
+                      </button>
+                      {!laneState.locked && (
+                        <>
+                          <button
+                            type="button"
+                            aria-label="Trim overlay start"
+                            onPointerDown={(e) => onOverlayTrimDown(e, overlay, "in")}
+                            onPointerMove={onOverlayTrimMove}
+                            onPointerUp={onOverlayTrimUp}
+                            className="absolute inset-y-0 left-0 z-10 w-1.5 cursor-ew-resize rounded-l-md bg-white/25 transition-colors hover:bg-white/60"
+                          />
+                          <button
+                            type="button"
+                            aria-label="Trim overlay end"
+                            onPointerDown={(e) => onOverlayTrimDown(e, overlay, "out")}
+                            onPointerMove={onOverlayTrimMove}
+                            onPointerUp={onOverlayTrimUp}
+                            className="absolute inset-y-0 right-0 z-10 w-1.5 cursor-ew-resize rounded-r-md bg-white/25 transition-colors hover:bg-white/60"
+                          />
+                          <button
+                            type="button"
+                            aria-label="Delete overlay"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              removeOverlay(overlay.id);
+                            }}
+                            className="absolute right-0.5 top-0.5 z-10 flex h-4 w-4 items-center justify-center rounded bg-black/75 text-zinc-100 opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100"
+                          >
+                            <Trash2 className="h-3 w-3" aria-hidden />
+                          </button>
+                        </>
+                      )}
+                      {(overlay.keyframes ?? []).map((frame) => (
+                        <span
+                          key={frame.id}
+                          title={`Keyframe @ ${frame.time.toFixed(2)}s`}
+                          className="pointer-events-none absolute top-1/2 z-10 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 bg-amber-300 ring-1 ring-black/50"
+                          style={{ left: `${Math.max(0, (frame.time - overlay.startTime) * pps)}px` }}
+                        />
+                      ))}
+                    </div>
+                  ))}
                 </div>
               );
             })}
