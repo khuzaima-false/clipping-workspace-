@@ -102,6 +102,15 @@ export default function DashboardPage() {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
 
+  // The dashboard is the desktop project manager. Web visitors are sent back
+  // to the homepage instead of the removed web-only dashboard.
+  useEffect(() => {
+    if (!isTauriEnvironment()) {
+      router.replace("/");
+      return;
+    }
+  }, [router]);
+
   // The web dashboard remains a signed-in surface. The packaged app is local
   // first and must never be sent to the web login wall.
   useEffect(() => {

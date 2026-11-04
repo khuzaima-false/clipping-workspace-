@@ -95,6 +95,26 @@ const FEATURE_GROUPS: {
         title: "Frame Stepping & Timecode",
         body: "Scrub, step frame-by-frame and read SMPTE timecode while you edit.",
       },
+      {
+        icon: Layers,
+        title: "Unlimited Video & Audio Tracks",
+        body: "Add V4, V5, A4 and beyond on demand instead of being locked to six lanes.",
+      },
+      {
+        icon: Move,
+        title: "Cross-Lane Dragging",
+        body: "Move clips, overlays, effects and audio tracks between video and audio lanes.",
+      },
+      {
+        icon: Sparkles,
+        title: "Inspector Drag-and-Drop",
+        body: "Drop sound effects, stickers and effects straight onto the timeline from the inspector.",
+      },
+      {
+        icon: Gauge,
+        title: "Silky Timeline Scrubbing",
+        body: "rAF-coalesced dragging, magnetic snapping and synchronized track headers.",
+      },
     ],
   },
   {

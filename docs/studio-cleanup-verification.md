@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-03  
 **Tester:** `Tester_Agent`  
-**App version:** `0.1.5`
+**App version:** `0.1.6`
 
 ## Verdict
 
@@ -61,21 +61,21 @@ Validated the desktop shell at the `md+` breakpoint:
 
 ## Native Build
 
-- Run `41583122718` completed successfully from release commit `9d5a8d7` / tag `v0.1.5`.
+- Run `41583122718` completed successfully from release commit `9d5a8d7` / tag `v0.1.6`.
 - Windows, macOS Universal, and Linux jobs all passed.
-- The `v0.1.5` release assets were published:
-  - `Forgevyn_0.1.5_x64-setup.exe` and `.msi`
-  - `Forgevyn_0.1.5_universal.dmg` and `.app.tar.gz`
-  - `Forgevyn_0.1.5_amd64.AppImage`, `.deb`, and `.rpm`
+- The `v0.1.6` release assets were published:
+  - `Forgevyn_0.1.6_x64-setup.exe` and `.msi`
+  - `Forgevyn_0.1.6_universal.dmg` and `.app.tar.gz`
+  - `Forgevyn_0.1.6_amd64.AppImage`, `.deb`, and `.rpm`
   - matching signatures and `latest.json`
-- The public updater manifest is reachable at HTTP 200 with `"version": "0.1.5"`. An installed `0.1.4` build now has a newer version available and should show the update path; the actual in-app prompt still requires an installed `0.1.4` desktop build to exercise.
+- The public updater manifest is reachable at HTTP 200 with `"version": "0.1.6"`. An installed `0.1.4` build now has a newer version available and should show the update path; the actual in-app prompt still requires an installed `0.1.4` desktop build to exercise.
 - The earlier `0.1.4` cleanup build (`41580718361`) also completed successfully and remains available as the previous release.
 
 ## Updater Manifest Fix
 
 The update **check** was succeeding, but the published manifest pointed artifacts at `api.github.com/repos/.../releases/assets/<id>`. The desktop updater downloads unauthenticated, so this path is fragile: GitHub can return metadata or a rate-limit response instead of the installer, producing the post-check install error.
 
-- Rewrote all 13 platform URLs in the `v0.1.5` manifest to public `releases/download/v0.1.5/...` URLs and re-uploaded `latest.json`.
+- Rewrote all 13 platform URLs in the `v0.1.6` manifest to public `releases/download/v/...` URLs and re-uploaded `latest.json`.
 - Verified the live `releases/latest/download/latest.json` serves the public URLs.
 - Added `scripts/normalize-updater-manifest.mjs` plus a `finalize-manifest` release-workflow job so future tag builds normalize the manifest automatically.
 

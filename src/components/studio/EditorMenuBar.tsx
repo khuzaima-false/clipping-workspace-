@@ -501,15 +501,10 @@ export function EditorMenuBar({
         className="sticky top-0 z-30 hidden h-7 shrink-0 items-center gap-0.5 border-b border-studio-border bg-studio-panel px-1.5 text-[11px] leading-none md:flex"
       >
         <span className="mr-1 flex items-center gap-1.5 pr-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
-          <button
-            type="button"
-            onClick={() => router.push("/dashboard")}
-            className="flex items-center gap-1.5 rounded px-1 py-0.5 hover:text-zinc-200"
-            aria-label="Open Project Manager"
-          >
+          <span className="flex items-center gap-1.5 px-1 py-0.5">
             <span className="h-1.5 w-1.5 rounded-full bg-violet-400" aria-hidden />
             Forgevyn
-          </button>
+          </span>
           <span className="studio-divider" aria-hidden />
         </span>
 

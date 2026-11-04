@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-03  
 **Tester:** `Tester_Agent`  
-**App version:** `0.1.5`  
+**App version:** `0.1.6`  
 **Scope:** compact DaVinci-style menu, production menu actions, resizable panels, desktop shell, Tauri window controls, project JSON bindings, the AI/Deliver/storage cleanup, and the 0.1.5 release build.
 
 ## Verdict

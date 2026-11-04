@@ -590,11 +590,11 @@ function EditorView() {
               : "Pick a project to open in the studio, or create a new one to get started."}
           </p>
           <Link
-            href="/projects"
+            href="/"
             className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-900/60 px-3 py-2 text-xs text-zinc-200 transition-colors hover:border-zinc-600"
           >
             <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
-            Go to projects
+            Back to homepage
           </Link>
         </div>
       ) : (
