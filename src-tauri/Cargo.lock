@@ -854,7 +854,7 @@ checksum = "aa9a19cbb55df58761df49b23516a86d432839add4af60fc256da840f66ed35b"
 
 [[package]]
 name = "forgevyn"
-version = "0.1.6"
+version = "0.1.7"
 dependencies = [
  "keyring",
  "serde",
